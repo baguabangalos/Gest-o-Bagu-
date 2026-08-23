@@ -483,13 +483,7 @@
 <div class="sheet-overlay" id="hospedinSyncOverlay">
   <div class="sheet">
     <h2>Sincronizar com Hospedin</h2>
-    <p class="count-intro">Conexão direta — seus dados de acesso ficam salvos só neste celular (nunca são enviados pra mim nem a mais ninguém além do Hospedin).</p>
-    <label>E-mail do Hospedin</label>
-    <input type="email" id="hospedinEmail" placeholder="seu@email.com">
-    <label>Senha do Hospedin</label>
-    <input type="password" id="hospedinPassword" placeholder="Senha">
-    <label>ID da conta (account_id)</label>
-    <input type="text" id="hospedinAccountId" placeholder="bagua-pousada">
+    <p class="count-intro">A sincronização roda em um servidor seguro (não no navegador) — o e-mail e senha do Hospedin ficam guardados só ali, nunca aqui no app.</p>
     <div id="hospedinSyncStatus" class="count-intro" style="margin:12px 0 0;"></div>
     <div class="sheet-actions">
       <button type="button" class="btn-secondary" id="hospedinSyncClose">Fechar</button>
@@ -649,17 +643,20 @@
       sb.from("suppliers").select("*").order("name"),
       sb.from("count_sessions").select("*").order("date", {ascending:false}),
       sb.from("procedimentos").select("*").order("criado_em", {ascending:false}),
-      sb.from("manutencoes").select("*").order("criado_em", {ascending:false})
+      sb.from("manutencoes").select("*").order("criado_em", {ascending:false}),
+      sb.from("hospedin_ocupacao").select("*")
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
-    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5];
+    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6];
+    var hospedinOcupacao = hospedinRes.data || [];
     return {
       estoque: {
         items: (itemsRes.data||[]).map(mapItemFromRow),
         movements: (movRes.data||[]).map(mapMovementFromRow),
         suppliers: (supRes.data||[]).map(mapSupplierFromRow),
         countSessions: (csRes.data||[]).map(mapCountSessionFromRow),
-        hospedinEmail: "", hospedinPassword: "", hospedinAccountId: "bagua-pousada", hospedinData: null
+        hospedinOcupacao: hospedinOcupacao,
+        hospedinData: computeHospedinSummary(hospedinOcupacao, 7, 7)
       },
       procedimentos: (procRes.data||[]).map(mapProcedimentoFromRow),
       manutencoes: (manRes.data||[]).map(mapManutencaoFromRow)
@@ -1903,9 +1900,6 @@
   }
 
   function openHospedinSync(){
-    document.getElementById("hospedinEmail").value = state.estoque.hospedinEmail || "";
-    document.getElementById("hospedinPassword").value = state.estoque.hospedinPassword || "";
-    document.getElementById("hospedinAccountId").value = state.estoque.hospedinAccountId || "bagua-pousada";
     renderHospedinSyncStatus();
     hospedinSyncOverlay.classList.add("open");
   }
@@ -1914,111 +1908,65 @@
   document.getElementById("hospedinSyncClose").onclick = closeHospedinSync;
   hospedinSyncOverlay.addEventListener("click", function(e){ if(e.target===hospedinSyncOverlay) closeHospedinSync(); });
 
-  function hospedinAuthenticate(email, password){
-    return fetch(HOSPEDIN_API_BASE + "/authentication/sessions", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({email:email, password:password})
-    }).then(function(resp){
-      if(!resp.ok) throw new Error("Falha no login (HTTP "+resp.status+") — confira e-mail e senha");
-      return resp.json();
-    }).then(function(data){
-      var token = data.token || data.access_token ||
-        (data.data && (data.data.token || data.data.access_token));
-      if(!token) throw new Error("Não recebi um token de acesso na resposta do Hospedin");
-      return token;
-    });
-  }
-
-  function hospedinFetchAllReservations(token, accountId){
-    var all = [];
-    function fetchPage(page){
-      var url = HOSPEDIN_API_BASE + "/" + encodeURIComponent(accountId) + "/reservations?page=" + page;
-      return fetch(url, { headers: {"Authorization":"Bearer "+token} })
-        .then(function(resp){
-          if(!resp.ok) throw new Error("Falha ao buscar reservas (HTTP "+resp.status+")");
-          return resp.json();
-        })
-        .then(function(data){
-          var list = data.reservations || data.data || (Array.isArray(data) ? data : []);
-          all = all.concat(list);
-          var pag = data.pagination || {};
-          var last = pag.last || pag.total_pages || 1;
-          if(page < last && page < 200){
-            return fetchPage(page+1);
-          }
-          return all;
-        });
-    }
-    return fetchPage(1);
-  }
-
-  function summarizeOccupancy(reservations, rangeStart, rangeEnd){
+  // ---------- Sincronização com Hospedin (via Edge Function no servidor) ----------
+  function summarizeOccupancy(rows, rangeStart, rangeEnd){
     var seen = {};
-    reservations.forEach(function(r){
+    rows.forEach(function(r){
       if(r.status === "cancelled") return;
-      var ci = new Date(r.check_in).getTime();
-      var co = new Date(r.check_out).getTime();
+      var ci = new Date(r.checkin).getTime();
+      var co = new Date(r.checkout).getTime();
       if(ci < rangeEnd && co > rangeStart){
-        seen[r.place_id] = true;
+        seen[r.acomodacao] = true;
       }
     });
     return Object.keys(seen).length;
   }
 
-  function syncHospedinDirect(email, password, accountId, daysBack, daysForward){
-    return hospedinAuthenticate(email, password).then(function(token){
-      return hospedinFetchAllReservations(token, accountId);
-    }).then(function(reservations){
-      var now = Date.now();
-      var pastStart = now - daysBack*24*3600*1000;
-      var futureEnd = now + daysForward*24*3600*1000;
-      var pastOccupied = summarizeOccupancy(reservations, pastStart, now);
-      var futureOccupied = summarizeOccupancy(reservations, now, futureEnd);
-      return {
-        ok: true,
-        fetched_at: now,
-        past_period: {days: daysBack, occupied_accommodations: pastOccupied},
-        future_period: {days: daysForward, occupied_accommodations: futureOccupied}
-      };
-    });
+  function computeHospedinSummary(rows, daysBack, daysForward){
+    if(!rows || rows.length === 0) return null;
+    var now = Date.now();
+    var pastStart = now - daysBack*24*3600*1000;
+    var futureEnd = now + daysForward*24*3600*1000;
+    return {
+      ok: true,
+      fetched_at: now,
+      past_period: {days: daysBack, occupied_accommodations: summarizeOccupancy(rows, pastStart, now)},
+      future_period: {days: daysForward, occupied_accommodations: summarizeOccupancy(rows, now, futureEnd)}
+    };
   }
 
-  document.getElementById("hospedinSyncNow").onclick = function(){
-    var email = document.getElementById("hospedinEmail").value.trim();
-    var password = document.getElementById("hospedinPassword").value;
-    var accountId = document.getElementById("hospedinAccountId").value.trim() || "bagua-pousada";
-    if(!email || !password){ showToast("Preencha e-mail e senha do Hospedin"); return; }
-    state.estoque.hospedinEmail = email;
-    state.estoque.hospedinPassword = password;
-    state.estoque.hospedinAccountId = accountId;
+  function hospedinRecomputeFromLocal(daysBack, daysForward){
+    state.estoque.hospedinData = computeHospedinSummary(state.estoque.hospedinOcupacao, daysBack, daysForward);
+  }
 
+  document.getElementById("hospedinSyncNow").onclick = async function(){
     var statusEl = document.getElementById("hospedinSyncStatus");
-    statusEl.innerHTML = "Sincronizando…";
     var btn = document.getElementById("hospedinSyncNow");
+    statusEl.innerHTML = "Sincronizando com o Hospedin (pode levar alguns segundos)…";
     btn.disabled = true;
+    try{
+      var res = await sb.functions.invoke("hospedin-sync");
+      if(res.error) throw res.error;
+      var data = res.data || {};
+      if(!data.ok) throw new Error(data.error || "Falha na sincronização");
 
-    syncHospedinDirect(email, password, accountId, 7, 7)
-      .then(function(data){
-        state.estoque.hospedinData = data;
-        renderHospedinSyncStatus();
-        showToast("Sincronizado com sucesso");
-        renderApp();
-      })
-      .catch(function(err){
-        var msg = String(err && err.message ? err.message : err);
-        var isBlocked = /Failed to fetch|NetworkError|Load failed|TypeError/i.test(msg);
-        state.estoque.hospedinData = {
-          ok:false,
-          error: isBlocked ?
-            "Conexão bloqueada pelo navegador — o Hospedin provavelmente não libera acesso direto de um app como este por segurança (CORS). Me avise para vermos uma alternativa." :
-            msg
-        };
-        renderHospedinSyncStatus();
-        showToast("Falha na sincronização");
-        renderApp();
-      })
-      .finally(function(){ btn.disabled = false; });
+      var occRes = await sb.from("hospedin_ocupacao").select("*");
+      if(occRes.error) throw occRes.error;
+      state.estoque.hospedinOcupacao = occRes.data || [];
+      hospedinRecomputeFromLocal(7, 7);
+
+      renderHospedinSyncStatus();
+      showToast("Sincronizado: " + (data.sincronizadas||0) + " reservas");
+      renderApp();
+    }catch(err){
+      console.error(err);
+      state.estoque.hospedinData = { ok:false, error: String(err && err.message ? err.message : err) };
+      renderHospedinSyncStatus();
+      showToast("Falha na sincronização");
+      renderApp();
+    }finally{
+      btn.disabled = false;
+    }
   };
 
   // ---------- Procedimentos ----------
