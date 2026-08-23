@@ -168,6 +168,10 @@
   .admin-perm-table td:first-child{text-align:left;}
   .admin-perm-table input[type="checkbox"]{width:18px;height:18px;accent-color:var(--teal-700);}
   .admin-role-btn{font-size:12px;border:1px solid var(--line);background:var(--sand-50);color:var(--ink-700);border-radius:8px;padding:5px 10px;margin-top:8px;cursor:pointer;}
+  .hospede-fotos-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+  .hospede-foto-thumb{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;background:var(--sand-50);border:1px solid var(--line);}
+  .hospede-foto-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .hospede-foto-thumb .rm{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer;padding:0;}
   .sheet input[type="checkbox"]{width:auto;padding:0;border:none;background:none;accent-color:var(--teal-700);}
   .sheet-actions{display:flex;gap:8px;margin-top:18px;}
   .sheet-actions .btn-primary{
@@ -364,6 +368,7 @@
 <main id="procedimentosView" style="display:none;"></main>
 <main id="manutencoesView" style="display:none;"></main>
 <main id="adminView" style="display:none;"></main>
+<main id="hospedesView" style="display:none;"></main>
 
 <button class="fab" id="fab">+</button>
 
@@ -519,6 +524,32 @@
         <button type="submit" class="btn-primary">Salvar</button>
       </div>
       <button type="button" class="btn-danger-text" id="procedimentoDelete" style="display:none;">Excluir procedimento</button>
+    </form>
+  </div>
+</div>
+
+<!-- Sheet: add/edit hóspede -->
+<div class="sheet-overlay" id="hospedeSheetOverlay">
+  <div class="sheet">
+    <h2 id="hospedeSheetTitle">Novo hóspede</h2>
+    <form id="hospedeForm">
+      <label>Nome</label>
+      <input type="text" id="h_nome" placeholder="Nome completo">
+      <label>CPF</label>
+      <input type="text" id="h_cpf" placeholder="000.000.000-00" inputmode="numeric">
+      <label>Passaporte (se estrangeiro)</label>
+      <input type="text" id="h_passaporte" placeholder="Número do passaporte">
+      <label>Fotos do documento</label>
+      <div id="hospedeFotosGrid" class="hospede-fotos-grid"></div>
+      <button type="button" class="btn-secondary" id="hospedeAddFotoBtn" style="width:100%;margin-top:8px;">📷 Adicionar foto</button>
+      <input type="file" id="h_foto_input" accept="image/*" capture="environment" style="display:none;">
+      <label>Observações (opcional)</label>
+      <textarea id="h_obs" placeholder="Ex: sempre pede quarto térreo"></textarea>
+      <div class="sheet-actions">
+        <button type="button" class="btn-secondary" id="hospedeCancel">Cancelar</button>
+        <button type="submit" class="btn-primary">Salvar</button>
+      </div>
+      <button type="button" class="btn-danger-text" id="hospedeDelete" style="display:none;">Excluir hóspede</button>
     </form>
   </div>
 </div>
@@ -746,7 +777,8 @@
       currentUser = await carregarPerfil(session.user.id);
     }catch(err){
       console.error(err);
-      showLogin("Não consegui carregar seu perfil. Peça para o administrador liberar seu acesso.");
+      var detalhe = (err && (err.message || err.details || err.hint)) ? (" (" + (err.message||err.details||err.hint) + ")") : "";
+      showLogin("Não consegui carregar seu perfil" + detalhe + ". Peça para o administrador liberar seu acesso.");
       return;
     }
     hideLogin();
@@ -893,7 +925,13 @@
   }
   document.getElementById("homeBackBtn").onclick = function(){ appSection = "home"; renderApp(); };
 
-  function moduloDaSecao(sec){ return sec==="estoque" ? "estoque" : (sec==="manutencoes" ? "manutencao" : (sec==="admin" ? null : "procedimentos")); }
+  function moduloDaSecao(sec){
+    if(sec==="estoque") return "estoque";
+    if(sec==="manutencoes") return "manutencao";
+    if(sec==="hospedes") return "hospedes";
+    if(sec==="admin") return null;
+    return "procedimentos";
+  }
 
   function renderApp(){
     if(appSection === "admin" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
@@ -907,6 +945,7 @@
     document.getElementById("procedimentosView").style.display = appSection==="procedimentos" ? "block":"none";
     document.getElementById("manutencoesView").style.display = appSection==="manutencoes" ? "block":"none";
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
+    document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
 
     document.getElementById("tabs").style.display = (appSection==="estoque" && activeView==="items") ? "flex":"none";
     document.querySelector("footer.bottom-nav").style.display = appSection==="estoque" ? "flex":"none";
@@ -938,6 +977,7 @@
     if(appSection === "procedimentos") renderProcedimentos();
     if(appSection === "manutencoes") renderManutencoes();
     if(appSection === "admin") renderAdmin();
+    if(appSection === "hospedes") renderHospedes();
   }
 
   document.querySelectorAll(".nav-btn").forEach(function(b){
@@ -970,6 +1010,12 @@
       '<div class="card home-card" data-section="manutencoes">' +
         '<div class="home-card-ic">🛠️</div>' +
         '<div class="home-card-main"><p class="home-card-title">Manutenções</p><p class="home-card-sub">'+escapeHtml(manutSub)+'</p></div>' +
+        '<div class="home-card-arrow">›</div>' +
+      '</div>';
+    if(podeVer("hospedes")) cardsHtml +=
+      '<div class="card home-card" data-section="hospedes">' +
+        '<div class="home-card-ic">🪪</div>' +
+        '<div class="home-card-main"><p class="home-card-title">Hóspedes</p><p class="home-card-sub">buscar documento por CPF/passaporte</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     if(currentUser && currentUser.role === "admin") cardsHtml +=
@@ -2198,7 +2244,8 @@
   var MODULOS_ADMIN = [
     {key:"estoque", label:"Estoque"},
     {key:"procedimentos", label:"Procedimentos"},
-    {key:"manutencao", label:"Manutenções"}
+    {key:"manutencao", label:"Manutenções"},
+    {key:"hospedes", label:"Hóspedes/Documentos"}
   ];
   var adminUsersCache = null; // [{id,nome,email,role,ativo,permissoes:{modulo:{ver,editar}}}]
 
@@ -2300,6 +2347,185 @@
         };
       }
     });
+  }
+
+  // ---------- Hóspedes / Documentos ----------
+  function onlyDigits(s){ return (s||"").replace(/\D/g,""); }
+  function formatCpf(digits){
+    if(!digits || digits.length!==11) return digits||"";
+    return digits.slice(0,3)+"."+digits.slice(3,6)+"."+digits.slice(6,9)+"-"+digits.slice(9);
+  }
+  function mapHospedeFromRow(r){
+    return {id:r.id, nome:r.nome, cpf:r.cpf, passaporte:r.passaporte, fotos:r.fotos||[], observacoes:r.observacoes};
+  }
+
+  var editingHospedeId = null;
+  var pendingHospedeFotos = [];   // fotos novas, ainda não enviadas: {label, dataUrl}
+  var existingHospedeFotos = [];  // fotos já salvas (ao editar): {label, path, signedUrl}
+  var hospedeOverlay = document.getElementById("hospedeSheetOverlay");
+
+  function renderHospedeFotosGrid(){
+    var grid = document.getElementById("hospedeFotosGrid");
+    var html = "";
+    existingHospedeFotos.forEach(function(f, i){
+      html += '<div class="hospede-foto-thumb"><img src="'+(f.signedUrl||"")+'" alt=""><button type="button" class="rm" data-existing-rm="'+i+'">×</button></div>';
+    });
+    pendingHospedeFotos.forEach(function(f, i){
+      html += '<div class="hospede-foto-thumb"><img src="'+f.dataUrl+'" alt=""><button type="button" class="rm" data-pending-rm="'+i+'">×</button></div>';
+    });
+    grid.innerHTML = html;
+    grid.querySelectorAll("[data-existing-rm]").forEach(function(btn){
+      btn.onclick = function(){ existingHospedeFotos.splice(parseInt(btn.getAttribute("data-existing-rm"),10),1); renderHospedeFotosGrid(); };
+    });
+    grid.querySelectorAll("[data-pending-rm]").forEach(function(btn){
+      btn.onclick = function(){ pendingHospedeFotos.splice(parseInt(btn.getAttribute("data-pending-rm"),10),1); renderHospedeFotosGrid(); };
+    });
+  }
+
+  document.getElementById("hospedeAddFotoBtn").onclick = function(){ document.getElementById("h_foto_input").click(); };
+  document.getElementById("h_foto_input").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    compressImage(file, 1600, 0.82, function(dataUrl){
+      if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
+      pendingHospedeFotos.push({label:"Documento "+(existingHospedeFotos.length+pendingHospedeFotos.length+1), dataUrl:dataUrl});
+      renderHospedeFotosGrid();
+    });
+    e.target.value = "";
+  });
+
+  async function openHospedeSheet(h, prefill){
+    editingHospedeId = h ? h.id : null;
+    pendingHospedeFotos = [];
+    existingHospedeFotos = [];
+    document.getElementById("hospedeSheetTitle").textContent = h ? "Editar hóspede" : "Novo hóspede";
+    document.getElementById("h_nome").value = h ? (h.nome||"") : "";
+    document.getElementById("h_cpf").value = h ? formatCpf(h.cpf) : ((prefill && prefill.cpf) || "");
+    document.getElementById("h_passaporte").value = h ? (h.passaporte||"") : ((prefill && prefill.passaporte) || "");
+    document.getElementById("h_obs").value = h ? (h.observacoes||"") : "";
+    document.getElementById("hospedeDelete").style.display = h ? "block" : "none";
+    renderHospedeFotosGrid();
+    hospedeOverlay.classList.add("open");
+    if(h && h.fotos && h.fotos.length){
+      for(var i=0;i<h.fotos.length;i++){
+        var f = h.fotos[i];
+        try{
+          var signed = await sb.storage.from("documentos-hospedes").createSignedUrl(f.path, 3600);
+          existingHospedeFotos.push({label:f.label, path:f.path, signedUrl: signed.data ? signed.data.signedUrl : ""});
+        }catch(err){ console.error(err); }
+        renderHospedeFotosGrid();
+      }
+    }
+  }
+  document.getElementById("hospedeCancel").onclick = function(){ hospedeOverlay.classList.remove("open"); };
+
+  document.getElementById("hospedeForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    if(!podeEditar("hospedes")){ showToast("Você não tem permissão para editar hóspedes"); return; }
+    var nome = document.getElementById("h_nome").value.trim();
+    var cpf = onlyDigits(document.getElementById("h_cpf").value);
+    var passaporte = document.getElementById("h_passaporte").value.trim().toUpperCase();
+    var obs = document.getElementById("h_obs").value.trim();
+    if(!nome && !cpf && !passaporte){ showToast("Preencha ao menos nome, CPF ou passaporte"); return; }
+    var submitBtn = e.target.querySelector('button[type="submit"]'); submitBtn.disabled = true;
+    try{
+      var novasFotos = [];
+      for(var i=0;i<pendingHospedeFotos.length;i++){
+        var pf = pendingHospedeFotos[i];
+        var blob = await (await fetch(pf.dataUrl)).blob();
+        var path = (editingHospedeId||uid()) + "/" + Date.now() + "-" + i + ".jpg";
+        var up = await sb.storage.from("documentos-hospedes").upload(path, blob, {contentType:"image/jpeg"});
+        if(up.error) throw up.error;
+        novasFotos.push({label:pf.label, path:path});
+      }
+      var fotosFinal = existingHospedeFotos.map(function(f){ return {label:f.label, path:f.path}; }).concat(novasFotos);
+      var payload = {nome:nome||null, cpf:cpf||null, passaporte:passaporte||null, fotos:fotosFinal, observacoes:obs||null};
+      if(editingHospedeId){
+        await dbUpdate("hospedes", editingHospedeId, payload, mapHospedeFromRow);
+        showToast("Hóspede atualizado");
+      } else {
+        payload.id = uid();
+        await dbInsert("hospedes", payload, mapHospedeFromRow);
+        showToast("Hóspede cadastrado");
+      }
+      hospedeOverlay.classList.remove("open");
+      renderHospedes();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar hóspede");
+    }finally{
+      submitBtn.disabled = false;
+    }
+  });
+
+  document.getElementById("hospedeDelete").onclick = async function(){
+    if(!editingHospedeId) return;
+    if(!podeEditar("hospedes")){ showToast("Você não tem permissão para editar hóspedes"); return; }
+    if(!confirm("Excluir este hóspede e o registro dos documentos?")) return;
+    try{
+      await dbDelete("hospedes", editingHospedeId);
+      hospedeOverlay.classList.remove("open");
+      showToast("Hóspede excluído");
+      renderHospedes();
+    }catch(err){
+      console.error(err); showToast("Erro ao excluir hóspede");
+    }
+  };
+
+  async function buscarHospede(){
+    var q = document.getElementById("hospedeSearchInput").value.trim();
+    var results = document.getElementById("hospedeSearchResults");
+    if(!q){ results.innerHTML = ""; return; }
+    results.innerHTML = '<div class="empty">Buscando…</div>';
+    var digits = onlyDigits(q);
+    var upper = q.toUpperCase();
+    var orParts = [];
+    if(digits) orParts.push("cpf.eq."+digits);
+    orParts.push("passaporte.ilike.%"+upper+"%");
+    var res = await sb.from("hospedes").select("*").or(orParts.join(",")).limit(10);
+    if(res.error){ results.innerHTML = '<div class="empty">Erro ao buscar.</div>'; console.error(res.error); return; }
+    var hs = (res.data||[]).map(mapHospedeFromRow);
+    if(hs.length === 0){
+      results.innerHTML = '<div class="empty">Nenhum hóspede encontrado com esse documento.</div>' +
+        '<button type="button" class="btn-primary" id="hospedeNovoBtn" style="width:100%;margin-top:10px;">+ Cadastrar novo hóspede</button>';
+      document.getElementById("hospedeNovoBtn").onclick = function(){
+        openHospedeSheet(null, digits.length>=6 ? {cpf:formatCpf(digits)} : {passaporte:upper});
+      };
+      return;
+    }
+    var html = "";
+    hs.forEach(function(h){
+      html += '<div class="admin-user-card" data-hid="'+h.id+'">' +
+        '<div class="admin-user-name">'+escapeHtml(h.nome||"(sem nome)")+'</div>' +
+        '<div class="admin-user-email">'+(h.cpf?("CPF "+formatCpf(h.cpf)):"")+(h.passaporte?(" · Passaporte "+escapeHtml(h.passaporte)):"")+'</div>' +
+        (h.fotos.length ? '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">📎 '+h.fotos.length+' foto(s) já registrada(s) — não precisa fotografar de novo.</p>' : '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">Nenhuma foto registrada ainda.</p>') +
+        (h.observacoes ? '<p style="font-size:12.5px;color:var(--ink-700);margin:0 0 8px;">'+escapeHtml(h.observacoes)+'</p>' : '') +
+        '<button type="button" class="admin-role-btn" data-view-hid="'+h.id+'">Ver / editar</button>' +
+      '</div>';
+    });
+    results.innerHTML = html;
+    results.querySelectorAll("[data-view-hid]").forEach(function(btn){
+      btn.onclick = function(){
+        var h = hs.find(function(x){ return x.id === btn.getAttribute("data-view-hid"); });
+        openHospedeSheet(h);
+      };
+    });
+  }
+
+  function renderHospedes(){
+    var main = document.getElementById("hospedesView");
+    main.innerHTML =
+      '<div style="padding:16px;">' +
+        '<label style="display:block;font-size:12.5px;font-weight:700;color:var(--ink-600);margin-bottom:6px;">Buscar por CPF ou passaporte</label>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<input type="text" id="hospedeSearchInput" placeholder="Digite e busque" style="flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:var(--sand-50);">' +
+          '<button type="button" class="btn-primary" id="hospedeSearchBtn" style="white-space:nowrap;">Buscar</button>' +
+        '</div>' +
+        '<div id="hospedeSearchResults" style="margin-top:16px;"></div>' +
+        '<button type="button" class="btn-secondary" id="hospedeAddDirectBtn" style="width:100%;margin-top:16px;">+ Cadastrar hóspede sem buscar</button>' +
+      '</div>';
+    document.getElementById("hospedeSearchBtn").onclick = buscarHospede;
+    document.getElementById("hospedeSearchInput").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); buscarHospede(); } });
+    document.getElementById("hospedeAddDirectBtn").onclick = function(){ openHospedeSheet(null); };
   }
 
   function openManutencaoSheet(m){
