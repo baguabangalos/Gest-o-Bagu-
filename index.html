@@ -1945,7 +1945,7 @@
     statusEl.innerHTML = "Sincronizando com o Hospedin (pode levar alguns segundos)…";
     btn.disabled = true;
     try{
-      var res = await sb.functions.invoke("hospedin-sync");
+      var res = await sb.functions.invoke("hyper-handler"); // endereço real da função hospedin-sync no Supabase
       if(res.error) throw res.error;
       var data = res.data || {};
       if(!data.ok) throw new Error(data.error || "Falha na sincronização");
