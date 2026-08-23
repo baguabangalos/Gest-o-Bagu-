@@ -394,6 +394,8 @@
 
       <label>Nome do item</label>
       <input type="text" id="f_name" required placeholder="Ex: Detergente">
+      <label>Número de série (opcional)</label>
+      <input type="text" id="f_numeroSerie" placeholder="Ex: SN-2024-00871">
       <label>Categoria</label>
       <select id="f_category">
         <option value="Frigobar">Frigobar</option>
@@ -537,6 +539,7 @@
       <div id="hospedeFotosGrid" class="hospede-fotos-grid"></div>
       <button type="button" class="btn-secondary" id="hospedeAddFotoBtn" style="width:100%;margin-top:8px;">📷 Adicionar foto</button>
       <input type="file" id="h_foto_input" accept="image/*" style="display:none;">
+<input type="file" id="quickSaidaPhotoInput" accept="image/*" style="display:none;">
       <label>Observações (opcional)</label>
       <textarea id="h_obs" placeholder="Ex: sempre pede quarto térreo"></textarea>
       <div class="sheet-actions">
@@ -598,7 +601,7 @@
   function mapItemFromRow(r){
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
-      localizacao:r.localizacao, instaladoEm:r.instalado_em};
+      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie};
   }
   function mapMovementFromRow(r){
     return {id:r.id, itemId:r.item_id, type:r.type, qty:Number(r.qty), delta:(r.delta!=null?Number(r.delta):undefined),
@@ -1070,12 +1073,49 @@
   }
 
   // ---------- Items view ----------
+  var itemSearchQuery = "";
+
   function renderItems(){
     var main = document.getElementById("itemsView");
     var list = itemsByCategory(activeCategory);
+    if(itemSearchQuery){
+      var q = itemSearchQuery.toLowerCase();
+      list = list.filter(function(it){
+        return (it.name||"").toLowerCase().indexOf(q) > -1 ||
+               (it.numeroSerie||"").toLowerCase().indexOf(q) > -1;
+      });
+    }
     main.innerHTML = "";
+
+    var searchWrap = document.createElement("div");
+    searchWrap.style.cssText = "margin-bottom:10px;";
+    searchWrap.innerHTML = '<input type="text" id="itemSearchInput" placeholder="Buscar por nome ou número de série" ' +
+      'style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:var(--sand-50);" ' +
+      'value="'+escapeHtml(itemSearchQuery)+'">';
+    main.appendChild(searchWrap);
+    searchWrap.querySelector("input").addEventListener("input", function(e){
+      itemSearchQuery = e.target.value;
+      var pos = e.target.selectionStart;
+      renderItems();
+      var inp = document.getElementById("itemSearchInput");
+      if(inp){ inp.focus(); inp.setSelectionRange(pos, pos); }
+    });
+
+    if(podeEditar("estoque")){
+      var quickBtn = document.createElement("button");
+      quickBtn.type = "button";
+      quickBtn.className = "btn-secondary";
+      quickBtn.style.cssText = "width:100%;margin-bottom:12px;";
+      quickBtn.textContent = "📷 Retirada rápida por foto";
+      quickBtn.onclick = function(){ document.getElementById("quickSaidaPhotoInput").click(); };
+      main.appendChild(quickBtn);
+    }
+
     if(list.length === 0){
-      main.innerHTML = '<div class="empty">Nenhum item nesta categoria ainda.<br>Toque em "+" para adicionar.</div>';
+      var emptyDiv = document.createElement("div");
+      emptyDiv.className = "empty";
+      emptyDiv.innerHTML = itemSearchQuery ? "Nenhum item encontrado com esse nome ou número de série." : 'Nenhum item nesta categoria ainda.<br>Toque em "+" para adicionar.';
+      main.appendChild(emptyDiv);
       return;
     }
     list.forEach(function(it){
@@ -1090,6 +1130,7 @@
         metaText = "mínimo: "+fmtQty(it.min)+" "+escapeHtml(it.unit);
       }
       if(supplier) metaText += " · "+escapeHtml(supplier.name);
+      if(it.numeroSerie) metaText += " · nº série "+escapeHtml(it.numeroSerie);
       var usageActions = it.trackUsage ?
         '<div class="item-actions">' +
           '<button class="btn btn-in" data-act="retorno" data-id="'+it.id+'">← Retornou</button>' +
@@ -1459,13 +1500,22 @@
   }
 
   // ---------- Count (contagem) view ----------
+  var countSearchQuery = "";
+
   function renderCount(){
     var main = document.getElementById("countView");
+    var q = countSearchQuery.toLowerCase();
     var html = '<div class="section-title" style="margin-top:4px;">Contagem de estoque</div>' +
-      '<p class="count-intro">Confira a quantidade física de cada item. Toda contagem fica salva no Histórico &gt; Contagens, mesmo sem mudanças.</p>';
+      '<p class="count-intro">Confira a quantidade física de cada item. Toda contagem fica salva no Histórico &gt; Contagens, mesmo sem mudanças.</p>' +
+      '<input type="text" id="countSearchInput" placeholder="Buscar por nome ou número de série" ' +
+      'style="width:100%;padding:11px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:var(--sand-50);" ' +
+      'value="'+escapeHtml(countSearchQuery)+'">';
     var hasAny = false;
     CATEGORIES.forEach(function(cat){
       var list = itemsByCategory(cat);
+      if(q) list = list.filter(function(it){
+        return (it.name||"").toLowerCase().indexOf(q) > -1 || (it.numeroSerie||"").toLowerCase().indexOf(q) > -1;
+      });
       if(list.length === 0) return;
       hasAny = true;
       html += '<div class="card">';
@@ -1474,6 +1524,7 @@
         var sysLabel = it.trackUsage ?
           ("guardado: "+fmtQty(it.qty)+" "+escapeHtml(it.unit)+" · em uso: "+fmtQty(it.qtyEmUso)+" "+escapeHtml(it.unit)) :
           ("sistema: "+fmtQty(it.qty)+" "+escapeHtml(it.unit));
+        if(it.numeroSerie) sysLabel += " · nº série "+escapeHtml(it.numeroSerie);
         html += '<div class="count-row">' +
           '<div class="count-item-main">' +
             '<p class="item-name" style="margin:0;">'+escapeHtml(it.name)+'</p>' +
@@ -1485,12 +1536,26 @@
       html += '</div>';
     });
     if(!hasAny){
-      main.innerHTML = html + '<div class="empty">Nenhum item cadastrado ainda.</div>';
+      main.innerHTML = html + '<div class="empty">'+(q ? "Nenhum item encontrado com esse nome ou número de série." : "Nenhum item cadastrado ainda.")+'</div>';
+      wireCountSearch();
       return;
     }
     html += '<button type="button" class="count-save-btn" id="countSaveBtn">Salvar contagem</button>';
     main.innerHTML = html;
     document.getElementById("countSaveBtn").onclick = saveCount;
+    wireCountSearch();
+  }
+
+  function wireCountSearch(){
+    var inp = document.getElementById("countSearchInput");
+    if(!inp) return;
+    inp.addEventListener("input", function(e){
+      countSearchQuery = e.target.value;
+      var pos = e.target.selectionStart;
+      renderCount();
+      var inp2 = document.getElementById("countSearchInput");
+      if(inp2){ inp2.focus(); inp2.setSelectionRange(pos, pos); }
+    });
   }
 
   async function saveCount(){
@@ -1553,6 +1618,7 @@
     editingItemId = item ? item.id : null;
     document.getElementById("itemSheetTitle").textContent = item ? "Editar item" : "Novo item";
     document.getElementById("f_name").value = item ? item.name : "";
+    document.getElementById("f_numeroSerie").value = item ? (item.numeroSerie||"") : "";
     document.getElementById("f_category").value = item ? item.category : activeCategory;
     document.getElementById("f_unit").value = item ? item.unit : "";
     document.getElementById("f_qty").value = item ? item.qty : "";
@@ -1599,6 +1665,7 @@
     e.preventDefault();
     if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
     var name = document.getElementById("f_name").value.trim();
+    var numeroSerie = document.getElementById("f_numeroSerie").value.trim();
     var category = document.getElementById("f_category").value;
     var unit = document.getElementById("f_unit").value.trim();
     var qty = parseFloat(document.getElementById("f_qty").value);
@@ -1609,7 +1676,7 @@
     if(!name || isNaN(qty) || isNaN(min)) return;
 
     var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:pendingPhoto,
-      supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso};
+      supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, numero_serie:numeroSerie||null};
     var submitBtn = e.target.querySelector('button[type="submit"]'); if(submitBtn) submitBtn.disabled = true;
     try{
       if(editingItemId){
@@ -1677,6 +1744,40 @@
     moveOverlay.classList.add("open");
   }
   function closeMoveSheet(){ moveOverlay.classList.remove("open"); moveItemId=null; moveType=null; }
+
+  // ---------- Retirada rápida por foto (identificação por IA) ----------
+  document.getElementById("quickSaidaPhotoInput").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+    if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+    compressImage(file, 1000, 0.75, async function(dataUrl){
+      if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
+      showToast("Identificando o item…");
+      try{
+        var base64 = dataUrl.split(",")[1];
+        var itemsPayload = state.estoque.items.map(function(it){
+          return {id:it.id, name:it.name, category:it.category, unit:it.unit, numero_serie:it.numeroSerie||null};
+        });
+        var res = await sb.functions.invoke("identificar-item", {
+          body: { image_base64: base64, media_type: "image/jpeg", items: itemsPayload }
+        });
+        if(res.error) throw res.error;
+        var data = res.data || {};
+        if(!data.ok) throw new Error(data.error || "Falha ao identificar");
+        var item = data.item_id ? state.estoque.items.find(function(i){ return i.id === data.item_id; }) : null;
+        if(item){
+          showToast("Item identificado: " + item.name + " — confira antes de confirmar");
+          openMoveSheet(item, "saida");
+        } else {
+          showToast("Não consegui identificar com certeza — escolha o item na lista abaixo");
+        }
+      }catch(err){
+        console.error(err);
+        showToast("Erro ao identificar a foto — escolha o item na lista");
+      }
+    });
+  });
 
   document.getElementById("moveCancel").onclick = closeMoveSheet;
   moveOverlay.addEventListener("click", function(e){ if(e.target===moveOverlay) closeMoveSheet(); });
