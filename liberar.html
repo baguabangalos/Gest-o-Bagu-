@@ -159,10 +159,25 @@
   }
   label.textContent = nome;
 
+  function limpezaDisponivel(){
+    var agora = new Date();
+    var minutosAgora = agora.getHours()*60 + agora.getMinutes();
+    return minutosAgora < (11*60 + 30);
+  }
+
   function renderMenu(){
+    var limpezaHtml;
+    if(limpezaDisponivel()){
+      limpezaHtml = '<button class="btn-opt" data-tipo="limpeza"><span class="ic">🧹</span><span><span>Quero que arrumem meu quarto</span><span class="sub">Nossa equipe vai até lá em breve</span></span></button>';
+    } else {
+      limpezaHtml = '<div style="display:flex;align-items:center;gap:12px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;">' +
+        '<span class="ic" style="font-size:22px;">🕦</span>' +
+        '<span style="font-size:13.5px;color:var(--ink-600);line-height:1.4;">A arrumação do quarto pode ser pedida até <strong>11h30</strong>.</span>' +
+      '</div>';
+    }
     content.innerHTML =
       '<div class="card">' +
-        '<button class="btn-opt" data-tipo="limpeza"><span class="ic">🧹</span><span><span>Quero que arrumem meu quarto</span><span class="sub">Nossa equipe vai até lá em breve</span></span></button>' +
+        limpezaHtml +
         '<button class="btn-opt" id="btnFrigobar"><span class="ic">🥤</span><span><span>Frigobar &amp; cesta de doces</span><span class="sub">Escolher o que precisa repor</span></span></button>' +
         '<button class="btn-opt" data-tipo="reparo" style="margin-bottom:0;"><span class="ic">🔧</span><span><span>Algo não está funcionando</span><span class="sub">Reparo ou manutenção na acomodação</span></span></button>' +
       '</div>';
