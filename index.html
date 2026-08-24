@@ -369,6 +369,7 @@
 <main id="manutencoesView" style="display:none;"></main>
 <main id="adminView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
+<main id="limpezaView" style="display:none;"></main>
 
 <button class="fab" id="fab">+</button>
 
@@ -622,6 +623,16 @@
       createdAt:new Date(r.created_at).getTime(), resolvedAt:(r.resolved_at?new Date(r.resolved_at).getTime():null),
       resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id};
   }
+  function mapAcomodacaoFromRow(r){
+    return {id:r.id, nome:r.nome, ativo:r.ativo, ordem:r.ordem};
+  }
+  function mapSolicitacaoFromRow(r){
+    return {id:r.id, acomodacaoId:r.acomodacao_id, tipo:r.tipo, contexto:r.contexto, origem:r.origem,
+      status:r.status, criadoEm:new Date(r.criado_em).getTime(),
+      iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
+      concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null),
+      iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por};
+  }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
   async function dbInsert(table, payload, mapFn){
@@ -647,10 +658,12 @@
       sb.from("count_sessions").select("*").order("date", {ascending:false}),
       sb.from("procedimentos").select("*").order("criado_em", {ascending:false}),
       sb.from("manutencoes").select("*").order("criado_em", {ascending:false}),
-      sb.from("hospedin_ocupacao").select("*")
+      sb.from("hospedin_ocupacao").select("*"),
+      sb.from("acomodacoes").select("*").order("ordem"),
+      sb.from("solicitacoes_acomodacao").select("*").order("criado_em", {ascending:false})
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
-    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6];
+    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8];
     var hospedinOcupacao = hospedinRes.data || [];
     return {
       estoque: {
@@ -662,7 +675,9 @@
         hospedinData: computeHospedinSummary(hospedinOcupacao, 7, 7)
       },
       procedimentos: (procRes.data||[]).map(mapProcedimentoFromRow),
-      manutencoes: (manRes.data||[]).map(mapManutencaoFromRow)
+      manutencoes: (manRes.data||[]).map(mapManutencaoFromRow),
+      acomodacoes: (acoRes.data||[]).map(mapAcomodacaoFromRow),
+      solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow)
     };
   }
 
@@ -920,6 +935,14 @@
         h1.textContent = "Manutenções";
         sub.textContent = "Pendências e histórico de reparos";
         alertPill.style.display = "none";
+      } else if(appSection === "limpeza"){
+        h1.textContent = "Limpeza";
+        sub.textContent = "Pedidos dos hóspedes — arrumação, frigobar, doces";
+        alertPill.style.display = "none";
+      } else if(appSection === "hospedes"){
+        h1.textContent = "Hóspedes";
+        sub.textContent = "Documentos por CPF ou passaporte";
+        alertPill.style.display = "none";
       }
     }
   }
@@ -929,6 +952,7 @@
     if(sec==="estoque") return "estoque";
     if(sec==="manutencoes") return "manutencao";
     if(sec==="hospedes") return "hospedes";
+    if(sec==="limpeza") return "limpeza";
     if(sec==="admin") return null;
     return "procedimentos";
   }
@@ -946,6 +970,7 @@
     document.getElementById("manutencoesView").style.display = appSection==="manutencoes" ? "block":"none";
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
+    document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
 
     document.getElementById("tabs").style.display = (appSection==="estoque" && activeView==="items") ? "flex":"none";
     document.querySelector("footer.bottom-nav").style.display = appSection==="estoque" ? "flex":"none";
@@ -978,6 +1003,7 @@
     if(appSection === "manutencoes") renderManutencoes();
     if(appSection === "admin") renderAdmin();
     if(appSection === "hospedes") renderHospedes();
+    if(appSection === "limpeza") renderLimpeza();
   }
 
   document.querySelectorAll(".nav-btn").forEach(function(b){
@@ -1018,6 +1044,16 @@
         '<div class="home-card-main"><p class="home-card-title">Hóspedes</p><p class="home-card-sub">buscar documento por CPF/passaporte</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
+    if(podeVer("limpeza")){
+      var limpPend = state.solicitacoes.filter(function(s){ return s.status!=="concluido"; }).length;
+      var limpSub = limpPend > 0 ? (limpPend + (limpPend===1?" pedido em aberto":" pedidos em aberto")) : "tudo em dia";
+      cardsHtml +=
+      '<div class="card home-card" data-section="limpeza">' +
+        '<div class="home-card-ic">🧹</div>' +
+        '<div class="home-card-main"><p class="home-card-title">Limpeza</p><p class="home-card-sub">'+escapeHtml(limpSub)+'</p></div>' +
+        '<div class="home-card-arrow">›</div>' +
+      '</div>';
+    }
     if(currentUser && currentUser.role === "admin") cardsHtml +=
       '<div class="card home-card" data-section="admin">' +
         '<div class="home-card-ic">👤</div>' +
@@ -2289,12 +2325,92 @@
     });
   }
 
+  // ---------- Limpeza (pedidos feitos pelos hóspedes) ----------
+  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Reposição do frigobar", doces:"Reposição da cesta de doces"};
+  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", doces:"🍬"};
+  var STATUS_DOT = {pendente:"🔴", em_andamento:"🟡", concluido:"🟢"};
+  var STATUS_LABEL = {pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
+  var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
+
+  function acomodacaoNome(id){
+    var a = state.acomodacoes.find(function(x){ return x.id===id; });
+    return a ? a.nome : id;
+  }
+
+  function renderLimpeza(){
+    var main = document.getElementById("limpezaView");
+    var abertos = state.solicitacoes.filter(function(s){ return s.status!=="concluido"; })
+      .sort(function(a,b){ return a.criadoEm-b.criadoEm; });
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
+      .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
+
+    var html = '<div class="seg-toggle">' +
+      '<button data-lsub="abertos" class="'+(limpezaSubView==="abertos"?"active":"")+'">Em aberto'+(abertos.length?(' · '+abertos.length):'')+'</button>' +
+      '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
+    '</div>';
+
+    var list = limpezaSubView === "abertos" ? abertos : concluidosHoje;
+    if(list.length === 0){
+      html += '<div class="empty">'+(limpezaSubView==="abertos" ? "Nenhum pedido em aberto." : "Nenhum pedido concluído hoje ainda.")+'</div>';
+    } else {
+      list.forEach(function(s){
+        var icon = TIPO_ICON[s.tipo] || "•";
+        var label = TIPO_LABEL[s.tipo] || s.tipo;
+        html += '<div class="card manut-card">' +
+          '<p class="item-name" style="margin:0 0 3px;">'+STATUS_DOT[s.status]+' '+icon+' '+escapeHtml(label)+
+            ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</span></p>' +
+          '<p class="item-meta">'+STATUS_LABEL[s.status]+' · pedido às '+fmtDate(s.criadoEm)+'</p>';
+        if(s.status === "pendente"){
+          html += '<div class="item-actions"><button class="btn btn-in" data-act="iniciar" data-id="'+s.id+'">▶ Iniciar</button></div>';
+        } else if(s.status === "em_andamento"){
+          html += '<p class="item-meta">iniciado às '+fmtDate(s.iniciadoEm)+'</p>' +
+            '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button></div>';
+        } else {
+          html += '<p class="item-meta">concluído às '+fmtDate(s.concluidoEm)+'</p>';
+        }
+        html += '</div>';
+      });
+    }
+    main.innerHTML = html;
+    main.querySelectorAll("[data-lsub]").forEach(function(b){
+      b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza(); };
+    });
+    main.querySelectorAll("button[data-act]").forEach(function(b){
+      b.onclick = async function(e){
+        e.stopPropagation();
+        if(!podeEditar("limpeza")){ showToast("Você não tem permissão para atualizar pedidos de limpeza"); return; }
+        var id = b.getAttribute("data-id");
+        var s = state.solicitacoes.find(function(x){ return x.id===id; });
+        if(!s) return;
+        var act = b.getAttribute("data-act");
+        try{
+          if(act === "iniciar"){
+            var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+            var idx1 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idx1>-1) state.solicitacoes[idx1] = s1;
+            showToast("Pedido iniciado"); renderApp();
+          } else if(act === "finalizar"){
+            var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+            var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idx2>-1) state.solicitacoes[idx2] = s2;
+            showToast("Pedido concluído"); renderApp();
+          }
+        }catch(err){
+          console.error(err); showToast("Erro ao atualizar pedido");
+        }
+      };
+    });
+  }
+
   // ---------- Administração (usuários e permissões) ----------
   var MODULOS_ADMIN = [
     {key:"estoque", label:"Estoque"},
     {key:"procedimentos", label:"Procedimentos"},
     {key:"manutencao", label:"Manutenções"},
-    {key:"hospedes", label:"Hóspedes/Documentos"}
+    {key:"hospedes", label:"Hóspedes/Documentos"},
+    {key:"limpeza", label:"Limpeza (pedidos dos hóspedes)"},
+    {key:"recepcao", label:"Recepção (painel de acompanhamento)"}
   ];
   var adminUsersCache = null; // [{id,nome,email,role,ativo,permissoes:{modulo:{ver,editar}}}]
 
