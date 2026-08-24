@@ -82,28 +82,42 @@
   var SUPABASE_ANON_KEY = "sb_publishable_SjZqlf6p1qP6p_kXeIvmZQ_CETTCP5R";
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+  var ITENS_COMPLETO = [
+    "Água sem gás","Água com gás","Água saborizada de limão","Água saborizada de maracujá",
+    "Heineken","Corona","Stella Pure Gold",
+    "Coca-Cola","Coca-Cola zero","Fanta Guaraná","Fanta Guaraná zero",
+    "Halls","Mentos","Kit Kat","Snickers","Barra de cereal","Pringles","Mix de castanhas","Barukas","Hershey's 60%",
+    "Cápsula de cappuccino","Cápsula de café filtrado","Cápsula de expresso forte"
+  ];
+  var ITENS_PADRAO = [
+    "Água sem gás","Água com gás",
+    "Heineken","Corona","Stella Pure Gold",
+    "Coca-Cola","Coca-Cola zero","Fanta Guaraná","Fanta Guaraná zero",
+    "Halls","Mentos","Kit Kat","Snickers","Barra de cereal","Pringles","Mix de castanhas","Barukas","Hershey's 60%"
+  ];
+
   // Precisa bater exatamente com os ids inseridos em modulo_operacional.sql
   var ACOMODACOES = {
-    "bangalo-loft":"Bangalô Loft",
-    "bangalo-panorama-01":"Bangalô Panorama 01",
-    "bangalo-panorama-02":"Bangalô Panorama 02",
-    "bangalo-bagua-01":"Bangalô Baguá 01",
-    "bangalo-bagua-02":"Bangalô Baguá 02",
-    "bangalo-bagua-03":"Bangalô Baguá 03",
-    "bangalo-bagua-04":"Bangalô Baguá 04",
-    "bangalo-safari-01":"Bangalô Safari 01",
-    "bangalo-safari-02":"Bangalô Safari 02",
-    "casa-maria":"Casa Maria",
-    "bangalo-preguica":"Bangalô Preguiça",
-    "joao-de-barro":"João de Barro",
-    "suite-cerrado-01":"Suite Cerrado 01",
-    "suite-cerrado-02":"Suite Cerrado 02",
-    "bangalo-yaya-01":"Bangalô Yaya 01",
-    "bangalo-yaya-02":"Bangalô Yaya 02",
-    "bangalo-yaya-03":"Bangalô Yaya 03",
-    "cabana-zazu-01":"Cabana Zazu 01",
-    "cabana-zazu-02":"Cabana Zazu 02",
-    "cabana-zazu-03":"Cabana Zazu 03"
+    "bangalo-loft":{nome:"Bangalô Loft", itens:ITENS_COMPLETO},
+    "bangalo-panorama-01":{nome:"Bangalô Panorama 01", itens:ITENS_COMPLETO},
+    "bangalo-panorama-02":{nome:"Bangalô Panorama 02", itens:ITENS_COMPLETO},
+    "bangalo-bagua-01":{nome:"Bangalô Baguá 01", itens:ITENS_PADRAO},
+    "bangalo-bagua-02":{nome:"Bangalô Baguá 02", itens:ITENS_PADRAO},
+    "bangalo-bagua-03":{nome:"Bangalô Baguá 03", itens:ITENS_PADRAO},
+    "bangalo-bagua-04":{nome:"Bangalô Baguá 04", itens:ITENS_PADRAO},
+    "bangalo-safari-01":{nome:"Bangalô Safari 01", itens:ITENS_PADRAO},
+    "bangalo-safari-02":{nome:"Bangalô Safari 02", itens:ITENS_PADRAO},
+    "casa-maria":{nome:"Casa Maria", itens:ITENS_PADRAO},
+    "bangalo-preguica":{nome:"Bangalô Preguiça", itens:ITENS_PADRAO},
+    "joao-de-barro":{nome:"João de Barro", itens:ITENS_PADRAO},
+    "suite-cerrado-01":{nome:"Suite Cerrado 01", itens:ITENS_PADRAO},
+    "suite-cerrado-02":{nome:"Suite Cerrado 02", itens:ITENS_PADRAO},
+    "bangalo-yaya-01":{nome:"Bangalô Yaya 01", itens:ITENS_PADRAO},
+    "bangalo-yaya-02":{nome:"Bangalô Yaya 02", itens:ITENS_PADRAO},
+    "bangalo-yaya-03":{nome:"Bangalô Yaya 03", itens:ITENS_PADRAO},
+    "cabana-zazu-01":{nome:"Cabana Zazu 01", itens:ITENS_PADRAO},
+    "cabana-zazu-02":{nome:"Cabana Zazu 02", itens:ITENS_PADRAO},
+    "cabana-zazu-03":{nome:"Cabana Zazu 03", itens:ITENS_PADRAO}
   };
 
   function uid(){ return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -120,7 +134,8 @@
 
   var params = new URLSearchParams(window.location.search);
   var slug = params.get("a");
-  var nome = slug ? ACOMODACOES[slug] : null;
+  var acomodacao = slug ? ACOMODACOES[slug] : null;
+  var nome = acomodacao ? acomodacao.nome : null;
 
   var content = document.getElementById("content");
   var label = document.getElementById("acomodacaoLabel");
@@ -136,8 +151,7 @@
     content.innerHTML =
       '<div class="card">' +
         '<button class="btn-opt" data-tipo="limpeza"><span class="ic">🧹</span><span><span>Quero que arrumem meu quarto</span><span class="sub">Nossa equipe vai até lá em breve</span></span></button>' +
-        '<button class="btn-opt" data-tipo="frigobar"><span class="ic">🥤</span><span><span>Reposição do frigobar</span><span class="sub">Bebidas e itens do frigobar</span></span></button>' +
-        '<button class="btn-opt" data-tipo="doces"><span class="ic">🍬</span><span><span>Reposição da cesta de doces</span><span class="sub">Cesta de doces da acomodação</span></span></button>' +
+        '<button class="btn-opt" id="btnFrigobar"><span class="ic">🥤</span><span><span>Frigobar &amp; cesta de doces</span><span class="sub">Escolher o que precisa repor</span></span></button>' +
         '<button class="btn-opt" data-tipo="reparo" style="margin-bottom:0;"><span class="ic">🔧</span><span><span>Algo não está funcionando</span><span class="sub">Reparo ou manutenção na acomodação</span></span></button>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
@@ -147,6 +161,38 @@
         else enviarSolicitacao(tipo);
       };
     });
+    document.getElementById("btnFrigobar").onclick = renderFrigobarForm;
+  }
+
+  function renderFrigobarForm(){
+    var itemsHtml = acomodacao.itens.map(function(nomeItem, i){
+      return '<label style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14.5px;">' +
+        '<input type="checkbox" class="fg-item" value="'+escapeHtml(nomeItem)+'" id="fg_'+i+'" style="width:19px;height:19px;flex:0 0 auto;">' +
+        '<span>'+escapeHtml(nomeItem)+'</span>' +
+      '</label>';
+    }).join("");
+    content.innerHTML =
+      '<div class="card">' +
+        '<p style="margin:0 0 8px;font-size:14px;color:var(--ink-600);">Marque o que você gostaria de repor:</p>' +
+        '<div>'+itemsHtml+'</div>' +
+        '<button class="btn-primary" id="fgEnviar" style="margin-top:14px;" disabled>Enviar pedido</button>' +
+        '<button class="btn-ghost" id="fgVoltar">‹ Voltar</button>' +
+      '</div>';
+    document.getElementById("fgVoltar").onclick = renderMenu;
+    var checks = content.querySelectorAll(".fg-item");
+    var enviarBtn = document.getElementById("fgEnviar");
+    checks.forEach(function(c){
+      c.addEventListener("change", function(){
+        var any = Array.prototype.some.call(checks, function(x){ return x.checked; });
+        enviarBtn.disabled = !any;
+      });
+    });
+    enviarBtn.onclick = function(){
+      var escolhidos = Array.prototype.filter.call(checks, function(c){ return c.checked; })
+        .map(function(c){ return c.value; });
+      if(escolhidos.length === 0) return;
+      enviarFrigobar(escolhidos);
+    };
   }
 
   function renderReparoForm(){
@@ -175,6 +221,28 @@
         contexto: (tipo === "limpeza" ? "estadia" : null),
         origem: "hospede",
         status: "pendente"
+      };
+      var res = await sb.from("solicitacoes_acomodacao").insert(payload);
+      if(res.error) throw res.error;
+      renderSucesso();
+    }catch(err){
+      console.error(err);
+      content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
+        '<button class="btn-ghost" id="tentarDeNovo">‹ Voltar</button>';
+      document.getElementById("tentarDeNovo").onclick = renderMenu;
+    }
+  }
+
+  async function enviarFrigobar(itens){
+    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
+    try{
+      var payload = {
+        id: uid(),
+        acomodacao_id: slug,
+        tipo: "frigobar",
+        origem: "hospede",
+        status: "pendente",
+        itens: itens
       };
       var res = await sb.from("solicitacoes_acomodacao").insert(payload);
       if(res.error) throw res.error;
