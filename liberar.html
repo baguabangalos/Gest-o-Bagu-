@@ -61,6 +61,18 @@
     opacity:0; pointer-events:none; transition:.2s;
   }
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .qty-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 2px; border-bottom:1px solid var(--line); font-size:14.5px;
+  }
+  .qty-row:last-child{border-bottom:none;}
+  .qty-name{flex:1; min-width:0;}
+  .qty-ctrl{display:flex; align-items:center; gap:10px; flex:0 0 auto;}
+  .qty-btn{
+    width:32px; height:32px; border-radius:8px; border:1px solid var(--line);
+    background:var(--sand-100); font-size:17px; font-family:inherit; color:var(--ink-900); cursor:pointer;
+  }
+  .qty-val{min-width:18px; text-align:center; font-weight:700;}
 </style>
 </head>
 <body>
@@ -165,31 +177,43 @@
   }
 
   function renderFrigobarForm(){
+    var qtys = acomodacao.itens.map(function(){ return 0; });
     var itemsHtml = acomodacao.itens.map(function(nomeItem, i){
-      return '<label style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14.5px;">' +
-        '<input type="checkbox" class="fg-item" value="'+escapeHtml(nomeItem)+'" id="fg_'+i+'" style="width:19px;height:19px;flex:0 0 auto;">' +
-        '<span>'+escapeHtml(nomeItem)+'</span>' +
-      '</label>';
+      return '<div class="qty-row" data-idx="'+i+'">' +
+        '<span class="qty-name">'+escapeHtml(nomeItem)+'</span>' +
+        '<div class="qty-ctrl">' +
+          '<button type="button" class="qty-btn" data-act="minus" data-idx="'+i+'">−</button>' +
+          '<span class="qty-val" id="qv_'+i+'">0</span>' +
+          '<button type="button" class="qty-btn" data-act="plus" data-idx="'+i+'">+</button>' +
+        '</div>' +
+      '</div>';
     }).join("");
     content.innerHTML =
       '<div class="card">' +
-        '<p style="margin:0 0 8px;font-size:14px;color:var(--ink-600);">Marque o que você gostaria de repor:</p>' +
+        '<p style="margin:0 0 8px;font-size:14px;color:var(--ink-600);">Escolha a quantidade de cada item que você gostaria de repor:</p>' +
         '<div>'+itemsHtml+'</div>' +
         '<button class="btn-primary" id="fgEnviar" style="margin-top:14px;" disabled>Enviar pedido</button>' +
         '<button class="btn-ghost" id="fgVoltar">‹ Voltar</button>' +
       '</div>';
     document.getElementById("fgVoltar").onclick = renderMenu;
-    var checks = content.querySelectorAll(".fg-item");
     var enviarBtn = document.getElementById("fgEnviar");
-    checks.forEach(function(c){
-      c.addEventListener("change", function(){
-        var any = Array.prototype.some.call(checks, function(x){ return x.checked; });
-        enviarBtn.disabled = !any;
-      });
+    function atualizarBotao(){
+      var any = qtys.some(function(q){ return q > 0; });
+      enviarBtn.disabled = !any;
+    }
+    content.querySelectorAll(".qty-btn").forEach(function(b){
+      b.onclick = function(){
+        var idx = parseInt(b.getAttribute("data-idx"), 10);
+        var act = b.getAttribute("data-act");
+        qtys[idx] = Math.max(0, qtys[idx] + (act === "plus" ? 1 : -1));
+        document.getElementById("qv_"+idx).textContent = qtys[idx];
+        atualizarBotao();
+      };
     });
     enviarBtn.onclick = function(){
-      var escolhidos = Array.prototype.filter.call(checks, function(c){ return c.checked; })
-        .map(function(c){ return c.value; });
+      var escolhidos = acomodacao.itens
+        .map(function(nomeItem, i){ return {nome: nomeItem, quantidade: qtys[i]}; })
+        .filter(function(x){ return x.quantidade > 0; });
       if(escolhidos.length === 0) return;
       enviarFrigobar(escolhidos);
     };

@@ -631,7 +631,7 @@
       status:r.status, criadoEm:new Date(r.criado_em).getTime(),
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
       concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null),
-      iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por};
+      iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -2326,8 +2326,8 @@
   }
 
   // ---------- Limpeza (pedidos feitos pelos hóspedes) ----------
-  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Reposição do frigobar", doces:"Reposição da cesta de doces"};
-  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", doces:"🍬"};
+  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces"};
+  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤"};
   var STATUS_DOT = {pendente:"🔴", em_andamento:"🟡", concluido:"🟢"};
   var STATUS_LABEL = {pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
@@ -2359,8 +2359,14 @@
         var label = TIPO_LABEL[s.tipo] || s.tipo;
         html += '<div class="card manut-card">' +
           '<p class="item-name" style="margin:0 0 3px;">'+STATUS_DOT[s.status]+' '+icon+' '+escapeHtml(label)+
-            ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</span></p>' +
-          '<p class="item-meta">'+STATUS_LABEL[s.status]+' · pedido às '+fmtDate(s.criadoEm)+'</p>';
+            ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</span></p>';
+        if(s.itens && s.itens.length){
+          var itensTxt = s.itens.map(function(it){
+            return escapeHtml(it.nome) + (it.quantidade ? ' ('+it.quantidade+')' : '');
+          }).join(", ");
+          html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
+        }
+        html += '<p class="item-meta">'+STATUS_LABEL[s.status]+' · pedido às '+fmtDate(s.criadoEm)+'</p>';
         if(s.status === "pendente"){
           html += '<div class="item-actions"><button class="btn btn-in" data-act="iniciar" data-id="'+s.id+'">▶ Iniciar</button></div>';
         } else if(s.status === "em_andamento"){
