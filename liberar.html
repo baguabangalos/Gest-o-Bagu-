@@ -295,8 +295,7 @@
       renderSucesso();
     }catch(err){
       console.error(err);
-      var detalhe = (err && (err.message || err.details || err.hint)) ? escapeHtml(err.message || err.details || err.hint) : "";
-      content.innerHTML = '<div class="card error-box">Não consegui enviar agora.'+(detalhe?('<br><span style="font-size:12px;">'+detalhe+'</span>'):'')+'</div>' +
+      content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
         '<button class="btn-ghost" id="tentarDeNovo">‹ Voltar</button>';
       document.getElementById("tentarDeNovo").onclick = renderMenu;
     }
