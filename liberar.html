@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Bagua Bangalôs</title>
+<style>
+  :root{
+    --teal-900:#1c4238; --teal-700:#2f6f5e; --teal-500:#4a9483; --teal-100:#e4f0ec;
+    --sand-50:#faf7f2; --sand-100:#f4ede1; --sand-200:#e9dfcd;
+    --ink-900:#2b2620; --ink-600:#6b6355; --ink-400:#a39a89; --line:#e3dbcb;
+    --red-600:#b3432f; --radius:16px;
+    --shadow:0 1px 2px rgba(43,38,32,.06), 0 4px 16px rgba(43,38,32,.08);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--sand-50); color:var(--ink-900); min-height:100vh;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column; align-items:center;
+    padding:calc(28px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
+  }
+  .wrap{width:100%; max-width:420px;}
+  header{text-align:center; margin-bottom:22px;}
+  header h1{margin:0 0 4px; font-size:20px; color:var(--teal-900); letter-spacing:.2px;}
+  header p{margin:0; font-size:14px; color:var(--ink-600);}
+  .card{
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:18px; margin-bottom:12px;
+  }
+  .btn-opt{
+    width:100%; display:flex; align-items:center; gap:12px; text-align:left;
+    background:var(--sand-100); border:1px solid var(--line); border-radius:12px;
+    padding:14px 16px; margin-bottom:10px; font-size:15px; font-weight:600; color:var(--ink-900);
+    font-family:inherit; cursor:pointer;
+  }
+  .btn-opt:active{background:var(--sand-200);}
+  .btn-opt .ic{font-size:22px;}
+  .btn-opt .sub{display:block; font-size:12.5px; font-weight:400; color:var(--ink-600); margin-top:2px;}
+  textarea{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:10px 12px;
+    font-family:inherit; font-size:14px; resize:vertical; min-height:80px; margin-bottom:10px;
+  }
+  .btn-primary{
+    width:100%; background:var(--teal-700); color:#fff; border:none; border-radius:12px;
+    padding:14px; font-size:15px; font-weight:700; font-family:inherit; cursor:pointer;
+  }
+  .btn-primary:disabled{opacity:.6;}
+  .btn-ghost{
+    width:100%; background:none; border:none; color:var(--teal-700); font-weight:700;
+    font-size:14px; padding:10px; font-family:inherit; cursor:pointer;
+  }
+  .ok-icon{font-size:40px; text-align:center; margin-bottom:6px;}
+  .ok-title{text-align:center; font-size:17px; font-weight:700; margin:0 0 4px;}
+  .ok-sub{text-align:center; font-size:14px; color:var(--ink-600); margin:0 0 18px;}
+  .error-box{text-align:center; color:var(--red-600); font-size:14px; padding:20px 0;}
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px);
+    background:var(--ink-900); color:#fff; padding:10px 16px; border-radius:10px; font-size:13px;
+    opacity:0; pointer-events:none; transition:.2s;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Bagua Bangalôs</h1>
+    <p id="acomodacaoLabel">Carregando…</p>
+  </header>
+  <div id="content"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var SUPABASE_URL = "https://uyqlkkwhtbwdorxssuxb.supabase.co";
+  var SUPABASE_ANON_KEY = "sb_publishable_SjZqlf6p1qP6p_kXeIvmZQ_CETTCP5R";
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Precisa bater exatamente com os ids inseridos em modulo_operacional.sql
+  var ACOMODACOES = {
+    "bangalo-loft":"Bangalô Loft",
+    "bangalo-panorama-01":"Bangalô Panorama 01",
+    "bangalo-panorama-02":"Bangalô Panorama 02",
+    "bangalo-bagua-01":"Bangalô Baguá 01",
+    "bangalo-bagua-02":"Bangalô Baguá 02",
+    "bangalo-bagua-03":"Bangalô Baguá 03",
+    "bangalo-bagua-04":"Bangalô Baguá 04",
+    "bangalo-safari-01":"Bangalô Safari 01",
+    "bangalo-safari-02":"Bangalô Safari 02",
+    "casa-maria":"Casa Maria",
+    "bangalo-preguica":"Bangalô Preguiça",
+    "joao-de-barro":"João de Barro",
+    "suite-cerrado-01":"Suite Cerrado 01",
+    "suite-cerrado-02":"Suite Cerrado 02",
+    "bangalo-yaya-01":"Bangalô Yaya 01",
+    "bangalo-yaya-02":"Bangalô Yaya 02",
+    "bangalo-yaya-03":"Bangalô Yaya 03",
+    "cabana-zazu-01":"Cabana Zazu 01",
+    "cabana-zazu-02":"Cabana Zazu 02",
+    "cabana-zazu-03":"Cabana Zazu 03"
+  };
+
+  function uid(){ return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+    });
+  }
+  function showToast(msg){
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("show");
+    setTimeout(function(){ t.classList.remove("show"); }, 2200);
+  }
+
+  var params = new URLSearchParams(window.location.search);
+  var slug = params.get("a");
+  var nome = slug ? ACOMODACOES[slug] : null;
+
+  var content = document.getElementById("content");
+  var label = document.getElementById("acomodacaoLabel");
+
+  if(!nome){
+    label.textContent = "";
+    content.innerHTML = '<div class="card error-box">Link inválido ou incompleto.<br>Por favor, fale com a recepção.</div>';
+    return;
+  }
+  label.textContent = nome;
+
+  function renderMenu(){
+    content.innerHTML =
+      '<div class="card">' +
+        '<button class="btn-opt" data-tipo="limpeza"><span class="ic">🧹</span><span><span>Quero que arrumem meu quarto</span><span class="sub">Nossa equipe vai até lá em breve</span></span></button>' +
+        '<button class="btn-opt" data-tipo="frigobar"><span class="ic">🥤</span><span><span>Reposição do frigobar</span><span class="sub">Bebidas e itens do frigobar</span></span></button>' +
+        '<button class="btn-opt" data-tipo="doces"><span class="ic">🍬</span><span><span>Reposição da cesta de doces</span><span class="sub">Cesta de doces da acomodação</span></span></button>' +
+        '<button class="btn-opt" data-tipo="reparo" style="margin-bottom:0;"><span class="ic">🔧</span><span><span>Algo não está funcionando</span><span class="sub">Reparo ou manutenção na acomodação</span></span></button>' +
+      '</div>';
+    content.querySelectorAll("[data-tipo]").forEach(function(b){
+      b.onclick = function(){
+        var tipo = b.getAttribute("data-tipo");
+        if(tipo === "reparo") renderReparoForm();
+        else enviarSolicitacao(tipo);
+      };
+    });
+  }
+
+  function renderReparoForm(){
+    content.innerHTML =
+      '<div class="card">' +
+        '<p style="margin:0 0 10px;font-size:14px;color:var(--ink-600);">Conte rapidamente o que precisa de reparo:</p>' +
+        '<textarea id="reparoTexto" placeholder="Ex: chuveiro sem água quente, luminária do quarto queimada..."></textarea>' +
+        '<button class="btn-primary" id="reparoEnviar">Enviar pedido</button>' +
+        '<button class="btn-ghost" id="reparoVoltar">‹ Voltar</button>' +
+      '</div>';
+    document.getElementById("reparoVoltar").onclick = renderMenu;
+    document.getElementById("reparoEnviar").onclick = function(){
+      var texto = document.getElementById("reparoTexto").value.trim();
+      if(!texto){ showToast("Descreva rapidamente o problema"); return; }
+      enviarReparo(texto);
+    };
+  }
+
+  async function enviarSolicitacao(tipo){
+    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
+    try{
+      var payload = {
+        id: uid(),
+        acomodacao_id: slug,
+        tipo: tipo,
+        contexto: (tipo === "limpeza" ? "estadia" : null),
+        origem: "hospede",
+        status: "pendente"
+      };
+      var res = await sb.from("solicitacoes_acomodacao").insert(payload);
+      if(res.error) throw res.error;
+      renderSucesso();
+    }catch(err){
+      console.error(err);
+      content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
+        '<button class="btn-ghost" id="tentarDeNovo">‹ Voltar</button>';
+      document.getElementById("tentarDeNovo").onclick = renderMenu;
+    }
+  }
+
+  async function enviarReparo(texto){
+    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
+    try{
+      var payload = {
+        id: uid(),
+        title: "Pedido do hóspede — " + nome,
+        local: nome,
+        description: texto,
+        status: "pendente",
+        origem: "hospede"
+      };
+      var res = await sb.from("manutencoes").insert(payload);
+      if(res.error) throw res.error;
+      renderSucesso();
+    }catch(err){
+      console.error(err);
+      content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
+        '<button class="btn-ghost" id="tentarDeNovo">‹ Voltar</button>';
+      document.getElementById("tentarDeNovo").onclick = renderMenu;
+    }
+  }
+
+  function renderSucesso(){
+    content.innerHTML =
+      '<div class="card">' +
+        '<div class="ok-icon">✅</div>' +
+        '<p class="ok-title">Pedido enviado!</p>' +
+        '<p class="ok-sub">Nossa equipe já foi avisada.</p>' +
+        '<button class="btn-primary" id="novoPedido">Fazer outro pedido</button>' +
+      '</div>';
+    document.getElementById("novoPedido").onclick = renderMenu;
+  }
+
+  renderMenu();
+})();
+</script>
+</body>
+</html>
