@@ -1500,7 +1500,10 @@
     var html = '<p class="count-intro">Para cada contagem: quantidade que tinha no dia, e quanto entrou/saiu desde a contagem anterior.</p>';
     sessions.forEach(function(s){
       html += '<div class="card">';
-      html += '<div class="section-title" style="margin-top:0;">'+fmtDate(s.date)+'</div>';
+      html += '<div class="section-title" style="margin-top:0;display:flex;justify-content:space-between;align-items:center;">' +
+        '<span>'+fmtDate(s.date)+'</span>' +
+        (podeEditar("estoque") ? '<button class="btn-edit" data-del-session="'+s.id+'" title="Excluir esta contagem" style="font-size:15px;">🗑️</button>' : '') +
+      '</div>';
       s.entries.forEach(function(e){
         var item = state.estoque.items.find(function(i){ return i.id === e.itemId; });
         var name = item ? item.name : "(item removido)";
@@ -1516,6 +1519,21 @@
       html += '</div>';
     });
     container.innerHTML = html;
+    container.querySelectorAll("[data-del-session]").forEach(function(b){
+      b.onclick = async function(){
+        if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+        if(!confirm("Excluir o registro dessa contagem? Isso não desfaz os ajustes de quantidade já aplicados — só remove o histórico.")) return;
+        var sid = b.getAttribute("data-del-session");
+        try{
+          await dbDelete("count_sessions", sid);
+          state.estoque.countSessions = state.estoque.countSessions.filter(function(x){ return x.id!==sid; });
+          showToast("Contagem excluída");
+          renderHistory();
+        }catch(err){
+          console.error(err); showToast("Erro ao excluir contagem");
+        }
+      };
+    });
   }
 
   // ---------- Report view ----------
@@ -2415,11 +2433,11 @@
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
         if(m.status === "pendente"){
           html += '<p class="item-meta">aberta em '+fmtDate(m.createdAt)+'</p>' +
-            '<div class="item-actions"><button class="btn btn-in" data-act="resolve" data-id="'+m.id+'">✓ Concluir</button></div>';
+            '<div class="item-actions"><button class="btn btn-in" data-act="resolve" data-id="'+m.id+'">✓ Concluir</button><button class="btn-edit" data-act="excluir" data-id="'+m.id+'" title="Excluir">🗑️</button></div>';
         } else {
           if(m.resolutionNote) html += '<p class="item-meta" style="margin-bottom:4px;"><em>'+escapeHtml(m.resolutionNote)+'</em></p>';
           html += '<p class="item-meta">concluída em '+fmtDate(m.resolvedAt)+'</p>' +
-            '<div class="item-actions"><button class="btn btn-out" data-act="reopen" data-id="'+m.id+'">↺ Reabrir</button></div>';
+            '<div class="item-actions"><button class="btn btn-out" data-act="reopen" data-id="'+m.id+'">↺ Reabrir</button><button class="btn-edit" data-act="excluir" data-id="'+m.id+'" title="Excluir">🗑️</button></div>';
         }
         html += '</div>';
       });
@@ -2454,6 +2472,11 @@
             var idx2 = state.manutencoes.findIndex(function(x){ return x.id===id; });
             if(idx2>-1) state.manutencoes[idx2] = m2;
             showToast("Manutenção reaberta"); renderApp();
+          } else if(act === "excluir"){
+            if(!confirm("Excluir esta manutenção? Não pode ser desfeito.")) return;
+            await dbDelete("manutencoes", id);
+            state.manutencoes = state.manutencoes.filter(function(x){ return x.id!==id; });
+            showToast("Manutenção excluída"); renderApp();
           }
         }catch(err){
           console.error(err); showToast("Erro ao atualizar manutenção");
