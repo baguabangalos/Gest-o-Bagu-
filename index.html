@@ -370,6 +370,8 @@
 <main id="adminView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
+<main id="recepcaoView" style="display:none;"></main>
+<main id="supervisaoView" style="display:none;"></main>
 
 <button class="fab" id="fab">+</button>
 
@@ -939,6 +941,14 @@
         h1.textContent = "Limpeza";
         sub.textContent = "Pedidos dos hóspedes — arrumação, frigobar, doces";
         alertPill.style.display = "none";
+      } else if(appSection === "recepcao"){
+        h1.textContent = "Recepção";
+        sub.textContent = "Acompanhamento dos pedidos em andamento";
+        alertPill.style.display = "none";
+      } else if(appSection === "supervisao"){
+        h1.textContent = "Supervisão";
+        sub.textContent = "Painel geral e histórico";
+        alertPill.style.display = "none";
       } else if(appSection === "hospedes"){
         h1.textContent = "Hóspedes";
         sub.textContent = "Documentos por CPF ou passaporte";
@@ -953,13 +963,15 @@
     if(sec==="manutencoes") return "manutencao";
     if(sec==="hospedes") return "hospedes";
     if(sec==="limpeza") return "limpeza";
-    if(sec==="admin") return null;
+    if(sec==="recepcao") return "recepcao";
+    if(sec==="admin" || sec==="supervisao") return null;
     return "procedimentos";
   }
 
   function renderApp(){
     if(appSection === "admin" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
-    else if(appSection !== "home" && appSection !== "admin" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
+    else if(appSection === "supervisao" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
+    else if(appSection !== "home" && appSection !== "admin" && appSection !== "supervisao" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
     renderHeader();
     document.getElementById("homeView").style.display = appSection==="home" ? "block":"none";
     document.getElementById("itemsView").style.display = (appSection==="estoque" && activeView==="items") ? "block":"none";
@@ -971,6 +983,8 @@
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
+    document.getElementById("recepcaoView").style.display = appSection==="recepcao" ? "block":"none";
+    document.getElementById("supervisaoView").style.display = appSection==="supervisao" ? "block":"none";
 
     document.getElementById("tabs").style.display = (appSection==="estoque" && activeView==="items") ? "flex":"none";
     document.querySelector("footer.bottom-nav").style.display = appSection==="estoque" ? "flex":"none";
@@ -1004,6 +1018,8 @@
     if(appSection === "admin") renderAdmin();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
+    if(appSection === "recepcao") renderRecepcao();
+    if(appSection === "supervisao") renderSupervisao();
   }
 
   document.querySelectorAll(".nav-btn").forEach(function(b){
@@ -1054,6 +1070,23 @@
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
+    if(podeVer("recepcao")){
+      var pendTotal = state.solicitacoes.filter(function(s){ return s.status!=="concluido"; }).length +
+        state.manutencoes.filter(function(m){ return m.status==="pendente" && m.origem==="hospede"; }).length;
+      var recepSub = pendTotal > 0 ? (pendTotal + (pendTotal===1?" pendência":" pendências")) : "tudo em dia";
+      cardsHtml +=
+      '<div class="card home-card" data-section="recepcao">' +
+        '<div class="home-card-ic">🛎️</div>' +
+        '<div class="home-card-main"><p class="home-card-title">Recepção</p><p class="home-card-sub">'+escapeHtml(recepSub)+'</p></div>' +
+        '<div class="home-card-arrow">›</div>' +
+      '</div>';
+    }
+    if(currentUser && currentUser.role === "admin") cardsHtml +=
+      '<div class="card home-card" data-section="supervisao">' +
+        '<div class="home-card-ic">📊</div>' +
+        '<div class="home-card-main"><p class="home-card-title">Supervisão</p><p class="home-card-sub">painel geral e histórico</p></div>' +
+        '<div class="home-card-arrow">›</div>' +
+      '</div>';
     if(currentUser && currentUser.role === "admin") cardsHtml +=
       '<div class="card home-card" data-section="admin">' +
         '<div class="home-card-ic">👤</div>' +
@@ -2406,6 +2439,120 @@
           console.error(err); showToast("Erro ao atualizar pedido");
         }
       };
+    });
+  }
+
+  // ---------- Recepção / Supervisão (painel de acompanhamento) ----------
+  function minutesAgo(ts){ return Math.max(0, Math.floor((Date.now()-ts)/60000)); }
+  function fmtDuration(mins){
+    if(mins < 60) return mins + "min";
+    var h = Math.floor(mins/60), m = mins%60;
+    return h+"h"+(m?(" "+m+"min"):"");
+  }
+
+  function buildPainelHtml(){
+    var pendentes = state.solicitacoes.filter(function(s){ return s.status==="pendente"; }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
+    var andamento = state.solicitacoes.filter(function(s){ return s.status==="em_andamento"; }).sort(function(a,b){ return (a.iniciadoEm||a.criadoEm)-(b.iniciadoEm||b.criadoEm); });
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
+      .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
+    var manutPendHospede = state.manutencoes.filter(function(m){ return m.status==="pendente" && m.origem==="hospede"; }).length;
+
+    var html = '<div class="card" style="display:flex;gap:10px;flex-wrap:wrap;">' +
+      '<div style="flex:1;min-width:80px;text-align:center;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--red-600);">'+pendentes.length+'</p><p style="font-size:11.5px;color:var(--ink-600);margin:2px 0 0;">Aguardando</p></div>' +
+      '<div style="flex:1;min-width:80px;text-align:center;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--amber-600);">'+andamento.length+'</p><p style="font-size:11.5px;color:var(--ink-600);margin:2px 0 0;">Em andamento</p></div>' +
+      '<div style="flex:1;min-width:80px;text-align:center;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--teal-700);">'+concluidosHoje.length+'</p><p style="font-size:11.5px;color:var(--ink-600);margin:2px 0 0;">Concluídos hoje</p></div>' +
+    '</div>';
+
+    if(manutPendHospede > 0){
+      html += '<div class="card" style="background:var(--amber-100);border-color:transparent;">' +
+        '<p style="margin:0;font-size:13.5px;font-weight:700;color:var(--amber-600);">🔧 '+manutPendHospede+(manutPendHospede===1?' pedido de reparo':' pedidos de reparo')+' aberto(s) pelos hóspedes — ver aba Manutenções</p>' +
+      '</div>';
+    }
+
+    function renderGrupo(titulo, lista){
+      var h = '<div class="section-title">'+titulo+' ('+lista.length+')</div>';
+      if(lista.length === 0){ h += '<div class="empty" style="padding:16px 0;">Nenhum agora.</div>'; return h; }
+      h += '<div class="card">';
+      lista.forEach(function(s, i){
+        var icon = TIPO_ICON[s.tipo] || "•";
+        var label = TIPO_LABEL[s.tipo] || s.tipo;
+        var itensTxt = "";
+        if(s.itens && s.itens.length){
+          itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
+        }
+        var wait;
+        if(s.status === "pendente"){
+          var m = minutesAgo(s.criadoEm);
+          var atraso = m >= 30;
+          wait = '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?"⚠️ ":"")+'esperando há '+fmtDuration(m)+'</p>';
+        } else if(s.status === "em_andamento"){
+          wait = '<p class="item-meta">em andamento há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+'</p>';
+        } else {
+          var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
+          wait = '<p class="item-meta">concluído às '+fmtDate(s.concluidoEm)+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
+        }
+        h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<p class="item-name" style="margin:0 0 2px;font-size:14px;">'+icon+' '+escapeHtml(label)+' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</span></p>' +
+          (itensTxt ? '<p class="item-meta">'+itensTxt+'</p>' : '') +
+          wait +
+        '</div>';
+      });
+      h += '</div>';
+      return h;
+    }
+
+    html += renderGrupo("🔴 Aguardando", pendentes);
+    html += renderGrupo("🟡 Em andamento", andamento);
+    html += renderGrupo("🟢 Concluídos hoje", concluidosHoje);
+    return html;
+  }
+
+  function renderRecepcao(){
+    document.getElementById("recepcaoView").innerHTML = buildPainelHtml();
+  }
+
+  var supervisaoPeriod = "7"; // '1' | '7' | '30'
+
+  function computeHistoricoSolicitacoes(days){
+    var since = Date.now() - days*24*3600*1000;
+    var items = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= since; })
+      .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
+    var durations = items.filter(function(s){ return s.criadoEm && s.concluidoEm; }).map(function(s){ return (s.concluidoEm-s.criadoEm)/60000; });
+    var avg = durations.length ? Math.round(durations.reduce(function(a,b){ return a+b; },0)/durations.length) : null;
+    return {items:items, avg:avg};
+  }
+
+  function renderSupervisao(){
+    var main = document.getElementById("supervisaoView");
+    var html = buildPainelHtml();
+    html += '<div class="section-title" style="margin-top:22px;">Histórico</div>';
+    html += '<div class="period-chips">' + ["1","7","30"].map(function(p){
+      var label = p==="1" ? "Hoje" : (p==="7" ? "7 dias" : "30 dias");
+      return '<button data-hperiod="'+p+'" class="'+(supervisaoPeriod===p?"active":"")+'">'+label+'</button>';
+    }).join("") + '</div>';
+    var hist = computeHistoricoSolicitacoes(parseInt(supervisaoPeriod,10));
+    if(hist.avg != null){
+      html += '<p class="count-intro">Tempo médio do pedido até concluído: <b>'+fmtDuration(hist.avg)+'</b> · '+hist.items.length+' concluído(s) no período</p>';
+    }
+    if(hist.items.length === 0){
+      html += '<div class="empty">Nenhum pedido concluído neste período.</div>';
+    } else {
+      html += '<div class="card">';
+      hist.items.forEach(function(s){
+        var icon = TIPO_ICON[s.tipo] || "•";
+        var label = TIPO_LABEL[s.tipo] || s.tipo;
+        var dur = (s.criadoEm && s.concluidoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
+        html += '<div class="move-row">' +
+          '<div>'+icon+' <strong>'+escapeHtml(label)+'</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId)) +
+          (dur!=null ? ('<br><span style="color:var(--ink-400);font-size:12px;">levou '+fmtDuration(dur)+'</span>') : '') +
+          '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
+      });
+      html += '</div>';
+    }
+    main.innerHTML = html;
+    main.querySelectorAll("[data-hperiod]").forEach(function(b){
+      b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); renderSupervisao(); };
     });
   }
 
