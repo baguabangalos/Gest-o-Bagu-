@@ -2505,12 +2505,13 @@
         }
         html += '<p class="item-meta">'+STATUS_LABEL[s.status]+' · pedido às '+fmtDate(s.criadoEm)+'</p>';
         if(s.status === "pendente"){
-          html += '<div class="item-actions"><button class="btn btn-in" data-act="iniciar" data-id="'+s.id+'">▶ Iniciar</button></div>';
+          html += '<div class="item-actions"><button class="btn btn-in" data-act="iniciar" data-id="'+s.id+'">▶ Iniciar</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
         } else if(s.status === "em_andamento"){
           html += '<p class="item-meta">iniciado às '+fmtDate(s.iniciadoEm)+'</p>' +
-            '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button></div>';
+            '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
         } else {
-          html += '<p class="item-meta">concluído às '+fmtDate(s.concluidoEm)+'</p>';
+          html += '<p class="item-meta">concluído às '+fmtDate(s.concluidoEm)+'</p>' +
+            '<div class="item-actions"><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
         }
         html += '</div>';
       });
@@ -2538,6 +2539,11 @@
             var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx2>-1) state.solicitacoes[idx2] = s2;
             showToast("Pedido concluído"); renderApp();
+          } else if(act === "excluir"){
+            if(!confirm("Excluir este pedido? Não pode ser desfeito.")) return;
+            await dbDelete("solicitacoes_acomodacao", id);
+            state.solicitacoes = state.solicitacoes.filter(function(x){ return x.id!==id; });
+            showToast("Pedido excluído"); renderApp();
           }
         }catch(err){
           console.error(err); showToast("Erro ao atualizar pedido");
