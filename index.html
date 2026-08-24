@@ -664,11 +664,14 @@
       sb.from("manutencoes").select("*").order("created_at", {ascending:false}),
       sb.from("hospedin_ocupacao").select("*"),
       sb.from("acomodacoes").select("*").order("ordem"),
-      sb.from("solicitacoes_acomodacao").select("*").order("criado_em", {ascending:false})
+      sb.from("solicitacoes_acomodacao").select("*").order("criado_em", {ascending:false}),
+      sb.from("staff_names").select("*")
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
-    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8];
+    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9];
     var hospedinOcupacao = hospedinRes.data || [];
+    var staffNames = {};
+    (staffRes.data||[]).forEach(function(p){ staffNames[p.id] = p.nome; });
     return {
       estoque: {
         items: (itemsRes.data||[]).map(mapItemFromRow),
@@ -681,7 +684,8 @@
       procedimentos: (procRes.data||[]).map(mapProcedimentoFromRow),
       manutencoes: (manRes.data||[]).map(mapManutencaoFromRow),
       acomodacoes: (acoRes.data||[]).map(mapAcomodacaoFromRow),
-      solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow)
+      solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow),
+      staffNames: staffNames
     };
   }
 
@@ -805,6 +809,9 @@
     document.getElementById("appShell").style.display = "";
     document.getElementById("userBadge").textContent = currentUser.nome + (currentUser.role==="admin" ? " · admin" : "");
     state = await loadAllFromSupabase();
+    if(currentUser.role === "admin" || podeVer("limpeza") || podeVer("recepcao")){
+      await garantirTarefasLavagemHoje();
+    }
     renderApp();
     setupRealtimeNotifications();
     if(("serviceWorker" in navigator) && ("PushManager" in window) &&
@@ -975,9 +982,11 @@
       realtimeChannel.on("postgres_changes", {event:"INSERT", schema:"public", table:"solicitacoes_acomodacao"}, function(payload){
         var s = mapSolicitacaoFromRow(payload.new);
         if(!state.solicitacoes.some(function(x){ return x.id===s.id; })) state.solicitacoes.unshift(s);
-        playNotifySound();
-        var label = TIPO_LABEL[s.tipo] || s.tipo;
-        showToast("🔔 Novo pedido: " + label + " — " + acomodacaoNome(s.acomodacaoId));
+        if(payload.new.origem === "hospede"){
+          playNotifySound();
+          var label = TIPO_LABEL[s.tipo] || s.tipo;
+          showToast("🔔 Novo pedido: " + label + " — " + acomodacaoNome(s.acomodacaoId));
+        }
         renderApp();
       });
     }
@@ -2485,9 +2494,9 @@
     });
   }
 
-  // ---------- Limpeza (pedidos feitos pelos hóspedes) ----------
-  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces"};
-  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤"};
+  // ---------- Limpeza (pedidos de hóspede + tarefas do dia) ----------
+  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto"};
+  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️"};
   var STATUS_DOT = {pendente:"🔴", em_andamento:"🟡", concluido:"🟢"};
   var STATUS_LABEL = {pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
@@ -2497,15 +2506,174 @@
     return a ? a.nome : id;
   }
 
+  function nomeStaff(id){
+    if(!id) return "alguém";
+    return (state.staffNames && state.staffNames[id]) || "alguém";
+  }
+
+  function tipoLabelCompleto(s){
+    var base = TIPO_LABEL[s.tipo] || s.tipo;
+    if(s.tipo === "lavagem"){
+      if(s.contexto === "checkin_checkout") return base + " · Check-in e Checkout";
+      if(s.contexto === "checkin") return base + " · Check-in";
+      if(s.contexto === "checkout") return base + " · Checkout";
+    }
+    if(s.tipo === "limpeza" && s.contexto === "estadia") return base + " · Manutenção";
+    return base;
+  }
+
+  function podeAgirSolicitacao(s){
+    if(!currentUser) return false;
+    if(currentUser.role === "admin") return true;
+    if(s.tipo === "frigobar") return podeEditar("limpeza") || podeEditar("recepcao");
+    return podeEditar("limpeza");
+  }
+
+  // Card reutilizado em Limpeza, Recepção e Supervisão — mesma informação,
+  // mesmas ações, sempre mostrando quem fez o quê.
+  function renderSolicitacaoCard(s){
+    var icon = TIPO_ICON[s.tipo] || "•";
+    var label = tipoLabelCompleto(s);
+    var html = '<p class="item-name" style="margin:0 0 3px;">'+STATUS_DOT[s.status]+' '+icon+' '+escapeHtml(label)+
+      ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</span></p>';
+    if(s.itens && s.itens.length){
+      var itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
+      html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
+    }
+    if(s.status === "pendente"){
+      var m = minutesAgo(s.criadoEm);
+      var atraso = m >= 30;
+      html += '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?"⚠️ ":"")+'esperando há '+fmtDuration(m)+'</p>';
+    } else if(s.status === "em_andamento"){
+      html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+'</p>';
+    } else {
+      var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
+      var verbo = s.tipo === "frigobar" ? "abastecido" : "concluído";
+      html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
+    }
+    if(podeAgirSolicitacao(s)){
+      if(s.status === "pendente"){
+        var acaoLabel = s.tipo === "frigobar" ? "✓ Abasteceu" : "▶ Iniciar";
+        var acaoAct = s.tipo === "frigobar" ? "finalizar" : "iniciar";
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
+      } else if(s.status === "em_andamento"){
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
+      } else {
+        html += '<div class="item-actions"><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
+      }
+    }
+    return html;
+  }
+
+  function wireSolicitacaoActions(container){
+    container.querySelectorAll("button[data-act]").forEach(function(b){
+      b.onclick = async function(e){
+        e.stopPropagation();
+        var id = b.getAttribute("data-id");
+        var s = state.solicitacoes.find(function(x){ return x.id===id; });
+        if(!s) return;
+        if(!podeAgirSolicitacao(s)){ showToast("Você não tem permissão para essa ação"); return; }
+        var act = b.getAttribute("data-act");
+        try{
+          if(act === "iniciar"){
+            var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+            var idx1 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idx1>-1) state.solicitacoes[idx1] = s1;
+            showToast("Iniciado"); renderApp();
+          } else if(act === "finalizar"){
+            var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+            var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idx2>-1) state.solicitacoes[idx2] = s2;
+            showToast(s.tipo==="frigobar" ? "Abastecimento registrado" : "Concluído"); renderApp();
+          } else if(act === "excluir"){
+            if(!confirm("Excluir este pedido? Não pode ser desfeito.")) return;
+            await dbDelete("solicitacoes_acomodacao", id);
+            state.solicitacoes = state.solicitacoes.filter(function(x){ return x.id!==id; });
+            showToast("Excluído"); renderApp();
+          }
+        }catch(err){
+          console.error(err); showToast("Erro ao atualizar pedido");
+        }
+      };
+    });
+  }
+
+  // Gera automaticamente as tarefas de preparo do dia (check-in/checkout)
+  // a partir dos dados sincronizados do Hospedin, uma vez por dia por acomodação.
+  async function garantirTarefasLavagemHoje(){
+    if(!state.estoque.hospedinOcupacao || state.estoque.hospedinOcupacao.length === 0) return;
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var hojeFim = new Date(hojeInicio.getTime() + 24*3600*1000);
+
+    var nomeToId = {};
+    state.acomodacoes.forEach(function(a){ nomeToId[a.nome] = a.id; });
+
+    var acomodacoesHoje = {};
+    state.estoque.hospedinOcupacao.forEach(function(r){
+      if(r.status === "cancelled") return;
+      var id = nomeToId[r.acomodacao];
+      if(!id) return;
+      var ci = new Date(r.checkin).getTime();
+      var co = new Date(r.checkout).getTime();
+      if(ci >= hojeInicio.getTime() && ci < hojeFim.getTime()){
+        acomodacoesHoje[id] = acomodacoesHoje[id] || {}; acomodacoesHoje[id].checkin = true;
+      }
+      if(co >= hojeInicio.getTime() && co < hojeFim.getTime()){
+        acomodacoesHoje[id] = acomodacoesHoje[id] || {}; acomodacoesHoje[id].checkout = true;
+      }
+    });
+
+    var idsComTarefa = {};
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo === "lavagem" && s.criadoEm >= hojeInicio.getTime() && s.criadoEm < hojeFim.getTime()){
+        idsComTarefa[s.acomodacaoId] = true;
+      }
+    });
+
+    var idsNovos = Object.keys(acomodacoesHoje).filter(function(id){ return !idsComTarefa[id]; });
+    for(var i=0;i<idsNovos.length;i++){
+      var id = idsNovos[i];
+      var info = acomodacoesHoje[id];
+      var contexto = (info.checkin && info.checkout) ? "checkin_checkout" : (info.checkin ? "checkin" : "checkout");
+      try{
+        var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:"pendente"};
+        var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+        state.solicitacoes.unshift(s);
+      }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
+    }
+  }
+
+  function statsHojeLimpeza(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var hojeFim = new Date(hojeInicio.getTime()+24*3600*1000);
+    var checkins = 0, checkouts = 0;
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(r.status === "cancelled") return;
+      var ci = new Date(r.checkin).getTime();
+      var co = new Date(r.checkout).getTime();
+      if(ci>=hojeInicio.getTime() && ci<hojeFim.getTime()) checkins++;
+      if(co>=hojeInicio.getTime() && co<hojeFim.getTime()) checkouts++;
+    });
+    var manutPend = state.solicitacoes.filter(function(s){ return s.tipo==="limpeza" && s.contexto==="estadia" && s.status!=="concluido"; }).length;
+    return {checkins:checkins, checkouts:checkouts, manutPend:manutPend};
+  }
+
   function renderLimpeza(){
     var main = document.getElementById("limpezaView");
+    var stats = statsHojeLimpeza();
     var abertos = state.solicitacoes.filter(function(s){ return s.status!=="concluido"; })
       .sort(function(a,b){ return a.criadoEm-b.criadoEm; });
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
       .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
 
-    var html = '<div class="seg-toggle">' +
+    var html = '<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--teal-900);">'+stats.checkins+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Check-ins hoje</p></div>' +
+      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--teal-900);">'+stats.checkouts+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Lavagem hoje</p></div>' +
+      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--amber-600);">'+stats.manutPend+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Manutenção pendente</p></div>' +
+    '</div>';
+
+    html += '<div class="seg-toggle">' +
       '<button data-lsub="abertos" class="'+(limpezaSubView==="abertos"?"active":"")+'">Em aberto'+(abertos.length?(' · '+abertos.length):'')+'</button>' +
       '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
     '</div>';
@@ -2515,64 +2683,14 @@
       html += '<div class="empty">'+(limpezaSubView==="abertos" ? "Nenhum pedido em aberto." : "Nenhum pedido concluído hoje ainda.")+'</div>';
     } else {
       list.forEach(function(s){
-        var icon = TIPO_ICON[s.tipo] || "•";
-        var label = TIPO_LABEL[s.tipo] || s.tipo;
-        html += '<div class="card manut-card">' +
-          '<p class="item-name" style="margin:0 0 3px;">'+STATUS_DOT[s.status]+' '+icon+' '+escapeHtml(label)+
-            ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</span></p>';
-        if(s.itens && s.itens.length){
-          var itensTxt = s.itens.map(function(it){
-            return escapeHtml(it.nome) + (it.quantidade ? ' ('+it.quantidade+')' : '');
-          }).join(", ");
-          html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
-        }
-        html += '<p class="item-meta">'+STATUS_LABEL[s.status]+' · pedido às '+fmtDate(s.criadoEm)+'</p>';
-        if(s.status === "pendente"){
-          html += '<div class="item-actions"><button class="btn btn-in" data-act="iniciar" data-id="'+s.id+'">▶ Iniciar</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
-        } else if(s.status === "em_andamento"){
-          html += '<p class="item-meta">iniciado às '+fmtDate(s.iniciadoEm)+'</p>' +
-            '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
-        } else {
-          html += '<p class="item-meta">concluído às '+fmtDate(s.concluidoEm)+'</p>' +
-            '<div class="item-actions"><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
-        }
-        html += '</div>';
+        html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
       });
     }
     main.innerHTML = html;
     main.querySelectorAll("[data-lsub]").forEach(function(b){
       b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza(); };
     });
-    main.querySelectorAll("button[data-act]").forEach(function(b){
-      b.onclick = async function(e){
-        e.stopPropagation();
-        if(!podeEditar("limpeza")){ showToast("Você não tem permissão para atualizar pedidos de limpeza"); return; }
-        var id = b.getAttribute("data-id");
-        var s = state.solicitacoes.find(function(x){ return x.id===id; });
-        if(!s) return;
-        var act = b.getAttribute("data-act");
-        try{
-          if(act === "iniciar"){
-            var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
-            var idx1 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
-            if(idx1>-1) state.solicitacoes[idx1] = s1;
-            showToast("Pedido iniciado"); renderApp();
-          } else if(act === "finalizar"){
-            var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
-            var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
-            if(idx2>-1) state.solicitacoes[idx2] = s2;
-            showToast("Pedido concluído"); renderApp();
-          } else if(act === "excluir"){
-            if(!confirm("Excluir este pedido? Não pode ser desfeito.")) return;
-            await dbDelete("solicitacoes_acomodacao", id);
-            state.solicitacoes = state.solicitacoes.filter(function(x){ return x.id!==id; });
-            showToast("Pedido excluído"); renderApp();
-          }
-        }catch(err){
-          console.error(err); showToast("Erro ao atualizar pedido");
-        }
-      };
-    });
+    wireSolicitacaoActions(main);
   }
 
   // ---------- Recepção / Supervisão (painel de acompanhamento) ----------
@@ -2608,28 +2726,7 @@
       if(lista.length === 0){ h += '<div class="empty" style="padding:16px 0;">Nenhum agora.</div>'; return h; }
       h += '<div class="card">';
       lista.forEach(function(s, i){
-        var icon = TIPO_ICON[s.tipo] || "•";
-        var label = TIPO_LABEL[s.tipo] || s.tipo;
-        var itensTxt = "";
-        if(s.itens && s.itens.length){
-          itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
-        }
-        var wait;
-        if(s.status === "pendente"){
-          var m = minutesAgo(s.criadoEm);
-          var atraso = m >= 30;
-          wait = '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?"⚠️ ":"")+'esperando há '+fmtDuration(m)+'</p>';
-        } else if(s.status === "em_andamento"){
-          wait = '<p class="item-meta">em andamento há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+'</p>';
-        } else {
-          var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-          wait = '<p class="item-meta">concluído às '+fmtDate(s.concluidoEm)+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
-        }
-        h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
-          '<p class="item-name" style="margin:0 0 2px;font-size:14px;">'+icon+' '+escapeHtml(label)+' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</span></p>' +
-          (itensTxt ? '<p class="item-meta">'+itensTxt+'</p>' : '') +
-          wait +
-        '</div>';
+        h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' + renderSolicitacaoCard(s) + '</div>';
       });
       h += '</div>';
       return h;
@@ -2642,7 +2739,9 @@
   }
 
   function renderRecepcao(){
-    document.getElementById("recepcaoView").innerHTML = buildPainelHtml();
+    var main = document.getElementById("recepcaoView");
+    main.innerHTML = buildPainelHtml();
+    wireSolicitacaoActions(main);
   }
 
   var supervisaoPeriod = "7"; // '1' | '7' | '30'
@@ -2687,6 +2786,7 @@
     main.querySelectorAll("[data-hperiod]").forEach(function(b){
       b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); renderSupervisao(); };
     });
+    wireSolicitacaoActions(main);
   }
 
   // ---------- Administração (usuários e permissões) ----------
