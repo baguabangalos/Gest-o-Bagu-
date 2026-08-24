@@ -355,6 +355,7 @@
   <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
     <span id="userBadge" style="font-size:12px;color:var(--ink-400,#888);"></span>
     <button type="button" id="logoutBtn" class="link-btn" style="font-size:12px;">Sair</button>
+    <button type="button" id="enableNotifBtn" class="link-btn" style="font-size:12px;display:none;">🔔 Ativar notificações</button>
   </div>
 </header>
 
@@ -590,6 +591,7 @@
   // ---------- Supabase ----------
   var SUPABASE_URL = "https://uyqlkkwhtbwdorxssuxb.supabase.co";
   var SUPABASE_ANON_KEY = "sb_publishable_SjZqlf6p1qP6p_kXeIvmZQ_CETTCP5R"; // Publishable key (Settings > API Keys)
+  var VAPID_PUBLIC_KEY = "BOdPayA7TM7NbST3dl0BU0YKe0u96t8tusDrhwiae-kbl0ZgRtl_cmuL-F6afW2LzASWDV6SYVdPED7MAwp_jS4";
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção"];
@@ -780,6 +782,7 @@
 
   document.getElementById("logoutBtn").onclick = async function(){
     await sb.auth.signOut();
+    if(realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
     currentUser = null;
     state = null;
     document.getElementById("appShell").style.display = "none";
@@ -803,6 +806,11 @@
     document.getElementById("userBadge").textContent = currentUser.nome + (currentUser.role==="admin" ? " · admin" : "");
     state = await loadAllFromSupabase();
     renderApp();
+    setupRealtimeNotifications();
+    if(("serviceWorker" in navigator) && ("PushManager" in window) &&
+       (podeVer("limpeza") || podeVer("recepcao") || podeVer("manutencao"))){
+      document.getElementById("enableNotifBtn").style.display = "inline-flex";
+    }
   }
 
   document.addEventListener("visibilitychange", function(){
@@ -888,6 +896,102 @@
     t.textContent = msg;
     t.classList.add("show");
     setTimeout(function(){ t.classList.remove("show"); }, 1800);
+  }
+
+  // ---------- Notificação sonora de pedidos novos (tempo real) ----------
+  function playNotifySound(){
+    try{
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var now = ctx.currentTime;
+      [880, 1175].forEach(function(freq, i){
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + i*0.16);
+        gain.gain.exponentialRampToValueAtTime(0.25, now + i*0.16 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + i*0.16 + 0.28);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(now + i*0.16);
+        osc.stop(now + i*0.16 + 0.3);
+      });
+    }catch(err){ console.error("Som de notificação falhou:", err); }
+  }
+
+  // ---------- Notificação push (funciona mesmo com o app fechado) ----------
+  function urlBase64ToUint8Array(base64String){
+    var padding = "=".repeat((4 - base64String.length % 4) % 4);
+    var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var rawData = window.atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  }
+
+  async function ativarNotificacoesPush(){
+    if(!("serviceWorker" in navigator) || !("PushManager" in window)){
+      showToast("Esse navegador não suporta notificações push");
+      return;
+    }
+    try{
+      var reg = await navigator.serviceWorker.register("sw.js");
+      var permission = await Notification.requestPermission();
+      if(permission !== "granted"){
+        showToast("Notificações não autorizadas neste aparelho");
+        return;
+      }
+      var existing = await reg.pushManager.getSubscription();
+      var sub = existing || await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+      var subJson = sub.toJSON();
+      await sb.from("push_subscriptions").upsert({
+        id: uid(),
+        user_id: currentUser.id,
+        endpoint: subJson.endpoint,
+        p256dh: subJson.keys.p256dh,
+        auth: subJson.keys.auth
+      }, {onConflict:"endpoint"});
+      showToast("Notificações ativadas neste aparelho!");
+    }catch(err){
+      console.error(err);
+      showToast("Não consegui ativar as notificações — tente de novo");
+    }
+  }
+
+  document.getElementById("enableNotifBtn").onclick = ativarNotificacoesPush;
+
+  var realtimeChannel = null;
+  function setupRealtimeNotifications(){
+    if(realtimeChannel) return; // já configurado nesta sessão
+    var ouveSolicitacoes = podeVer("limpeza") || podeVer("recepcao");
+    var ouveManutencao = podeVer("manutencao") || podeVer("recepcao");
+    if(!ouveSolicitacoes && !ouveManutencao) return;
+
+    realtimeChannel = sb.channel("pedidos-hospedes");
+
+    if(ouveSolicitacoes){
+      realtimeChannel.on("postgres_changes", {event:"INSERT", schema:"public", table:"solicitacoes_acomodacao"}, function(payload){
+        var s = mapSolicitacaoFromRow(payload.new);
+        if(!state.solicitacoes.some(function(x){ return x.id===s.id; })) state.solicitacoes.unshift(s);
+        playNotifySound();
+        var label = TIPO_LABEL[s.tipo] || s.tipo;
+        showToast("🔔 Novo pedido: " + label + " — " + acomodacaoNome(s.acomodacaoId));
+        renderApp();
+      });
+    }
+    if(ouveManutencao){
+      realtimeChannel.on("postgres_changes", {event:"INSERT", schema:"public", table:"manutencoes"}, function(payload){
+        if(payload.new.origem !== "hospede") return;
+        var m = mapManutencaoFromRow(payload.new);
+        if(!state.manutencoes.some(function(x){ return x.id===m.id; })) state.manutencoes.unshift(m);
+        playNotifySound();
+        showToast("🔔 Novo pedido de reparo — " + (m.local||""));
+        renderApp();
+      });
+    }
+    realtimeChannel.subscribe();
   }
 
   function itemsByCategory(cat){
