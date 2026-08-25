@@ -2210,12 +2210,23 @@
   hospedinSyncOverlay.addEventListener("click", function(e){ if(e.target===hospedinSyncOverlay) closeHospedinSync(); });
 
   // ---------- Sincronização com Hospedin (via Edge Function no servidor) ----------
+  // O Hospedin manda checkin/checkout como data pura ("2026-08-25", sem hora).
+  // new Date("2026-08-25") interpreta isso como meia-noite em UTC, o que em
+  // horários atrás de UTC (Brasil) empurra pro dia anterior. Esta função lê
+  // a data como meia-noite no horário local, evitando esse desvio.
+  function parseDataLocal(dateStr){
+    if(!dateStr) return null;
+    var soData = String(dateStr).slice(0,10);
+    var partes = soData.split("-");
+    return new Date(parseInt(partes[0],10), parseInt(partes[1],10)-1, parseInt(partes[2],10));
+  }
+
   function summarizeOccupancy(rows, rangeStart, rangeEnd){
     var seen = {};
     rows.forEach(function(r){
       if(r.status === "cancelled") return;
-      var ci = new Date(r.checkin).getTime();
-      var co = new Date(r.checkout).getTime();
+      var ci = parseDataLocal(r.checkin).getTime();
+      var co = parseDataLocal(r.checkout).getTime();
       if(ci < rangeEnd && co > rangeStart){
         seen[r.acomodacao] = true;
       }
@@ -2613,8 +2624,8 @@
       if(r.status === "cancelled") return;
       var id = nomeToId[r.acomodacao];
       if(!id) return;
-      var ci = new Date(r.checkin).getTime();
-      var co = new Date(r.checkout).getTime();
+      var ci = parseDataLocal(r.checkin).getTime();
+      var co = parseDataLocal(r.checkout).getTime();
       if(ci >= hojeInicio.getTime() && ci < hojeFim.getTime()){
         acomodacoesHoje[id] = acomodacoesHoje[id] || {}; acomodacoesHoje[id].checkin = true;
       }
@@ -2649,8 +2660,8 @@
     var checkins = 0, checkouts = 0;
     (state.estoque.hospedinOcupacao||[]).forEach(function(r){
       if(r.status === "cancelled") return;
-      var ci = new Date(r.checkin).getTime();
-      var co = new Date(r.checkout).getTime();
+      var ci = parseDataLocal(r.checkin).getTime();
+      var co = parseDataLocal(r.checkout).getTime();
       if(ci>=hojeInicio.getTime() && ci<hojeFim.getTime()) checkins++;
       if(co>=hojeInicio.getTime() && co<hojeFim.getTime()) checkouts++;
     });
