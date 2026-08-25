@@ -2532,6 +2532,24 @@
     return a ? a.nome : id;
   }
 
+  // Busca adultos/crianças/observação da reserva de check-in de hoje
+  // pra essa acomodação (usado nos cards de "Preparo do quarto").
+  function checkinInfoHoje(acomodacaoId){
+    var a = state.acomodacoes.find(function(x){ return x.id===acomodacaoId; });
+    if(!a || !a.codigoHospedin) return null;
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var hojeFim = new Date(hojeInicio.getTime()+24*3600*1000);
+    var encontrada = null;
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      if(r.acomodacao !== a.codigoHospedin) return;
+      var ci = parseDataLocal(r.checkin).getTime();
+      if(ci >= hojeInicio.getTime() && ci < hojeFim.getTime()) encontrada = r;
+    });
+    if(!encontrada) return null;
+    return {adultos:encontrada.adultos, criancas:encontrada.criancas, observacao:encontrada.observacao};
+  }
+
   function nomeStaff(id){
     if(!id) return "alguém";
     return (state.staffNames && state.staffNames[id]) || "alguém";
@@ -2566,6 +2584,21 @@
     if(s.itens && s.itens.length){
       var itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
       html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
+    }
+    if(s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1){
+      var info = checkinInfoHoje(s.acomodacaoId);
+      if(info){
+        var totalHospedes = (info.adultos||0) + (info.criancas||0);
+        if(totalHospedes > 0){
+          var partes = [];
+          if(info.adultos) partes.push(info.adultos + (info.adultos===1?" adulto":" adultos"));
+          if(info.criancas) partes.push(info.criancas + (info.criancas===1?" criança":" crianças"));
+          html += '<p class="item-meta" style="font-weight:600;">👥 '+totalHospedes+(totalHospedes===1?" hóspede":" hóspedes")+' ('+partes.join(", ")+')</p>';
+        }
+        if(info.observacao){
+          html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">📝 '+escapeHtml(info.observacao)+'</p>';
+        }
+      }
     }
     if(s.status === "bloqueada"){
       html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">🔒 Aguardando recepção liberar</p>';
