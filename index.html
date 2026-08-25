@@ -635,7 +635,8 @@
       status:r.status, criadoEm:new Date(r.criado_em).getTime(),
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
       concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null),
-      iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null};
+      iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null,
+      liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null)};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -2506,10 +2507,10 @@
   }
 
   // ---------- Limpeza (pedidos de hóspede + tarefas do dia) ----------
-  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto"};
-  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️"};
-  var STATUS_DOT = {pendente:"🔴", em_andamento:"🟡", concluido:"🟢"};
-  var STATUS_LABEL = {pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
+  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto", ventilacao:"Fechar acomodação"};
+  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️", ventilacao:"💨"};
+  var STATUS_DOT = {bloqueada:"🔒", pendente:"🔴", em_andamento:"🟡", concluido:"🟢"};
+  var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
 
   function acomodacaoNome(id){
@@ -2536,6 +2537,7 @@
   function podeAgirSolicitacao(s){
     if(!currentUser) return false;
     if(currentUser.role === "admin") return true;
+    if(s.status === "bloqueada") return podeEditar("recepcao");
     if(s.tipo === "frigobar") return podeEditar("limpeza") || podeEditar("recepcao");
     return podeEditar("limpeza");
   }
@@ -2551,21 +2553,31 @@
       var itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
       html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
     }
-    if(s.status === "pendente"){
+    if(s.status === "bloqueada"){
+      html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">🔒 Aguardando recepção liberar</p>';
+    } else if(s.status === "pendente"){
       var m = minutesAgo(s.criadoEm);
-      var atraso = m >= 30;
-      html += '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?"⚠️ ":"")+'esperando há '+fmtDuration(m)+'</p>';
+      if(s.tipo === "ventilacao"){
+        html += '<p class="item-meta">aberta por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(m)+'</p>';
+      } else {
+        var atraso = m >= 30;
+        html += '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?"⚠️ ":"")+'esperando há '+fmtDuration(m)+'</p>';
+      }
+      if(s.liberadoPor) html += '<p class="item-meta">liberado por '+escapeHtml(nomeStaff(s.liberadoPor))+'</p>';
     } else if(s.status === "em_andamento"){
       html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+'</p>';
     } else {
       var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-      var verbo = s.tipo === "frigobar" ? "abastecido" : "concluído";
+      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : "concluído");
       html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
     }
     if(podeAgirSolicitacao(s)){
-      if(s.status === "pendente"){
-        var acaoLabel = s.tipo === "frigobar" ? "✓ Abasteceu" : "▶ Iniciar";
-        var acaoAct = s.tipo === "frigobar" ? "finalizar" : "iniciar";
+      if(s.status === "bloqueada"){
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">🔓 Liberar</button></div>';
+      } else if(s.status === "pendente"){
+        var acaoLabel = "▶ Iniciar", acaoAct = "iniciar";
+        if(s.tipo === "frigobar"){ acaoLabel = "✓ Abasteceu"; acaoAct = "finalizar"; }
+        else if(s.tipo === "ventilacao"){ acaoLabel = "✓ Fechou"; acaoAct = "finalizar"; }
         html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
       } else if(s.status === "em_andamento"){
         html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
@@ -2591,6 +2603,11 @@
             var idx1 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx1>-1) state.solicitacoes[idx1] = s1;
             showToast("Iniciado"); renderApp();
+          } else if(act === "liberar"){
+            var s0 = await dbUpdate("solicitacoes_acomodacao", id, {status:"pendente", liberado_em:new Date().toISOString(), liberado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+            var idx0 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idx0>-1) state.solicitacoes[idx0] = s0;
+            showToast("Liberado para a limpeza"); renderApp();
           } else if(act === "finalizar"){
             var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
             var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
@@ -2647,11 +2664,57 @@
       var info = acomodacoesHoje[id];
       var contexto = (info.checkin && info.checkout) ? "checkin_checkout" : (info.checkin ? "checkin" : "checkout");
       try{
-        var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:"pendente"};
+        var statusInicial = (contexto === "checkin") ? "pendente" : "bloqueada";
+        var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:statusInicial};
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
       }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
     }
+  }
+
+  // Todas as acomodações com estadia cobrindo hoje (chegaram até hoje, ainda não saíram) —
+  // usado tanto pro contador "Limpeza" quanto pra saber quais ainda não pediram nada.
+  function acomodacoesOcupadasHojeIds(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var nomeToId = {};
+    state.acomodacoes.forEach(function(a){ nomeToId[a.nome] = a.id; });
+    var ids = {};
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(r.status === "cancelled") return;
+      var id = nomeToId[r.acomodacao];
+      if(!id) return;
+      var ci = parseDataLocal(r.checkin).getTime();
+      var co = parseDataLocal(r.checkout).getTime();
+      if(ci <= hojeInicio.getTime() && co > hojeInicio.getTime()) ids[id] = true;
+    });
+    return Object.keys(ids);
+  }
+
+  // Acomodações ocupadas hoje que ainda não têm nenhum pedido de limpeza
+  // (meio da estadia) registrado hoje — viram o card com cadeado.
+  function acomodacoesLimpezaBloqueadasHoje(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var comSolicitacaoHoje = {};
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo === "limpeza" && s.contexto === "estadia" && s.criadoEm >= hojeInicio.getTime()){
+        comSolicitacaoHoje[s.acomodacaoId] = true;
+      }
+    });
+    return acomodacoesOcupadasHojeIds().filter(function(id){ return !comSolicitacaoHoje[id]; });
+  }
+
+  // Acomodações vazias hoje, sem check-in previsto — elegíveis pra ventilação.
+  function acomodacoesElegiveisVentilacao(){
+    var ocupadasIds = {};
+    acomodacoesOcupadasHojeIds().forEach(function(id){ ocupadasIds[id] = true; });
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var comVentilacaoAberta = {};
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo === "ventilacao" && s.status !== "concluido" && s.criadoEm >= hojeInicio.getTime()){
+        comVentilacaoAberta[s.acomodacaoId] = true;
+      }
+    });
+    return state.acomodacoes.filter(function(a){ return !ocupadasIds[a.id] && !comVentilacaoAberta[a.id]; });
   }
 
   function statsHojeLimpeza(){
@@ -2665,8 +2728,9 @@
       if(ci>=hojeInicio.getTime() && ci<hojeFim.getTime()) checkins++;
       if(co>=hojeInicio.getTime() && co<hojeFim.getTime()) checkouts++;
     });
-    var manutPend = state.solicitacoes.filter(function(s){ return s.tipo==="limpeza" && s.contexto==="estadia" && s.status!=="concluido"; }).length;
-    return {checkins:checkins, checkouts:checkouts, manutPend:manutPend};
+    var limpeza = acomodacoesOcupadasHojeIds().length;
+    var concluidas = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm>=hojeInicio.getTime(); }).length;
+    return {checkins:checkins, checkouts:checkouts, limpeza:limpeza, concluidas:concluidas};
   }
 
   function renderLimpeza(){
@@ -2678,16 +2742,31 @@
     var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
       .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
 
-    var html = '<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;">' +
-      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--teal-900);">'+stats.checkins+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Check-ins hoje</p></div>' +
-      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--teal-900);">'+stats.checkouts+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Lavagem hoje</p></div>' +
-      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--amber-600);">'+stats.manutPend+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Manutenção pendente</p></div>' +
+    var html = '<div class="card" style="display:flex;gap:6px;flex-wrap:wrap;">' +
+      '<div style="flex:1;min-width:65px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--teal-900);">'+stats.checkins+'</p><p style="font-size:10.5px;color:var(--ink-600);margin:2px 0 0;">Check-in</p></div>' +
+      '<div style="flex:1;min-width:65px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--teal-900);">'+stats.checkouts+'</p><p style="font-size:10.5px;color:var(--ink-600);margin:2px 0 0;">Checkout</p></div>' +
+      '<div style="flex:1;min-width:65px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--amber-600);">'+stats.limpeza+'</p><p style="font-size:10.5px;color:var(--ink-600);margin:2px 0 0;">Limpeza</p></div>' +
+      '<div style="flex:1;min-width:65px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--teal-700);">'+stats.concluidas+'</p><p style="font-size:10.5px;color:var(--ink-600);margin:2px 0 0;">Concluídas</p></div>' +
     '</div>';
 
     html += '<div class="seg-toggle">' +
       '<button data-lsub="abertos" class="'+(limpezaSubView==="abertos"?"active":"")+'">Em aberto'+(abertos.length?(' · '+abertos.length):'')+'</button>' +
       '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
     '</div>';
+
+    if(limpezaSubView === "abertos"){
+      var placeholders = acomodacoesLimpezaBloqueadasHoje();
+      if(placeholders.length > 0){
+        html += '<div class="section-title">🧹 Acomodações ocupadas hoje — aguardando o hóspede pedir</div>';
+        placeholders.forEach(function(id){
+          html += '<div class="card manut-card" style="background:var(--sand-100);opacity:.85;">' +
+            '<p class="item-name" style="margin:0 0 3px;">🔒 🧹 Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(id))+'</span></p>' +
+            '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Hóspede ainda não solicitou</p>' +
+          '</div>';
+        });
+        html += '<div class="section-title">Pedidos e tarefas do dia</div>';
+      }
+    }
 
     var list = limpezaSubView === "abertos" ? abertos : concluidosHoje;
     if(list.length === 0){
@@ -2713,6 +2792,7 @@
   }
 
   function buildPainelHtml(){
+    var bloqueadas = state.solicitacoes.filter(function(s){ return s.status==="bloqueada"; }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
     var pendentes = state.solicitacoes.filter(function(s){ return s.status==="pendente"; }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
     var andamento = state.solicitacoes.filter(function(s){ return s.status==="em_andamento"; }).sort(function(a,b){ return (a.iniciadoEm||a.criadoEm)-(b.iniciadoEm||b.criadoEm); });
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
@@ -2720,10 +2800,11 @@
       .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
     var manutPendHospede = state.manutencoes.filter(function(m){ return m.status==="pendente" && m.origem==="hospede"; }).length;
 
-    var html = '<div class="card" style="display:flex;gap:10px;flex-wrap:wrap;">' +
-      '<div style="flex:1;min-width:80px;text-align:center;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--red-600);">'+pendentes.length+'</p><p style="font-size:11.5px;color:var(--ink-600);margin:2px 0 0;">Aguardando</p></div>' +
-      '<div style="flex:1;min-width:80px;text-align:center;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--amber-600);">'+andamento.length+'</p><p style="font-size:11.5px;color:var(--ink-600);margin:2px 0 0;">Em andamento</p></div>' +
-      '<div style="flex:1;min-width:80px;text-align:center;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--teal-700);">'+concluidosHoje.length+'</p><p style="font-size:11.5px;color:var(--ink-600);margin:2px 0 0;">Concluídos hoje</p></div>' +
+    var html = '<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--amber-600);">'+bloqueadas.length+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Bloqueadas</p></div>' +
+      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--red-600);">'+pendentes.length+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Aguardando</p></div>' +
+      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--amber-600);">'+andamento.length+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Em andamento</p></div>' +
+      '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:20px;font-weight:800;margin:0;color:var(--teal-700);">'+concluidosHoje.length+'</p><p style="font-size:11px;color:var(--ink-600);margin:2px 0 0;">Concluídos hoje</p></div>' +
     '</div>';
 
     if(manutPendHospede > 0){
@@ -2743,6 +2824,7 @@
       return h;
     }
 
+    html += renderGrupo("🔒 Bloqueadas — aguardando você liberar", bloqueadas);
     html += renderGrupo("🔴 Aguardando", pendentes);
     html += renderGrupo("🟡 Em andamento", andamento);
     html += renderGrupo("🟢 Concluídos hoje", concluidosHoje);
@@ -2751,8 +2833,49 @@
 
   function renderRecepcao(){
     var main = document.getElementById("recepcaoView");
-    main.innerHTML = buildPainelHtml();
+    var html = buildPainelHtml();
+
+    if(podeEditar("recepcao") || (currentUser && currentUser.role === "admin")){
+      var elegiveis = acomodacoesElegiveisVentilacao();
+      html += '<div class="section-title" style="margin-top:22px;">💨 Abrir acomodação para ventilação</div>';
+      html += '<p class="count-intro">Só aparecem acomodações vazias, sem hóspede e sem check-in previsto pra hoje.</p>';
+      if(elegiveis.length === 0){
+        html += '<div class="empty">Nenhuma acomodação vazia disponível agora.</div>';
+      } else {
+        html += '<div class="card">' +
+          '<select id="ventilacaoSelect" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
+          '<option value="">Selecionar acomodação vazia…</option>' +
+          elegiveis.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
+          '</select>' +
+          '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="abrirVentilacaoBtn" style="flex:1;">💨 Abrir para ventilação</button></div>' +
+        '</div>';
+      }
+    }
+
+    main.innerHTML = html;
     wireSolicitacaoActions(main);
+
+    var abrirBtn = document.getElementById("abrirVentilacaoBtn");
+    if(abrirBtn){
+      abrirBtn.onclick = async function(){
+        var sel = document.getElementById("ventilacaoSelect");
+        var acomodacaoId = sel.value;
+        if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
+        abrirBtn.disabled = true;
+        try{
+          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"ventilacao", origem:"equipe", status:"pendente",
+            iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)};
+          var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+          state.solicitacoes.unshift(s);
+          showToast("Acomodação aberta para ventilação");
+          renderApp();
+        }catch(err){
+          console.error(err); showToast("Erro ao abrir ventilação");
+        }finally{
+          abrirBtn.disabled = false;
+        }
+      };
+    }
   }
 
   var supervisaoPeriod = "7"; // '1' | '7' | '30'
