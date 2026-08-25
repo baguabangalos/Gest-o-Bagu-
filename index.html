@@ -2215,6 +2215,15 @@
   // new Date("2026-08-25") interpreta isso como meia-noite em UTC, o que em
   // horários atrás de UTC (Brasil) empurra pro dia anterior. Esta função lê
   // a data como meia-noite no horário local, evitando esse desvio.
+  // Status do Hospedin que NÃO representam uma estadia real (hóspede de
+  // verdade ocupando o quarto) — usado em todo lugar que lê hospedin_ocupacao,
+  // pra nunca desalinhar. "cancelled" (inglês) nunca bateu com o valor real
+  // do Hospedin, que vem em português.
+  var HOSPEDIN_STATUS_IGNORAR = ["cancelado", "bloqueado", "não compareceu"];
+  function hospedinLinhaValida(r){
+    return HOSPEDIN_STATUS_IGNORAR.indexOf(r.status) === -1;
+  }
+
   function parseDataLocal(dateStr){
     if(!dateStr) return null;
     var soData = String(dateStr).slice(0,10);
@@ -2225,7 +2234,7 @@
   function summarizeOccupancy(rows, rangeStart, rangeEnd){
     var seen = {};
     rows.forEach(function(r){
-      if(r.status === "cancelled") return;
+      if(!hospedinLinhaValida(r)) return;
       var ci = parseDataLocal(r.checkin).getTime();
       var co = parseDataLocal(r.checkout).getTime();
       if(ci < rangeEnd && co > rangeStart){
@@ -2628,17 +2637,17 @@
 
   // Gera automaticamente as tarefas de preparo do dia (check-in/checkout)
   // a partir dos dados sincronizados do Hospedin, uma vez por dia por acomodação.
-  async function garantirTarefasLavagemHoje(){
-    if(!state.estoque.hospedinOcupacao || state.estoque.hospedinOcupacao.length === 0) return;
+  // Classifica cada acomodação com movimento hoje em checkin puro, checkout puro,
+  // ou virada (checkin_checkout) — usado tanto pra criar as tarefas quanto pros contadores,
+  // pra nunca desalinhar os dois.
+  function classificarOcupacaoHoje(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var hojeFim = new Date(hojeInicio.getTime() + 24*3600*1000);
-
     var nomeToId = {};
     state.acomodacoes.forEach(function(a){ nomeToId[a.nome] = a.id; });
-
     var acomodacoesHoje = {};
-    state.estoque.hospedinOcupacao.forEach(function(r){
-      if(r.status === "cancelled") return;
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
       var id = nomeToId[r.acomodacao];
       if(!id) return;
       var ci = parseDataLocal(r.checkin).getTime();
@@ -2650,10 +2659,17 @@
         acomodacoesHoje[id] = acomodacoesHoje[id] || {}; acomodacoesHoje[id].checkout = true;
       }
     });
+    return acomodacoesHoje;
+  }
+
+  async function garantirTarefasLavagemHoje(){
+    if(!state.estoque.hospedinOcupacao || state.estoque.hospedinOcupacao.length === 0) return;
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var acomodacoesHoje = classificarOcupacaoHoje();
 
     var idsComTarefa = {};
     state.solicitacoes.forEach(function(s){
-      if(s.tipo === "lavagem" && s.criadoEm >= hojeInicio.getTime() && s.criadoEm < hojeFim.getTime()){
+      if(s.tipo === "lavagem" && s.criadoEm >= hojeInicio.getTime()){
         idsComTarefa[s.acomodacaoId] = true;
       }
     });
@@ -2680,7 +2696,7 @@
     state.acomodacoes.forEach(function(a){ nomeToId[a.nome] = a.id; });
     var ids = {};
     (state.estoque.hospedinOcupacao||[]).forEach(function(r){
-      if(r.status === "cancelled") return;
+      if(!hospedinLinhaValida(r)) return;
       var id = nomeToId[r.acomodacao];
       if(!id) return;
       var ci = parseDataLocal(r.checkin).getTime();
@@ -2719,14 +2735,12 @@
 
   function statsHojeLimpeza(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-    var hojeFim = new Date(hojeInicio.getTime()+24*3600*1000);
+    var acomodacoesHoje = classificarOcupacaoHoje();
     var checkins = 0, checkouts = 0;
-    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
-      if(r.status === "cancelled") return;
-      var ci = parseDataLocal(r.checkin).getTime();
-      var co = parseDataLocal(r.checkout).getTime();
-      if(ci>=hojeInicio.getTime() && ci<hojeFim.getTime()) checkins++;
-      if(co>=hojeInicio.getTime() && co<hojeFim.getTime()) checkouts++;
+    Object.keys(acomodacoesHoje).forEach(function(id){
+      var info = acomodacoesHoje[id];
+      if(info.checkout) checkouts++;
+      else if(info.checkin) checkins++;
     });
     var limpeza = acomodacoesOcupadasHojeIds().length;
     var concluidas = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm>=hojeInicio.getTime(); }).length;
