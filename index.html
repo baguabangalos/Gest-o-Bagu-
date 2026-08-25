@@ -2726,17 +2726,48 @@
   }
 
   // Acomodações vazias hoje, sem check-in previsto — elegíveis pra ventilação.
+  // Vazia hoje, e faz 2 dias ou mais desde o último checkout OU desde a
+  // última vez que foi aberta pra ventilação (o que for mais recente).
   function acomodacoesElegiveisVentilacao(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var DOIS_DIAS_MS = 2*24*3600*1000;
+
     var ocupadasIds = {};
     acomodacoesOcupadasHojeIds().forEach(function(id){ ocupadasIds[id] = true; });
-    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-    var comVentilacaoAberta = {};
-    state.solicitacoes.forEach(function(s){
-      if(s.tipo === "ventilacao" && s.status !== "concluido" && s.criadoEm >= hojeInicio.getTime()){
-        comVentilacaoAberta[s.acomodacaoId] = true;
+
+    var codigoToId = {};
+    state.acomodacoes.forEach(function(a){ if(a.codigoHospedin) codigoToId[a.codigoHospedin] = a.id; });
+
+    // Último checkout já ocorrido (passado) de cada acomodação
+    var ultimoCheckout = {};
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      var id = codigoToId[r.acomodacao];
+      if(!id) return;
+      var co = parseDataLocal(r.checkout).getTime();
+      if(co <= hojeInicio.getTime() && (!ultimoCheckout[id] || co > ultimoCheckout[id])){
+        ultimoCheckout[id] = co;
       }
     });
-    return state.acomodacoes.filter(function(a){ return !ocupadasIds[a.id] && !comVentilacaoAberta[a.id]; });
+
+    // Última vez que cada acomodação foi aberta pra ventilação (qualquer status)
+    var ultimaVentilacao = {};
+    var comVentilacaoAberta = {};
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo !== "ventilacao") return;
+      if(s.status !== "concluido") comVentilacaoAberta[s.acomodacaoId] = true;
+      var dataAbertura = new Date(s.criadoEm); dataAbertura.setHours(0,0,0,0);
+      var t = dataAbertura.getTime();
+      if(!ultimaVentilacao[s.acomodacaoId] || t > ultimaVentilacao[s.acomodacaoId]) ultimaVentilacao[s.acomodacaoId] = t;
+    });
+
+    return state.acomodacoes.filter(function(a){
+      if(ocupadasIds[a.id]) return false;
+      if(comVentilacaoAberta[a.id]) return false;
+      var referencia = Math.max(ultimoCheckout[a.id]||0, ultimaVentilacao[a.id]||0);
+      if(referencia === 0) return true; // sem histórico — libera
+      return (hojeInicio.getTime() - referencia) >= DOIS_DIAS_MS;
+    });
   }
 
   function statsHojeLimpeza(){
