@@ -628,7 +628,7 @@
       resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id};
   }
   function mapAcomodacaoFromRow(r){
-    return {id:r.id, nome:r.nome, ativo:r.ativo, ordem:r.ordem};
+    return {id:r.id, nome:r.nome, ativo:r.ativo, ordem:r.ordem, codigoHospedin:r.codigo_hospedin};
   }
   function mapSolicitacaoFromRow(r){
     return {id:r.id, acomodacaoId:r.acomodacao_id, tipo:r.tipo, contexto:r.contexto, origem:r.origem,
@@ -2643,12 +2643,12 @@
   function classificarOcupacaoHoje(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var hojeFim = new Date(hojeInicio.getTime() + 24*3600*1000);
-    var nomeToId = {};
-    state.acomodacoes.forEach(function(a){ nomeToId[a.nome] = a.id; });
+    var codigoToId = {};
+    state.acomodacoes.forEach(function(a){ if(a.codigoHospedin) codigoToId[a.codigoHospedin] = a.id; });
     var acomodacoesHoje = {};
     (state.estoque.hospedinOcupacao||[]).forEach(function(r){
       if(!hospedinLinhaValida(r)) return;
-      var id = nomeToId[r.acomodacao];
+      var id = codigoToId[r.acomodacao];
       if(!id) return;
       var ci = parseDataLocal(r.checkin).getTime();
       var co = parseDataLocal(r.checkout).getTime();
@@ -2692,12 +2692,12 @@
   // usado tanto pro contador "Limpeza" quanto pra saber quais ainda não pediram nada.
   function acomodacoesOcupadasHojeIds(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-    var nomeToId = {};
-    state.acomodacoes.forEach(function(a){ nomeToId[a.nome] = a.id; });
+    var codigoToId = {};
+    state.acomodacoes.forEach(function(a){ if(a.codigoHospedin) codigoToId[a.codigoHospedin] = a.id; });
     var ids = {};
     (state.estoque.hospedinOcupacao||[]).forEach(function(r){
       if(!hospedinLinhaValida(r)) return;
-      var id = nomeToId[r.acomodacao];
+      var id = codigoToId[r.acomodacao];
       if(!id) return;
       var ci = parseDataLocal(r.checkin).getTime();
       var co = parseDataLocal(r.checkout).getTime();
