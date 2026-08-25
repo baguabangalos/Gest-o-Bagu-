@@ -1181,7 +1181,7 @@
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     if(podeVer("limpeza")){
-      var limpPend = state.solicitacoes.filter(function(s){ return s.status!=="concluido"; }).length;
+      var limpPend = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && s.tipo!=="frigobar"; }).length;
       var limpSub = limpPend > 0 ? (limpPend + (limpPend===1?" pedido em aberto":" pedidos em aberto")) : "tudo em dia";
       cardsHtml +=
       '<div class="card home-card" data-section="limpeza">' +
@@ -2572,7 +2572,7 @@
     if(!currentUser) return false;
     if(currentUser.role === "admin") return true;
     if(s.status === "bloqueada") return podeEditar("recepcao");
-    if(s.tipo === "frigobar") return podeEditar("limpeza") || podeEditar("recepcao");
+    if(s.tipo === "frigobar") return podeEditar("recepcao");
     return podeEditar("limpeza");
   }
 
@@ -2856,17 +2856,17 @@
       else if(info.checkin) checkins++;
     });
     var limpeza = acomodacoesOcupadasHojeIds().length;
-    var concluidas = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm>=hojeInicio.getTime(); }).length;
+    var concluidas = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.tipo!=="frigobar" && s.concluidoEm && s.concluidoEm>=hojeInicio.getTime(); }).length;
     return {checkins:checkins, checkouts:checkouts, limpeza:limpeza, concluidas:concluidas};
   }
 
   function renderLimpeza(){
     var main = document.getElementById("limpezaView");
     var stats = statsHojeLimpeza();
-    var abertos = state.solicitacoes.filter(function(s){ return s.status!=="concluido"; })
+    var abertos = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && s.tipo!=="frigobar"; })
       .sort(function(a,b){ return a.criadoEm-b.criadoEm; });
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-    var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
+    var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.tipo!=="frigobar" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
       .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
 
     var html = '<div class="card" style="display:flex;gap:6px;flex-wrap:wrap;">' +
