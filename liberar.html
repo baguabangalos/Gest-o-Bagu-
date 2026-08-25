@@ -179,7 +179,8 @@
       '<div class="card">' +
         limpezaHtml +
         '<button class="btn-opt" id="btnFrigobar"><span class="ic">🥤</span><span><span>Frigobar &amp; cesta de doces</span><span class="sub">Escolher o que precisa repor</span></span></button>' +
-        '<button class="btn-opt" data-tipo="reparo" style="margin-bottom:0;"><span class="ic">🔧</span><span><span>Algo não está funcionando</span><span class="sub">Reparo ou manutenção na acomodação</span></span></button>' +
+        '<button class="btn-opt" data-tipo="reparo"><span class="ic">🔧</span><span><span>Algo não está funcionando</span><span class="sub">Reparo ou manutenção na acomodação</span></span></button>' +
+        '<a class="btn-opt" href="https://calendly.com/baguabangalos/jacuzzi" target="_blank" rel="noopener" style="margin-bottom:0;text-decoration:none;"><span class="ic">🛁</span><span><span>Reservar a jacuzzi</span><span class="sub">Agendar horário</span></span></a>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
       b.onclick = function(){
