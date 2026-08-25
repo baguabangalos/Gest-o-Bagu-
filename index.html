@@ -1182,7 +1182,7 @@
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     if(podeVer("limpeza")){
-      var limpPend = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && s.tipo!=="frigobar"; }).length;
+      var limpPend = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && !isRecepcaoOnly(s.tipo); }).length;
       var limpSub = limpPend > 0 ? (limpPend + (limpPend===1?" pedido em aberto":" pedidos em aberto")) : "tudo em dia";
       cardsHtml +=
       '<div class="card home-card" data-section="limpeza">' +
@@ -2528,8 +2528,10 @@
   }
 
   // ---------- Limpeza (pedidos de hóspede + tarefas do dia) ----------
-  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto", ventilacao:"Fechar acomodação", roupa_cama:"Troca de roupa de cama"};
-  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️", ventilacao:"💨", roupa_cama:"🧺"};
+  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto", ventilacao:"Fechar acomodação", roupa_cama:"Troca de roupa de cama", jacuzzi:"Ligar a jacuzzi", lenha:"Reposição de lenha"};
+  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️", ventilacao:"💨", roupa_cama:"🧺", jacuzzi:"🔥", lenha:"🪵"};
+  var TIPOS_RECEPCAO_ONLY = {frigobar:true, jacuzzi:true, lenha:true};
+  function isRecepcaoOnly(tipo){ return !!TIPOS_RECEPCAO_ONLY[tipo]; }
   var STATUS_DOT = {bloqueada:"🔒", pendente:"🔴", em_andamento:"🟡", concluido:"🟢"};
   var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
@@ -2578,7 +2580,7 @@
     if(!currentUser) return false;
     if(currentUser.role === "admin") return true;
     if(s.status === "bloqueada") return podeEditar("recepcao");
-    if(s.tipo === "frigobar") return podeEditar("recepcao");
+    if(s.tipo === "frigobar" || s.tipo === "jacuzzi" || s.tipo === "lenha") return podeEditar("recepcao");
     return podeEditar("limpeza");
   }
 
@@ -2626,10 +2628,10 @@
       html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+'</p>';
     } else {
       var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : "concluído"));
+      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "jacuzzi" ? "ligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
       html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
     }
-    var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar") ? "recepcao" : "limpeza";
+    var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "jacuzzi" || s.tipo === "lenha") ? "recepcao" : "limpeza";
     var lixoHtml = podeExcluir(moduloExclusao) ? '<button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button>' : '';
     if(podeAgirSolicitacao(s)){
       if(s.status === "bloqueada"){
@@ -2639,6 +2641,8 @@
         if(s.tipo === "frigobar"){ acaoLabel = "✓ Abasteceu"; acaoAct = "finalizar"; }
         else if(s.tipo === "ventilacao"){ acaoLabel = "✓ Fechou"; acaoAct = "finalizar"; }
         else if(s.tipo === "roupa_cama"){ acaoLabel = "✓ Trocou"; acaoAct = "finalizar"; }
+        else if(s.tipo === "jacuzzi"){ acaoLabel = "✓ Ligada"; acaoAct = "finalizar"; }
+        else if(s.tipo === "lenha"){ acaoLabel = "✓ Reposta"; acaoAct = "finalizar"; }
         html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+lixoHtml+'</div>';
       } else if(s.status === "em_andamento"){
         html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button>'+lixoHtml+'</div>';
@@ -2659,7 +2663,7 @@
         var s = state.solicitacoes.find(function(x){ return x.id===id; });
         if(!s) return;
         var act = b.getAttribute("data-act");
-        var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar") ? "recepcao" : "limpeza";
+        var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "jacuzzi" || s.tipo === "lenha") ? "recepcao" : "limpeza";
         if(act === "excluir"){
           if(!podeExcluir(moduloExclusao)){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
         } else if(!podeAgirSolicitacao(s)){
@@ -2871,17 +2875,17 @@
       else if(info.checkin) checkins++;
     });
     var limpeza = acomodacoesOcupadasHojeIds().length;
-    var concluidas = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.tipo!=="frigobar" && s.concluidoEm && s.concluidoEm>=hojeInicio.getTime(); }).length;
+    var concluidas = state.solicitacoes.filter(function(s){ return s.status==="concluido" && !isRecepcaoOnly(s.tipo) && s.concluidoEm && s.concluidoEm>=hojeInicio.getTime(); }).length;
     return {checkins:checkins, checkouts:checkouts, limpeza:limpeza, concluidas:concluidas};
   }
 
   function renderLimpeza(){
     var main = document.getElementById("limpezaView");
     var stats = statsHojeLimpeza();
-    var abertos = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && s.tipo!=="frigobar"; })
+    var abertos = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && !isRecepcaoOnly(s.tipo); })
       .sort(function(a,b){ return a.criadoEm-b.criadoEm; });
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-    var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.tipo!=="frigobar" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
+    var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && !isRecepcaoOnly(s.tipo) && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
       .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
 
     var html = '<div class="card" style="display:flex;gap:6px;flex-wrap:wrap;">' +
