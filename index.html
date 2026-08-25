@@ -2219,7 +2219,7 @@
   // verdade ocupando o quarto) — usado em todo lugar que lê hospedin_ocupacao,
   // pra nunca desalinhar. "cancelled" (inglês) nunca bateu com o valor real
   // do Hospedin, que vem em português.
-  var HOSPEDIN_STATUS_IGNORAR = ["cancelado", "bloqueado", "não compareceu"];
+  var HOSPEDIN_STATUS_IGNORAR = ["canceled", "cancelled", "cancelado", "blocked", "bloqueado", "no_show", "não compareceu"];
   function hospedinLinhaValida(r){
     return HOSPEDIN_STATUS_IGNORAR.indexOf(r.status) === -1;
   }
@@ -2710,13 +2710,14 @@
   // (meio da estadia) registrado hoje — viram o card com cadeado.
   function acomodacoesLimpezaBloqueadasHoje(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-    var comSolicitacaoHoje = {};
+    var jaTemTarefaHoje = {};
     state.solicitacoes.forEach(function(s){
-      if(s.tipo === "limpeza" && s.contexto === "estadia" && s.criadoEm >= hojeInicio.getTime()){
-        comSolicitacaoHoje[s.acomodacaoId] = true;
+      if(s.criadoEm < hojeInicio.getTime()) return;
+      if((s.tipo === "limpeza" && s.contexto === "estadia") || s.tipo === "lavagem"){
+        jaTemTarefaHoje[s.acomodacaoId] = true;
       }
     });
-    return acomodacoesOcupadasHojeIds().filter(function(id){ return !comSolicitacaoHoje[id]; });
+    return acomodacoesOcupadasHojeIds().filter(function(id){ return !jaTemTarefaHoje[id]; });
   }
 
   // Acomodações vazias hoje, sem check-in previsto — elegíveis pra ventilação.
