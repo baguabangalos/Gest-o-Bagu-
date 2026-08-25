@@ -700,13 +700,14 @@
 
   function podeVer(modulo){ return !!currentUser && (currentUser.role === "admin" || (currentUser.permissoes[modulo] && currentUser.permissoes[modulo].ver)); }
   function podeEditar(modulo){ return !!currentUser && (currentUser.role === "admin" || (currentUser.permissoes[modulo] && currentUser.permissoes[modulo].editar)); }
+  function podeExcluir(modulo){ return !!currentUser && (currentUser.role === "admin" || (currentUser.permissoes[modulo] && currentUser.permissoes[modulo].excluir)); }
 
   async function carregarPerfil(userId){
     var profRes = await sb.from("profiles").select("*").eq("id", userId).single();
     if(profRes.error) throw profRes.error;
     var permRes = await sb.from("permissoes").select("*").eq("user_id", userId);
     var permissoes = {};
-    (permRes.data||[]).forEach(function(p){ permissoes[p.modulo] = {ver:p.pode_ver, editar:p.pode_editar}; });
+    (permRes.data||[]).forEach(function(p){ permissoes[p.modulo] = {ver:p.pode_ver, editar:p.pode_editar, excluir:p.pode_excluir}; });
     return {id:profRes.data.id, nome:profRes.data.nome, email:profRes.data.email, role:profRes.data.role, permissoes:permissoes};
   }
 
@@ -1518,7 +1519,7 @@
       html += '<div class="card">';
       html += '<div class="section-title" style="margin-top:0;display:flex;justify-content:space-between;align-items:center;">' +
         '<span>'+fmtDate(s.date)+'</span>' +
-        (podeEditar("estoque") ? '<button class="btn-edit" data-del-session="'+s.id+'" title="Excluir esta contagem" style="font-size:15px;">🗑️</button>' : '') +
+        (podeExcluir("estoque") ? '<button class="btn-edit" data-del-session="'+s.id+'" title="Excluir esta contagem" style="font-size:15px;">🗑️</button>' : '') +
       '</div>';
       s.entries.forEach(function(e){
         var item = state.estoque.items.find(function(i){ return i.id === e.itemId; });
@@ -1537,7 +1538,7 @@
     container.innerHTML = html;
     container.querySelectorAll("[data-del-session]").forEach(function(b){
       b.onclick = async function(){
-        if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+        if(!podeExcluir("estoque")){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
         if(!confirm("Excluir o registro dessa contagem? Isso não desfaz os ajustes de quantidade já aplicados — só remove o histórico.")) return;
         var sid = b.getAttribute("data-del-session");
         try{
@@ -2463,17 +2464,18 @@
     if(list.length === 0){
       html += '<div class="empty">'+(manutencaoSubView==="pendentes" ? 'Nenhuma pendência. Toque em "+" para registrar uma.' : 'Nenhuma manutenção concluída ainda.')+'</div>';
     } else {
+      var lixoManut = podeExcluir("manutencao") ? '<button class="btn-edit" data-act="excluir" data-id="{ID}" title="Excluir">🗑️</button>' : '';
       list.forEach(function(m){
         html += '<div class="card manut-card" data-id="'+m.id+'">' +
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
         if(m.status === "pendente"){
           html += '<p class="item-meta">aberta em '+fmtDate(m.createdAt)+'</p>' +
-            '<div class="item-actions"><button class="btn btn-in" data-act="resolve" data-id="'+m.id+'">✓ Concluir</button><button class="btn-edit" data-act="excluir" data-id="'+m.id+'" title="Excluir">🗑️</button></div>';
+            '<div class="item-actions"><button class="btn btn-in" data-act="resolve" data-id="'+m.id+'">✓ Concluir</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
         } else {
           if(m.resolutionNote) html += '<p class="item-meta" style="margin-bottom:4px;"><em>'+escapeHtml(m.resolutionNote)+'</em></p>';
           html += '<p class="item-meta">concluída em '+fmtDate(m.resolvedAt)+'</p>' +
-            '<div class="item-actions"><button class="btn btn-out" data-act="reopen" data-id="'+m.id+'">↺ Reabrir</button><button class="btn-edit" data-act="excluir" data-id="'+m.id+'" title="Excluir">🗑️</button></div>';
+            '<div class="item-actions"><button class="btn btn-out" data-act="reopen" data-id="'+m.id+'">↺ Reabrir</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
         }
         html += '</div>';
       });
@@ -2492,11 +2494,15 @@
     main.querySelectorAll("button[data-act]").forEach(function(b){
       b.onclick = async function(e){
         e.stopPropagation();
-        if(!podeEditar("manutencao")){ showToast("Você não tem permissão para editar manutenções"); return; }
         var id = b.getAttribute("data-id");
         var m = state.manutencoes.find(function(x){ return x.id===id; });
         if(!m) return;
         var act = b.getAttribute("data-act");
+        if(act === "excluir"){
+          if(!podeExcluir("manutencao")){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
+        } else if(!podeEditar("manutencao")){
+          showToast("Você não tem permissão para editar manutenções"); return;
+        }
         try{
           if(act === "resolve"){
             var m1 = await dbUpdate("manutencoes", id, {status:"concluida", resolved_at:new Date().toISOString()}, mapManutencaoFromRow);
@@ -2623,20 +2629,24 @@
       var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : "concluído"));
       html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
     }
+    var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar") ? "recepcao" : "limpeza";
+    var lixoHtml = podeExcluir(moduloExclusao) ? '<button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button>' : '';
     if(podeAgirSolicitacao(s)){
       if(s.status === "bloqueada"){
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">🔓 Liberar</button></div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">🔓 Liberar</button>'+lixoHtml+'</div>';
       } else if(s.status === "pendente"){
         var acaoLabel = "▶ Iniciar", acaoAct = "iniciar";
         if(s.tipo === "frigobar"){ acaoLabel = "✓ Abasteceu"; acaoAct = "finalizar"; }
         else if(s.tipo === "ventilacao"){ acaoLabel = "✓ Fechou"; acaoAct = "finalizar"; }
         else if(s.tipo === "roupa_cama"){ acaoLabel = "✓ Trocou"; acaoAct = "finalizar"; }
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+lixoHtml+'</div>';
       } else if(s.status === "em_andamento"){
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
-      } else {
-        html += '<div class="item-actions"><button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button></div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button>'+lixoHtml+'</div>';
+      } else if(lixoHtml){
+        html += '<div class="item-actions">'+lixoHtml+'</div>';
       }
+    } else if(lixoHtml){
+      html += '<div class="item-actions">'+lixoHtml+'</div>';
     }
     return html;
   }
@@ -2648,8 +2658,13 @@
         var id = b.getAttribute("data-id");
         var s = state.solicitacoes.find(function(x){ return x.id===id; });
         if(!s) return;
-        if(!podeAgirSolicitacao(s)){ showToast("Você não tem permissão para essa ação"); return; }
         var act = b.getAttribute("data-act");
+        var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar") ? "recepcao" : "limpeza";
+        if(act === "excluir"){
+          if(!podeExcluir(moduloExclusao)){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
+        } else if(!podeAgirSolicitacao(s)){
+          showToast("Você não tem permissão para essa ação"); return;
+        }
         try{
           if(act === "iniciar"){
             var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
@@ -2918,12 +2933,17 @@
     return h+"h"+(m?(" "+m+"min"):"");
   }
 
-  function buildPainelHtml(){
+  function buildPainelHtml(esconderLimpeza){
+    var tiposLimpeza = {limpeza:true, lavagem:true, roupa_cama:true};
+    function relevante(s){
+      if(!esconderLimpeza) return true;
+      return !tiposLimpeza[s.tipo];
+    }
     var bloqueadas = state.solicitacoes.filter(function(s){ return s.status==="bloqueada"; }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
-    var pendentes = state.solicitacoes.filter(function(s){ return s.status==="pendente"; }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
-    var andamento = state.solicitacoes.filter(function(s){ return s.status==="em_andamento"; }).sort(function(a,b){ return (a.iniciadoEm||a.criadoEm)-(b.iniciadoEm||b.criadoEm); });
+    var pendentes = state.solicitacoes.filter(function(s){ return s.status==="pendente" && relevante(s); }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
+    var andamento = state.solicitacoes.filter(function(s){ return s.status==="em_andamento" && relevante(s); }).sort(function(a,b){ return (a.iniciadoEm||a.criadoEm)-(b.iniciadoEm||b.criadoEm); });
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-    var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
+    var concluidosHoje = state.solicitacoes.filter(function(s){ return s.status==="concluido" && relevante(s) && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
       .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
     var manutPendHospede = state.manutencoes.filter(function(m){ return m.status==="pendente" && m.origem==="hospede"; }).length;
 
@@ -2960,7 +2980,7 @@
 
   function renderRecepcao(){
     var main = document.getElementById("recepcaoView");
-    var html = buildPainelHtml();
+    var html = buildPainelHtml(true);
 
     if(podeEditar("recepcao") || (currentUser && currentUser.role === "admin")){
       var elegiveis = acomodacoesElegiveisVentilacao();
@@ -3069,7 +3089,7 @@
     return (profRes.data||[]).map(function(p){
       var permissoes = {};
       (permRes.data||[]).filter(function(x){ return x.user_id===p.id; }).forEach(function(x){
-        permissoes[x.modulo] = {ver:x.pode_ver, editar:x.pode_editar};
+        permissoes[x.modulo] = {ver:x.pode_ver, editar:x.pode_editar, excluir:x.pode_excluir};
       });
       return {id:p.id, nome:p.nome, email:p.email, role:p.role, ativo:p.ativo, permissoes:permissoes};
     });
@@ -3095,13 +3115,14 @@
       html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+'</div>';
       html += '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>';
       if(u.role !== "admin"){
-        html += '<table class="admin-perm-table"><tr><th></th><th>Ver</th><th>Editar</th></tr>';
+        html += '<table class="admin-perm-table"><tr><th></th><th>Ver</th><th>Editar</th><th>Excluir</th></tr>';
         MODULOS_ADMIN.forEach(function(m){
-          var perm = u.permissoes[m.key] || {ver:false, editar:false};
+          var perm = u.permissoes[m.key] || {ver:false, editar:false, excluir:false};
           html += '<tr data-modulo="'+m.key+'">' +
             '<td>'+m.label+'</td>' +
             '<td><input type="checkbox" class="perm-ver" '+(perm.ver?"checked":"")+'></td>' +
             '<td><input type="checkbox" class="perm-editar" '+(perm.editar?"checked":"")+'></td>' +
+            '<td><input type="checkbox" class="perm-excluir" '+(perm.excluir?"checked":"")+'></td>' +
           '</tr>';
         });
         html += '</table>';
@@ -3125,12 +3146,12 @@
         var modulo = row.getAttribute("data-modulo");
         var verBox = row.querySelector(".perm-ver");
         var editarBox = row.querySelector(".perm-editar");
+        var excluirBox = row.querySelector(".perm-excluir");
         function salvarPermissao(){
-          var podeVerVal = verBox.checked;
-          var podeEditarVal = editarBox.checked;
-          if(podeEditarVal) verBox.checked = true; // editar sem ver não faz sentido
+          if(editarBox.checked) verBox.checked = true; // editar sem ver não faz sentido
+          if(excluirBox.checked) verBox.checked = true; // excluir sem ver também não
           sb.from("permissoes").upsert(
-            {user_id:uid, modulo:modulo, pode_ver:verBox.checked, pode_editar:editarBox.checked},
+            {user_id:uid, modulo:modulo, pode_ver:verBox.checked, pode_editar:editarBox.checked, pode_excluir:excluirBox.checked},
             {onConflict:"user_id,modulo"}
           ).then(function(res){
             if(res.error){ console.error(res.error); showToast("Erro ao salvar permissão"); }
@@ -3139,6 +3160,7 @@
         }
         verBox.addEventListener("change", salvarPermissao);
         editarBox.addEventListener("change", salvarPermissao);
+        excluirBox.addEventListener("change", salvarPermissao);
       });
 
       var roleBtn = card.querySelector(".admin-role-btn");
@@ -3350,7 +3372,7 @@
     document.getElementById("mn_resolveWrap").style.display = (m && m.status==="concluida") ? "block" : "none";
     document.getElementById("manutencaoResolveBtn").style.display = (m && m.status==="pendente") ? "block" : "none";
     document.getElementById("manutencaoReopenBtn").style.display = (m && m.status==="concluida") ? "block" : "none";
-    document.getElementById("manutencaoDelete").style.display = m ? "block" : "none";
+    document.getElementById("manutencaoDelete").style.display = (m && podeExcluir("manutencao")) ? "block" : "none";
     manutencaoOverlay.classList.add("open");
   }
   function closeManutencaoSheet(){ manutencaoOverlay.classList.remove("open"); editingManutencaoId = null; }
@@ -3423,7 +3445,7 @@
   };
   document.getElementById("manutencaoDelete").onclick = async function(){
     if(!editingManutencaoId) return;
-    if(!podeEditar("manutencao")){ showToast("Você não tem permissão para editar manutenções"); return; }
+    if(!podeExcluir("manutencao")){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
     if(!confirm("Excluir esta manutenção?")) return;
     try{
       await dbDelete("manutencoes", editingManutencaoId);
