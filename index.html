@@ -3344,7 +3344,9 @@
       hospedeOverlay.classList.remove("open");
       renderHospedes();
     }catch(err){
-      console.error(err); showToast("Erro ao salvar hóspede");
+      console.error(err);
+      var detalhe = (err && (err.message || err.details || err.hint)) ? (" — " + (err.message||err.details||err.hint)) : "";
+      showToast("Erro ao salvar hóspede" + detalhe);
     }finally{
       submitBtn.disabled = false;
     }
