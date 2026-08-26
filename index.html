@@ -2580,6 +2580,7 @@
       if(s.contexto === "checkout") return base + " · Checkout";
     }
     if(s.tipo === "limpeza" && s.contexto === "estadia") return base + " · Manutenção";
+    if(s.tipo === "limpeza" && s.contexto === "estadia_recusada") return base + " · Hóspede não quis";
     if(s.tipo === "roupa_cama" && s.contexto) return base + " · Dia " + s.contexto + " da estadia";
     return base;
   }
@@ -2915,8 +2916,11 @@
         placeholders.forEach(function(id){
           html += '<div class="card manut-card" style="background:var(--sand-100);opacity:.85;">' +
             '<p class="item-name" style="margin:0 0 3px;">🔒 🧹 Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(id))+'</span></p>' +
-            '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Hóspede ainda não solicitou</p>' +
-          '</div>';
+            '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Hóspede ainda não solicitou</p>';
+          if(podeEditar("limpeza")){
+            html += '<div class="item-actions"><button class="btn btn-out" data-recusa-id="'+id+'">✓ Hóspede não quer limpeza</button></div>';
+          }
+          html += '</div>';
         });
         html += '<div class="section-title">Pedidos e tarefas do dia</div>';
       }
@@ -2933,6 +2937,25 @@
     main.innerHTML = html;
     main.querySelectorAll("[data-lsub]").forEach(function(b){
       b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza(); };
+    });
+    main.querySelectorAll("[data-recusa-id]").forEach(function(b){
+      b.onclick = async function(){
+        if(!podeEditar("limpeza")){ showToast("Você não tem permissão para essa ação"); return; }
+        var acomodacaoId = b.getAttribute("data-recusa-id");
+        b.disabled = true;
+        try{
+          var agora = new Date().toISOString();
+          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia_recusada",
+            origem:"equipe", status:"concluido", concluido_em:agora, concluido_por:(currentUser?currentUser.id:null)};
+          var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+          state.solicitacoes.unshift(s);
+          showToast("Marcado — hóspede não quis limpeza hoje");
+          renderApp();
+        }catch(err){
+          console.error(err); showToast("Erro ao registrar");
+          b.disabled = false;
+        }
+      };
     });
     wireSolicitacaoActions(main);
   }
