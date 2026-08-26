@@ -2910,29 +2910,53 @@
     '</div>';
 
     if(limpezaSubView === "abertos"){
-      var placeholders = acomodacoesLimpezaBloqueadasHoje();
-      if(placeholders.length > 0){
-        html += '<div class="section-title">🧹 Acomodações ocupadas hoje — aguardando o hóspede pedir</div>';
-        placeholders.forEach(function(id){
-          html += '<div class="card manut-card" style="background:var(--sand-100);opacity:.85;">' +
-            '<p class="item-name" style="margin:0 0 3px;">🔒 🧹 Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(id))+'</span></p>' +
-            '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Hóspede ainda não solicitou</p>';
-          if(podeEditar("limpeza")){
-            html += '<div class="item-actions"><button class="btn btn-out" data-recusa-id="'+id+'">✓ Hóspede não quer limpeza</button></div>';
-          }
-          html += '</div>';
-        });
-        html += '<div class="section-title">Pedidos e tarefas do dia</div>';
+      // Agrupa cada tarefa aberta num dos 4 blocos.
+      function grupoDe(s){
+        if(s.tipo === "lavagem") return (s.contexto === "checkin") ? "checkin" : "checkout";
+        if(s.tipo === "roupa_cama") return "checkin";
+        if(s.tipo === "ventilacao") return "ventilacao";
+        return "manutencao"; // limpeza/estadia e qualquer outro caem aqui
       }
-    }
+      var grupos = {checkin:[], checkout:[], manutencao:[], ventilacao:[]};
+      abertos.forEach(function(s){ grupos[grupoDe(s)].push(s); });
+      var placeholders = acomodacoesLimpezaBloqueadasHoje();
 
-    var list = limpezaSubView === "abertos" ? abertos : concluidosHoje;
-    if(list.length === 0){
-      html += '<div class="empty">'+(limpezaSubView==="abertos" ? "Nenhum pedido em aberto." : "Nenhum pedido concluído hoje ainda.")+'</div>';
+      function secao(titulo, chave){
+        var lista = grupos[chave];
+        var temPlaceholders = chave === "manutencao" && placeholders.length > 0;
+        if(lista.length === 0 && !temPlaceholders) return "";
+        var h = '<div class="section-title">'+titulo+(lista.length?(' · '+lista.length):'')+'</div>';
+        if(temPlaceholders){
+          placeholders.forEach(function(id){
+            h += '<div class="card manut-card" style="background:var(--sand-100);opacity:.85;">' +
+              '<p class="item-name" style="margin:0 0 3px;">🔒 🧹 Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(id))+'</span></p>' +
+              '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Hóspede ainda não solicitou</p>';
+            if(podeEditar("limpeza")){
+              h += '<div class="item-actions"><button class="btn btn-out" data-recusa-id="'+id+'">✓ Hóspede não quer limpeza</button></div>';
+            }
+            h += '</div>';
+          });
+        }
+        lista.forEach(function(s){ h += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>'; });
+        return h;
+      }
+
+      html += secao("🛎️ Check-in", "checkin");
+      html += secao("🚪 Checkout", "checkout");
+      html += secao("🧹 Manutenção", "manutencao");
+      html += secao("💨 Ventilação", "ventilacao");
+
+      if(abertos.length === 0 && placeholders.length === 0){
+        html += '<div class="empty">Nenhum pedido em aberto.</div>';
+      }
     } else {
-      list.forEach(function(s){
-        html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
-      });
+      if(concluidosHoje.length === 0){
+        html += '<div class="empty">Nenhum pedido concluído hoje ainda.</div>';
+      } else {
+        concluidosHoje.forEach(function(s){
+          html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
+        });
+      }
     }
     main.innerHTML = html;
     main.querySelectorAll("[data-lsub]").forEach(function(b){
