@@ -537,9 +537,9 @@
     <form id="hospedeForm">
       <label>Nome</label>
       <input type="text" id="h_nome" placeholder="Nome completo">
-      <label>CPF</label>
+      <label>CPF <span style="color:var(--red-600);font-weight:400;">(obrigatório se não tiver passaporte)</span></label>
       <input type="text" id="h_cpf" placeholder="000.000.000-00" inputmode="numeric">
-      <label>Passaporte (se estrangeiro)</label>
+      <label>Passaporte <span style="color:var(--red-600);font-weight:400;">(obrigatório se não tiver CPF)</span></label>
       <input type="text" id="h_passaporte" placeholder="Número do passaporte">
       <label>Fotos do documento</label>
       <div id="hospedeFotosGrid" class="hospede-fotos-grid"></div>
@@ -3283,36 +3283,9 @@
       if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
       pendingHospedeFotos.push({label:"Documento "+(existingHospedeFotos.length+pendingHospedeFotos.length+1), dataUrl:dataUrl});
       renderHospedeFotosGrid();
-      tentarPreencherDocumento(dataUrl);
     });
     e.target.value = "";
   });
-
-  async function tentarPreencherDocumento(dataUrl){
-    var nomeInput = document.getElementById("h_nome");
-    var cpfInput = document.getElementById("h_cpf");
-    var passaporteInput = document.getElementById("h_passaporte");
-    // só preenche campos que a pessoa ainda não digitou, nunca sobrescreve
-    if(nomeInput.value.trim() && cpfInput.value.trim() && passaporteInput.value.trim()) return;
-    showToast("Lendo o documento…");
-    try{
-      var base64 = dataUrl.split(",")[1];
-      var res = await sb.functions.invoke("extrair-documento", {
-        body: {image_base64: base64, media_type: "image/jpeg"}
-      });
-      if(res.error) throw res.error;
-      var data = res.data || {};
-      if(!data.ok) throw new Error(data.error || "Falha ao ler documento");
-      var algumCampo = false;
-      if(data.nome && !nomeInput.value.trim()){ nomeInput.value = data.nome; algumCampo = true; }
-      if(data.cpf && !cpfInput.value.trim()){ cpfInput.value = data.cpf; algumCampo = true; }
-      if(data.passaporte && !passaporteInput.value.trim()){ passaporteInput.value = data.passaporte; algumCampo = true; }
-      showToast(algumCampo ? "Dados preenchidos — confira antes de salvar" : "Não consegui ler os dados — preencha manualmente");
-    }catch(err){
-      console.error(err);
-      showToast("Não consegui ler o documento — preencha manualmente");
-    }
-  }
 
   async function openHospedeSheet(h, prefill){
     editingHospedeId = h ? h.id : null;
@@ -3346,7 +3319,7 @@
     var cpf = onlyDigits(document.getElementById("h_cpf").value);
     var passaporte = document.getElementById("h_passaporte").value.trim().toUpperCase();
     var obs = document.getElementById("h_obs").value.trim();
-    if(!nome && !cpf && !passaporte){ showToast("Preencha ao menos nome, CPF ou passaporte"); return; }
+    if(!cpf && !passaporte){ showToast("Preencha o CPF ou o passaporte"); return; }
     var submitBtn = e.target.querySelector('button[type="submit"]'); submitBtn.disabled = true;
     try{
       var novasFotos = [];
