@@ -2536,9 +2536,9 @@
   }
 
   // ---------- Limpeza (pedidos de hóspede + tarefas do dia) ----------
-  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto", ventilacao:"Fechar acomodação", roupa_cama:"Troca de roupa de cama", jacuzzi:"Ligar a jacuzzi", lenha:"Reposição de lenha"};
-  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️", ventilacao:"💨", roupa_cama:"🧺", jacuzzi:"🔥", lenha:"🪵"};
-  var TIPOS_RECEPCAO_ONLY = {frigobar:true, jacuzzi:true, lenha:true};
+  var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto", ventilacao:"Fechar acomodação", roupa_cama:"Troca de roupa de cama", sauna:"Ligar a sauna", lenha:"Reposição de lenha"};
+  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️", ventilacao:"💨", roupa_cama:"🧺", sauna:"🧖", lenha:"🪵"};
+  var TIPOS_RECEPCAO_ONLY = {frigobar:true, sauna:true, lenha:true};
   function isRecepcaoOnly(tipo){ return !!TIPOS_RECEPCAO_ONLY[tipo]; }
   var STATUS_DOT = {bloqueada:"🔒", pendente:"🔴", em_andamento:"🟡", concluido:"🟢"};
   var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
@@ -2589,7 +2589,7 @@
     if(!currentUser) return false;
     if(currentUser.role === "admin") return true;
     if(s.status === "bloqueada") return podeEditar("recepcao");
-    if(s.tipo === "frigobar" || s.tipo === "jacuzzi" || s.tipo === "lenha") return podeEditar("recepcao");
+    if(s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") return podeEditar("recepcao");
     return podeEditar("limpeza");
   }
 
@@ -2637,10 +2637,10 @@
       html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+'</p>';
     } else {
       var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "jacuzzi" ? "ligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
+      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "sauna" ? "ligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
       html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
     }
-    var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "jacuzzi" || s.tipo === "lenha") ? "recepcao" : "limpeza";
+    var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") ? "recepcao" : "limpeza";
     var lixoHtml = podeExcluir(moduloExclusao) ? '<button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button>' : '';
     if(podeAgirSolicitacao(s)){
       if(s.status === "bloqueada"){
@@ -2650,7 +2650,7 @@
         if(s.tipo === "frigobar"){ acaoLabel = "✓ Abasteceu"; acaoAct = "finalizar"; }
         else if(s.tipo === "ventilacao"){ acaoLabel = "✓ Fechou"; acaoAct = "finalizar"; }
         else if(s.tipo === "roupa_cama"){ acaoLabel = "✓ Trocou"; acaoAct = "finalizar"; }
-        else if(s.tipo === "jacuzzi"){ acaoLabel = "✓ Ligada"; acaoAct = "finalizar"; }
+        else if(s.tipo === "sauna"){ acaoLabel = "✓ Ligada"; acaoAct = "finalizar"; }
         else if(s.tipo === "lenha"){ acaoLabel = "✓ Reposta"; acaoAct = "finalizar"; }
         html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+lixoHtml+'</div>';
       } else if(s.status === "em_andamento"){
@@ -2672,7 +2672,7 @@
         var s = state.solicitacoes.find(function(x){ return x.id===id; });
         if(!s) return;
         var act = b.getAttribute("data-act");
-        var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "jacuzzi" || s.tipo === "lenha") ? "recepcao" : "limpeza";
+        var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") ? "recepcao" : "limpeza";
         if(act === "excluir"){
           if(!podeExcluir(moduloExclusao)){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
         } else if(!podeAgirSolicitacao(s)){
