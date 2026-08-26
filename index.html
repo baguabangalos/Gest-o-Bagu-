@@ -519,6 +519,8 @@
       <div id="prFileInfo" class="count-intro" style="margin:6px 0 0;display:none;"></div>
       <a id="prFileOpenLink" href="#" target="_blank" class="link-btn" style="display:none;">Abrir anexo</a>
       <button type="button" class="btn-danger-text" id="prFileRemove" style="display:none;">Remover anexo</button>
+      <label>Link do vídeo (opcional — YouTube, Google Drive, etc.)</label>
+      <input type="url" id="pr_videoUrl" placeholder="https://...">
       <div class="sheet-actions">
         <button type="button" class="btn-secondary" id="procedimentoCancel">Cancelar</button>
         <button type="submit" class="btn-primary">Salvar</button>
@@ -2319,6 +2321,7 @@
       html += '<p class="item-name" style="margin:0 0 4px;">'+escapeHtml(p.title)+'</p>';
       if(preview) html += '<p class="item-meta" style="white-space:pre-wrap;">'+preview+'</p>';
       if(p.fileName) html += '<p class="item-meta" style="margin-top:6px;">📎 '+escapeHtml(p.fileName)+'</p>';
+      if(p.videoUrl) html += '<p class="item-meta" style="margin-top:6px;"><a href="'+escapeHtml(p.videoUrl)+'" target="_blank" rel="noopener" class="video-link-proc" style="color:var(--teal-700);font-weight:700;text-decoration:none;">▶ Assistir vídeo</a></p>';
       html += '</div>';
     });
     main.innerHTML = html;
@@ -2327,6 +2330,9 @@
         var p = state.procedimentos.find(function(x){ return x.id === c.getAttribute("data-id"); });
         if(p) openProcedimentoSheet(p);
       };
+    });
+    main.querySelectorAll(".video-link-proc").forEach(function(a){
+      a.onclick = function(e){ e.stopPropagation(); };
     });
   }
 
@@ -2362,6 +2368,7 @@
     document.getElementById("procedimentoSheetTitle").textContent = p ? "Editar procedimento" : "Novo procedimento";
     document.getElementById("pr_title").value = p ? p.title : "";
     document.getElementById("pr_text").value = p ? (p.text||"") : "";
+    document.getElementById("pr_videoUrl").value = p ? (p.videoUrl||"") : "";
     document.getElementById("pr_file").value = "";
     pendingProcFile = (p && p.fileName) ? {name:p.fileName, data:p.fileData} : null;
     updateProcFileUI();
@@ -2409,8 +2416,9 @@
     if(!podeEditar("procedimentos")){ showToast("Você não tem permissão para editar procedimentos"); return; }
     var title = document.getElementById("pr_title").value.trim();
     var text = document.getElementById("pr_text").value.trim();
+    var videoUrl = document.getElementById("pr_videoUrl").value.trim();
     if(!title) return;
-    var payload = {title:title, text_content:text, photo:pendingProcPhoto,
+    var payload = {title:title, text_content:text, photo:pendingProcPhoto, video_url:videoUrl||null,
       file_name: pendingProcFile ? pendingProcFile.name : null,
       file_data: pendingProcFile ? pendingProcFile.data : null};
     try{
