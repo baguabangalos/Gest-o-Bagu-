@@ -3337,7 +3337,8 @@
         await dbUpdate("hospedes", editingHospedeId, payload, mapHospedeFromRow);
         showToast("Hóspede atualizado");
       } else {
-        payload.id = uid();
+        // diferente das outras tabelas, hospedes.id é uuid gerado pelo banco —
+        // não mandamos id aqui, senão o banco recusa o formato de texto simples
         await dbInsert("hospedes", payload, mapHospedeFromRow);
         showToast("Hóspede cadastrado");
       }
