@@ -144,6 +144,56 @@
     setTimeout(function(){ t.classList.remove("show"); }, 2200);
   }
 
+  // ---------- Acompanhamento do pedido (guarda no aparelho do hóspede) ----------
+  // Fica só um tempo curto — o suficiente pra acompanhar o próprio pedido, sem
+  // risco de um hóspede novo (troca de hospedagem no mesmo quarto) ver pedidos
+  // de quem ficou ali antes.
+  var JANELA_PENDENTE_MS = 3 * 3600 * 1000;      // pedido ainda aberto: esquece depois de 3h
+  var JANELA_CONCLUIDO_MS = 20 * 60 * 1000;      // já concluído: some da lista 20min depois
+
+  function chaveStorage(){ return "bagua_pedidos_" + slug; }
+
+  function salvarPedidoLocal(id, tabela, label){
+    try{
+      var lista = carregarPedidosLocaisBrutos();
+      lista.push({id:id, tabela:tabela, label:label, criadoEm:Date.now(), concluidoEm:null});
+      localStorage.setItem(chaveStorage(), JSON.stringify(lista.slice(-8)));
+    }catch(e){ /* localStorage indisponível — só perde o acompanhamento, não trava o pedido */ }
+  }
+
+  // Chamado sempre que a gente confirma (busca ou tempo real) que um pedido
+  // ficou concluído, pra começar a contar os 20min até ele sumir da lista.
+  function marcarConcluidoLocal(id){
+    try{
+      var lista = carregarPedidosLocaisBrutos();
+      var achou = false;
+      lista.forEach(function(p){ if(p.id === id && !p.concluidoEm){ p.concluidoEm = Date.now(); achou = true; } });
+      if(achou) localStorage.setItem(chaveStorage(), JSON.stringify(lista));
+    }catch(e){}
+  }
+
+  function carregarPedidosLocaisBrutos(){
+    try{
+      var raw = localStorage.getItem(chaveStorage());
+      var lista = raw ? JSON.parse(raw) : [];
+      var agora = Date.now();
+      lista = lista.filter(function(p){
+        if(p.concluidoEm) return (agora - p.concluidoEm) < JANELA_CONCLUIDO_MS;
+        return (agora - p.criadoEm) < JANELA_PENDENTE_MS;
+      });
+      localStorage.setItem(chaveStorage(), JSON.stringify(lista));
+      return lista;
+    }catch(e){ return []; }
+  }
+
+  function statusInfo(tabela, status){
+    var concluido = (tabela === "manutencoes") ? "concluida" : "concluido";
+    if(status === concluido) return {icone:"✅", texto:"Concluído", cor:"var(--teal-700)"};
+    if(status === "em_andamento") return {icone:"🧹", texto:"Equipe a caminho", cor:"var(--ink-900)"};
+    if(status === "bloqueada") return {icone:"⏳", texto:"Aguardando liberação", cor:"var(--ink-600)"};
+    return {icone:"⏳", texto:"Aguardando equipe", cor:"var(--ink-600)"};
+  }
+
   var params = new URLSearchParams(window.location.search);
   var slug = params.get("a");
   var acomodacao = slug ? ACOMODACOES[slug] : null;
@@ -173,6 +223,13 @@
   var linkGestao = "https://wa.me/" + numeroGestao + "?text=" + encodeURIComponent(mensagemGestao);
 
   function renderMenu(){
+    pararAcompanhamentoRealtime();
+    var pedidosAtivos = carregarPedidosLocaisBrutos();
+    var bannerHtml = "";
+    if(pedidosAtivos.length > 0){
+      bannerHtml = '<button class="btn-opt" id="verMeusPedidos" style="background:var(--teal-100);border-color:var(--teal-500);">' +
+        '<span class="ic">📋</span><span><span>Ver meus pedidos</span><span class="sub">'+pedidosAtivos.length+' pedido(s) recente(s)</span></span></button>';
+    }
     var limpezaHtml;
     if(limpezaDisponivel()){
       limpezaHtml = '<button class="btn-opt" data-tipo="limpeza"><span class="ic">🧹</span><span><span>Quero que arrumem meu quarto</span><span class="sub">Nossa equipe vai até lá em breve</span></span></button>';
@@ -184,6 +241,7 @@
     }
     content.innerHTML =
       '<div class="card">' +
+        bannerHtml +
         limpezaHtml +
         '<button class="btn-opt" id="btnFrigobar"><span class="ic">🥤</span><span><span>Frigobar &amp; cesta de doces</span><span class="sub">Escolher o que precisa repor</span></span></button>' +
         '<button class="btn-opt" data-tipo="reparo"><span class="ic">🔧</span><span><span>Algo não está funcionando</span><span class="sub">Reparo ou manutenção na acomodação</span></span></button>' +
@@ -200,6 +258,7 @@
       };
     });
     document.getElementById("btnFrigobar").onclick = renderFrigobarForm;
+    if(document.getElementById("verMeusPedidos")) document.getElementById("verMeusPedidos").onclick = renderAcompanhamento;
   }
 
   function renderFrigobarForm(){
@@ -264,8 +323,9 @@
   async function enviarSolicitacao(tipo){
     content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
     try{
+      var id = uid();
       var payload = {
-        id: uid(),
+        id: id,
         acomodacao_id: slug,
         tipo: tipo,
         contexto: (tipo === "limpeza" ? "estadia" : null),
@@ -274,7 +334,8 @@
       };
       var res = await sb.from("solicitacoes_acomodacao").insert(payload);
       if(res.error) throw res.error;
-      renderSucesso();
+      salvarPedidoLocal(id, "solicitacoes_acomodacao", TIPO_LABEL_ACOMPANHAMENTO[tipo] || "Pedido");
+      renderAcompanhamento();
     }catch(err){
       console.error(err);
       content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
@@ -286,8 +347,9 @@
   async function enviarFrigobar(itens){
     content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
     try{
+      var id = uid();
       var payload = {
-        id: uid(),
+        id: id,
         acomodacao_id: slug,
         tipo: "frigobar",
         origem: "hospede",
@@ -296,7 +358,8 @@
       };
       var res = await sb.from("solicitacoes_acomodacao").insert(payload);
       if(res.error) throw res.error;
-      renderSucesso();
+      salvarPedidoLocal(id, "solicitacoes_acomodacao", "Frigobar & cesta de doces");
+      renderAcompanhamento();
     }catch(err){
       console.error(err);
       content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
@@ -308,8 +371,9 @@
   async function enviarReparo(texto){
     content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
     try{
+      var id = uid();
       var payload = {
-        id: uid(),
+        id: id,
         title: "Pedido do hóspede — " + nome,
         local: nome,
         description: texto,
@@ -318,7 +382,8 @@
       };
       var res = await sb.from("manutencoes").insert(payload);
       if(res.error) throw res.error;
-      renderSucesso();
+      salvarPedidoLocal(id, "manutencoes", "Reparo / manutenção");
+      renderAcompanhamento();
     }catch(err){
       console.error(err);
       content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
@@ -327,18 +392,71 @@
     }
   }
 
-  function renderSucesso(){
-    content.innerHTML =
-      '<div class="card">' +
-        '<div class="ok-icon">✅</div>' +
-        '<p class="ok-title">Pedido enviado!</p>' +
-        '<p class="ok-sub">Nossa equipe já foi avisada.</p>' +
-        '<button class="btn-primary" id="novoPedido">Fazer outro pedido</button>' +
-      '</div>';
-    document.getElementById("novoPedido").onclick = renderMenu;
+  var TIPO_LABEL_ACOMPANHAMENTO = {
+    limpeza: "Arrumação do quarto", reparo: "Reparo / manutenção",
+    sauna: "Ligar a sauna", lenha: "Reposição de lenha", frigobar: "Frigobar & cesta de doces"
+  };
+
+  var canaisAbertos = [];
+  function pararAcompanhamentoRealtime(){
+    canaisAbertos.forEach(function(ch){ sb.removeChannel(ch); });
+    canaisAbertos = [];
   }
 
-  renderMenu();
+  async function renderAcompanhamento(){
+    pararAcompanhamentoRealtime();
+    var pedidos = carregarPedidosLocaisBrutos();
+    if(pedidos.length === 0){ renderMenu(); return; }
+
+    content.innerHTML =
+      '<div class="card">' +
+        '<p style="margin:0 0 12px;font-size:15px;font-weight:700;">📋 Seus pedidos</p>' +
+        '<div id="listaPedidos"></div>' +
+        '<button class="btn-primary" id="novoPedido" style="margin-top:6px;">+ Fazer outro pedido</button>' +
+      '</div>';
+    document.getElementById("novoPedido").onclick = function(){ pararAcompanhamentoRealtime(); renderMenu(); };
+
+    var lista = document.getElementById("listaPedidos");
+
+    function pintarLinha(p, status){
+      var info = statusInfo(p.tabela, status);
+      var concluido = (p.tabela === "manutencoes") ? "concluida" : "concluido";
+      if(status === concluido) marcarConcluidoLocal(p.id);
+      var el = document.getElementById("pedido_" + p.id);
+      if(!el) return;
+      el.innerHTML =
+        '<span style="font-size:20px;">'+info.icone+'</span>' +
+        '<span style="flex:1;"><span style="display:block;font-weight:600;font-size:14.5px;">'+escapeHtml(p.label)+'</span>' +
+        '<span style="font-size:12.5px;color:'+info.cor+';font-weight:600;">'+info.texto+'</span></span>';
+    }
+
+    pedidos.forEach(function(p){
+      var linha = document.createElement("div");
+      linha.id = "pedido_" + p.id;
+      linha.style.cssText = "display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);";
+      lista.appendChild(linha);
+      pintarLinha(p, "pendente"); // estado inicial otimista, corrigido abaixo assim que a busca real chega
+    });
+    var ultimoDaLista = lista.lastElementChild;
+    if(ultimoDaLista) ultimoDaLista.style.borderBottom = "none";
+
+    // busca o status atual de cada um e liga o tempo real pra acompanhar mudanças
+    for(var i=0;i<pedidos.length;i++){
+      (function(p){
+        sb.from(p.tabela).select("status").eq("id", p.id).single().then(function(res){
+          if(res.data) pintarLinha(p, res.data.status);
+        });
+        var ch = sb.channel("acompanha-"+p.id)
+          .on("postgres_changes", {event:"UPDATE", schema:"public", table:p.tabela, filter:"id=eq."+p.id}, function(payload){
+            pintarLinha(p, payload.new.status);
+          })
+          .subscribe();
+        canaisAbertos.push(ch);
+      })(pedidos[i]);
+    }
+  }
+
+  if(carregarPedidosLocaisBrutos().length > 0) renderAcompanhamento(); else renderMenu();
 })();
 </script>
 </body>
