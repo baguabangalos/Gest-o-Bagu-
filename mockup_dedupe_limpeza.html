@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — antes e depois da correção</title>
+<style>
+  :root{
+    --teal-900:#1c4238; --teal-700:#2f6f5e; --teal-500:#4a9483; --teal-100:#e4f0ec;
+    --sand-50:#faf7f2; --sand-100:#f4ede1; --sand-200:#e9dfcd;
+    --ink-900:#2b2620; --ink-600:#6b6355; --ink-400:#a39a89; --line:#e3dbcb;
+    --amber-600:#b5762a; --amber-100:#faeddb; --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    background:var(--sand-50); color:var(--ink-900); min-height:100vh; margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column; align-items:center; padding:26px 18px 40px;
+  }
+  .wrap{width:100%; max-width:420px;}
+  .bloco{margin-bottom:30px;}
+  .selo{
+    display:inline-block; font-size:12px; font-weight:800; letter-spacing:.3px;
+    padding:5px 12px; border-radius:999px; margin-bottom:10px;
+  }
+  .selo.antes{background:#fbe4e4; color:#b6392f;}
+  .selo.agora{background:var(--teal-100); color:var(--teal-900);}
+  .section-title{font-size:12.5px;font-weight:700;color:var(--ink-600);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 8px 4px;}
+  .card{
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px 16px; margin-bottom:10px;
+  }
+  .item-name{font-size:15px;font-weight:700;margin:0 0 3px;}
+  .item-meta{font-size:12.5px;color:var(--ink-600);margin:0;}
+  .item-meta.warn{color:var(--amber-600);font-weight:700;}
+  .fantasma{background:var(--sand-100);opacity:.85;}
+  .risco{position:relative;}
+  .risco::after{
+    content:""; position:absolute; left:8px; right:8px; top:50%;
+    border-top:2.5px solid #c94b3f; transform:rotate(-1.5deg);
+  }
+  .nota-risco{font-size:12px;color:#b6392f;font-weight:700;margin:-4px 0 16px 4px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="bloco">
+    <span class="selo antes">ANTES</span>
+    <div class="section-title">🛎️ Check-in</div>
+    <div class="card">
+      <p class="item-name">🔴 🧺 Troca de roupa de cama <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— Bangalô Loft</span></p>
+      <p class="item-meta">Dia 3 da estadia · esperando há 40min</p>
+    </div>
+
+    <div class="section-title">🧹 Manutenção</div>
+    <div class="card fantasma risco">
+      <p class="item-name">🔒 🧹 Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— Bangalô Loft</span></p>
+      <p class="item-meta warn">Hóspede ainda não solicitou</p>
+    </div>
+    <p class="nota-risco">↑ mesmo quarto aparecendo duas vezes</p>
+  </div>
+
+  <div class="bloco">
+    <span class="selo agora">AGORA</span>
+    <div class="section-title">🛎️ Check-in</div>
+    <div class="card">
+      <p class="item-name">🔴 🧺 Troca de roupa de cama <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— Bangalô Loft</span></p>
+      <p class="item-meta">Dia 3 da estadia · esperando há 40min</p>
+    </div>
+
+    <div class="section-title">🧹 Manutenção</div>
+    <div class="card fantasma">
+      <p class="item-name">🔒 🧹 Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— Cabana Zazu</span></p>
+      <p class="item-meta warn">Hóspede ainda não solicitou</p>
+      <p class="item-meta warn">📝 Chegada prevista só depois das 22h, por favor deixar luz externa acesa</p>
+    </div>
+    <p style="font-size:12px;color:var(--ink-400);margin:-4px 0 0 4px;">Bangalô Loft já não aparece mais aqui embaixo</p>
+  </div>
+
+</div>
+</body>
+</html>
