@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Bagua Bangalôs</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,500&family=Jost:ital,wght@1,300;1,400;1,500&display=swap');
   :root{
     --teal-900:#1c4238; --teal-700:#2f6f5e; --teal-500:#4a9483; --teal-100:#e4f0ec;
     --sand-50:#faf7f2; --sand-100:#f4ede1; --sand-200:#e9dfcd;
@@ -18,7 +18,8 @@
   html,body{margin:0;padding:0;}
   body{
     background:var(--sand-50); color:var(--ink-900); min-height:100vh;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-family:'Jost',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-style:italic;
     -webkit-font-smoothing:antialiased;
     display:flex; flex-direction:column; align-items:center;
     padding:calc(28px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
@@ -217,12 +218,13 @@
     return minutosAgora < (11*60 + 30);
   }
 
-  // ATENÇÃO: confere esse número com a Yara antes de publicar — são exatamente
-  // os dígitos que ela mandou (61 9825-4114 = 10 dígitos). Um celular brasileiro
-  // costuma ter 11 (DDD + 9 dígitos, ex: 61 99825-4114) — pode estar faltando um "9".
-  var numeroGestao = "556198254114";
+  var numeroGestao = "5561998254114";
   var mensagemGestao = "Olá! 👋 Estou hospedado(a) na acomodação " + nome + " e gostaria de falar com a gestão.";
   var linkGestao = "https://wa.me/" + numeroGestao + "?text=" + encodeURIComponent(mensagemGestao);
+
+  var numeroRecepcao = "5561999343388";
+  var mensagemRecepcao = "Olá! 👋 Estou hospedado(a) na acomodação " + nome + " e preciso de ajuda da recepção.";
+  var linkRecepcao = "https://wa.me/" + numeroRecepcao + "?text=" + encodeURIComponent(mensagemRecepcao);
 
   function renderMenu(){
     pararAcompanhamentoRealtime();
@@ -250,7 +252,7 @@
         '<a class="btn-opt" href="https://calendly.com/baguabangalos/jacuzzi" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛁</span><span><span>Reservar a jacuzzi</span><span class="sub">Agendar horário</span></span></a>' +
         '<button class="btn-opt" data-tipo="sauna"><span class="ic">🧖</span><span><span>Ligar a sauna</span><span class="sub">Pedir pra equipe ligar agora</span></span></button>' +
         '<button class="btn-opt" data-tipo="lenha"><span class="ic">🪵</span><span><span>Reposição de lenha</span><span class="sub">Pedir mais lenha na acomodação</span></span></button>' +
-        '<a class="btn-opt" href="'+linkGestao+'" target="_blank" rel="noopener" style="margin-bottom:0;text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>Fale com a gestão</span><span class="sub">Atendimento direto pelo WhatsApp</span></span></a>' +
+        '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>Fale com a gestão</span><span class="sub">Atendimento direto pelo WhatsApp</span></span></button>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
       b.onclick = function(){
@@ -260,7 +262,18 @@
       };
     });
     document.getElementById("btnFrigobar").onclick = renderFrigobarForm;
+    document.getElementById("btnGestao").onclick = renderConfirmacaoGestao;
     if(document.getElementById("verMeusPedidos")) document.getElementById("verMeusPedidos").onclick = renderAcompanhamento;
+  }
+
+  function renderConfirmacaoGestao(){
+    content.innerHTML =
+      '<div class="card">' +
+        '<p style="font-size:13.5px;color:var(--ink-600);line-height:1.5;margin:0 0 14px;">Este canal é da gestão e serve para elogios, críticas ou algum problema com a sua estadia que a recepção não conseguiu resolver.</p>' +
+        '<p style="font-size:13.5px;color:var(--ink-900);font-weight:600;line-height:1.5;margin:0 0 16px;">Precisa de algo agora (sauna, informações, reposição)? A recepção resolve mais rápido.</p>' +
+        '<a class="btn-opt" id="btnIrRecepcao" href="'+linkRecepcao+'" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛎️</span><span><span>Falar com a recepção</span><span class="sub">Atendimento direto pelo WhatsApp</span></span></a>' +
+        '<a class="btn-opt" id="btnIrGestao" href="'+linkGestao+'" target="_blank" rel="noopener" style="margin-bottom:0;text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>Continuar para a gestão</span><span class="sub">Abrir WhatsApp</span></span></a>' +
+      '</div>';
   }
 
   function renderFrigobarForm(){
