@@ -3069,6 +3069,23 @@
     var html = buildPainelHtml(true);
 
     if(podeEditar("recepcao") || (currentUser && currentUser.role === "admin")){
+      var pendentesLimpeza = acomodacoesLimpezaBloqueadasHoje();
+      html += '<div class="section-title" style="margin-top:22px;">🧹 Solicitar limpeza para o hóspede</div>';
+      html += '<p class="count-intro">Pra quando o hóspede pedir direto na recepção — não tem restrição de horário aqui.</p>';
+      if(pendentesLimpeza.length === 0){
+        html += '<div class="empty">Nenhuma acomodação ocupada sem pedido em aberto agora.</div>';
+      } else {
+        html += '<div class="card">' +
+          '<select id="limpezaRecepcaoSelect" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
+          '<option value="">Selecionar acomodação…</option>' +
+          pendentesLimpeza.map(function(id){ return '<option value="'+id+'">'+escapeHtml(acomodacaoNome(id))+'</option>'; }).join("") +
+          '</select>' +
+          '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="solicitarLimpezaRecepcaoBtn" style="flex:1;">🧹 Solicitar limpeza</button></div>' +
+        '</div>';
+      }
+    }
+
+    if(podeEditar("recepcao") || (currentUser && currentUser.role === "admin")){
       var elegiveis = acomodacoesElegiveisVentilacao();
       html += '<div class="section-title" style="margin-top:22px;">💨 Abrir acomodação para ventilação</div>';
       html += '<p class="count-intro">Só aparecem acomodações vazias, sem hóspede e sem check-in previsto pra hoje.</p>';
@@ -3087,6 +3104,27 @@
 
     main.innerHTML = html;
     wireSolicitacaoActions(main);
+
+    var solicitarLimpezaBtn = document.getElementById("solicitarLimpezaRecepcaoBtn");
+    if(solicitarLimpezaBtn){
+      solicitarLimpezaBtn.onclick = async function(){
+        var sel = document.getElementById("limpezaRecepcaoSelect");
+        var acomodacaoId = sel.value;
+        if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
+        solicitarLimpezaBtn.disabled = true;
+        try{
+          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia",
+            origem:"equipe", status:"pendente"};
+          var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+          state.solicitacoes.unshift(s);
+          showToast("Limpeza solicitada!");
+          renderApp();
+        }catch(err){
+          console.error(err); showToast("Erro ao solicitar");
+          solicitarLimpezaBtn.disabled = false;
+        }
+      };
+    }
 
     var abrirBtn = document.getElementById("abrirVentilacaoBtn");
     if(abrirBtn){
