@@ -3072,20 +3072,32 @@
     var html = buildPainelHtml(true);
 
     if(podeEditar("recepcao") || (currentUser && currentUser.role === "admin")){
-      var pendentesLimpeza = acomodacoesLimpezaBloqueadasHoje();
-      html += '<div class="section-title" style="margin-top:22px;">🧹 Solicitar limpeza para o hóspede</div>';
-      html += '<p class="count-intro">Pra quando o hóspede pedir direto na recepção — não tem restrição de horário aqui.</p>';
-      if(pendentesLimpeza.length === 0){
-        html += '<div class="empty">Nenhuma acomodação ocupada sem pedido em aberto agora.</div>';
-      } else {
-        html += '<div class="card">' +
-          '<select id="limpezaRecepcaoSelect" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
-          '<option value="">Selecionar acomodação…</option>' +
-          pendentesLimpeza.map(function(id){ return '<option value="'+id+'">'+escapeHtml(acomodacaoNome(id))+'</option>'; }).join("") +
-          '</select>' +
-          '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="solicitarLimpezaRecepcaoBtn" style="flex:1;">🧹 Solicitar limpeza</button></div>' +
-        '</div>';
-      }
+      var todasAtivas = state.acomodacoes.filter(function(a){ return a.ativo; })
+        .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+      html += '<div class="section-title" style="margin-top:22px;">🧺 Adicionar lavagem avulsa</div>';
+      html += '<p class="count-intro">Pra quando o Hospedin estiver desatualizado e faltar um check-in/checkout no sistema. Mostra todas as acomodações, não só as que o Hospedin marca como ocupadas.</p>';
+      html += '<div class="card">' +
+        '<select id="lavagemAvulsaSelect" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
+        '<option value="">Selecionar acomodação…</option>' +
+        todasAtivas.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
+        '</select>' +
+        '<select id="lavagemAvulsaTipo" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
+        '<option value="checkin">Check-in</option>' +
+        '<option value="checkout">Checkout</option>' +
+        '<option value="checkin_checkout">Check-in + Checkout (mesmo dia)</option>' +
+        '</select>' +
+        '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="lavagemAvulsaBtn" style="flex:1;">🧺 Adicionar lavagem</button></div>' +
+      '</div>';
+
+      html += '<div class="section-title" style="margin-top:22px;">🧹 Adicionar limpeza avulsa</div>';
+      html += '<p class="count-intro">Pra quando o hóspede pedir direto na recepção, ou o Hospedin estiver desatualizado. Mostra todas as acomodações — não tem restrição de horário aqui.</p>';
+      html += '<div class="card">' +
+        '<select id="limpezaRecepcaoSelect" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
+        '<option value="">Selecionar acomodação…</option>' +
+        todasAtivas.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
+        '</select>' +
+        '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="solicitarLimpezaRecepcaoBtn" style="flex:1;">🧹 Solicitar limpeza</button></div>' +
+      '</div>';
     }
 
     if(podeEditar("recepcao") || (currentUser && currentUser.role === "admin")){
@@ -3107,6 +3119,30 @@
 
     main.innerHTML = html;
     wireSolicitacaoActions(main);
+
+    var lavagemAvulsaBtn = document.getElementById("lavagemAvulsaBtn");
+    if(lavagemAvulsaBtn){
+      lavagemAvulsaBtn.onclick = async function(){
+        var sel = document.getElementById("lavagemAvulsaSelect");
+        var tipoSel = document.getElementById("lavagemAvulsaTipo");
+        var acomodacaoId = sel.value;
+        var contexto = tipoSel.value;
+        if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
+        lavagemAvulsaBtn.disabled = true;
+        try{
+          var statusInicial = (contexto === "checkin") ? "pendente" : "bloqueada";
+          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"lavagem", contexto:contexto,
+            origem:"equipe", status:statusInicial};
+          var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+          state.solicitacoes.unshift(s);
+          showToast("Lavagem adicionada!");
+          renderApp();
+        }catch(err){
+          console.error(err); showToast("Erro ao adicionar");
+          lavagemAvulsaBtn.disabled = false;
+        }
+      };
+    }
 
     var solicitarLimpezaBtn = document.getElementById("solicitarLimpezaRecepcaoBtn");
     if(solicitarLimpezaBtn){
