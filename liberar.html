@@ -5,12 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Bagua Bangalôs</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,500&display=swap');
   :root{
     --teal-900:#1c4238; --teal-700:#2f6f5e; --teal-500:#4a9483; --teal-100:#e4f0ec;
     --sand-50:#faf7f2; --sand-100:#f4ede1; --sand-200:#e9dfcd;
     --ink-900:#2b2620; --ink-600:#6b6355; --ink-400:#a39a89; --line:#e3dbcb;
     --red-600:#b3432f; --radius:16px;
     --shadow:0 1px 2px rgba(43,38,32,.06), 0 4px 16px rgba(43,38,32,.08);
+    --font-display:'EB Garamond',Georgia,'Times New Roman',serif;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;}
@@ -23,7 +25,7 @@
   }
   .wrap{width:100%; max-width:420px;}
   header{text-align:center; margin-bottom:22px;}
-  header h1{margin:0 0 4px; font-size:20px; color:var(--teal-900); letter-spacing:.2px;}
+  header h1{margin:0 0 4px; font-family:var(--font-display); font-size:28px; font-weight:600; font-style:italic; color:var(--teal-900); letter-spacing:.2px;}
   header p{margin:0; font-size:14px; color:var(--ink-600);}
   .card{
     background:#fff; border:1px solid var(--line); border-radius:var(--radius);
