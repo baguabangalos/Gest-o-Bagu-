@@ -2848,7 +2848,7 @@
     var jaTemTarefaHoje = {};
     state.solicitacoes.forEach(function(s){
       if(s.criadoEm < hojeInicio.getTime()) return;
-      if((s.tipo === "limpeza" && s.contexto === "estadia") || s.tipo === "lavagem" || s.tipo === "roupa_cama"){
+      if((s.tipo === "limpeza" && (s.contexto === "estadia" || s.contexto === "estadia_recusada")) || s.tipo === "lavagem" || s.tipo === "roupa_cama"){
         jaTemTarefaHoje[s.acomodacaoId] = true;
       }
     });
