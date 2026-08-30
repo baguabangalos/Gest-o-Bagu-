@@ -401,6 +401,12 @@
 
       <label>Nome do item</label>
       <input type="text" id="f_name" required placeholder="Ex: Detergente">
+      <label>Código de barras (opcional)</label>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="f_codigoBarras" placeholder="Ex: 7891000100103" style="flex:1;">
+        <button type="button" class="btn-secondary" id="f_scanBarcodeBtn" style="white-space:nowrap;padding:0 14px;">📷 Ler</button>
+      </div>
+      <input type="file" id="f_codigoBarrasPhotoInput" accept="image/*" capture="environment" style="display:none;">
       <label>Número de série (opcional)</label>
       <input type="text" id="f_numeroSerie" placeholder="Ex: SN-2024-00871">
       <label>Categoria</label>
@@ -445,11 +451,28 @@
       <input type="number" id="moveQty" step="0.01" min="0">
       <button type="button" id="movePlus">+</button>
     </div>
+    <div id="moveDestinoWrap" style="display:none;">
+      <label>Para onde foi</label>
+      <select id="moveDestino"></select>
+    </div>
     <label>Observação (opcional)</label>
     <textarea id="moveNote" placeholder="Ex: compra no mercado, uso na limpeza dos quartos…"></textarea>
     <div class="sheet-actions">
       <button type="button" class="btn-secondary" id="moveCancel">Cancelar</button>
       <button type="button" class="btn-primary" id="moveConfirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sheet: abastecer frigobar (edita quantidade / marca item em falta) -->
+<div class="sheet-overlay" id="abastecerSheetOverlay">
+  <div class="sheet">
+    <h2>Abastecer — <span id="abastecerAcomodacaoNome"></span></h2>
+    <p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Confira a quantidade de cada item antes de confirmar. Marque "Faltando" se não tinha em estoque para repor — isso vai avisar na hora do checkout.</p>
+    <div id="abastecerItensLista"></div>
+    <div class="sheet-actions">
+      <button type="button" class="btn-secondary" id="abastecerCancel">Cancelar</button>
+      <button type="button" class="btn-primary" id="abastecerConfirm">✓ Confirmar abastecimento</button>
     </div>
   </div>
 </div>
@@ -591,6 +614,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
 (function(){
   "use strict";
@@ -613,11 +637,11 @@
   function mapItemFromRow(r){
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
-      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie};
+      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras};
   }
   function mapMovementFromRow(r){
     return {id:r.id, itemId:r.item_id, type:r.type, qty:Number(r.qty), delta:(r.delta!=null?Number(r.delta):undefined),
-      note:r.note, date:new Date(r.date).getTime()};
+      note:r.note, destino:r.destino, date:new Date(r.date).getTime()};
   }
   function mapSupplierFromRow(r){
     return {id:r.id, name:r.name, phone:r.phone, notes:r.notes, orderDays:r.order_days||[]};
@@ -642,7 +666,7 @@
       status:r.status, criadoEm:new Date(r.criado_em).getTime(),
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
       concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null),
-      iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null,
+      iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null, itensFaltando:r.itens_faltando||null,
       liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null)};
   }
 
@@ -1303,7 +1327,7 @@
       quickBtn.type = "button";
       quickBtn.className = "btn-secondary";
       quickBtn.style.cssText = "width:100%;margin-bottom:12px;";
-      quickBtn.textContent = "📷 Retirada rápida por foto";
+      quickBtn.textContent = "📷 Retirada rápida — ler código de barras";
       quickBtn.onclick = function(){ document.getElementById("quickSaidaPhotoInput").click(); };
       main.appendChild(quickBtn);
     }
@@ -1394,6 +1418,7 @@
       html += '<div class="move-row">' +
         '<div><span class="move-tag '+tagClass+'">'+tagText+'</span> ' +
         '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
+        (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
         (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
         '</div><div class="move-date">'+fmtDate(m.date)+'</div></div>';
     });
@@ -1833,6 +1858,7 @@
     editingItemId = item ? item.id : null;
     document.getElementById("itemSheetTitle").textContent = item ? "Editar item" : "Novo item";
     document.getElementById("f_name").value = item ? item.name : "";
+    document.getElementById("f_codigoBarras").value = item ? (item.codigoBarras||"") : "";
     document.getElementById("f_numeroSerie").value = item ? (item.numeroSerie||"") : "";
     document.getElementById("f_category").value = item ? item.category : activeCategory;
     document.getElementById("f_unit").value = item ? item.unit : "";
@@ -1880,6 +1906,7 @@
     e.preventDefault();
     if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
     var name = document.getElementById("f_name").value.trim();
+    var codigoBarras = document.getElementById("f_codigoBarras").value.trim();
     var numeroSerie = document.getElementById("f_numeroSerie").value.trim();
     var category = document.getElementById("f_category").value;
     var unit = document.getElementById("f_unit").value.trim();
@@ -1891,7 +1918,7 @@
     if(!name || isNaN(qty) || isNaN(min)) return;
 
     var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:pendingPhoto,
-      supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, numero_serie:numeroSerie||null};
+      supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null};
     var submitBtn = e.target.querySelector('button[type="submit"]'); if(submitBtn) submitBtn.disabled = true;
     try{
       if(editingItemId){
@@ -1943,9 +1970,17 @@
     else { openMoveSheet(item, act === "in" ? "entrada" : "saida"); }
   });
 
+  var DESTINOS_FIXOS = ["Recepção", "Venda avulsa", "Empréstimo restaurante"];
+  function listaDestinos(){
+    var acomodacoesNomes = state.acomodacoes.filter(function(a){ return a.ativo; })
+      .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); })
+      .map(function(a){ return a.nome; });
+    return acomodacoesNomes.concat(DESTINOS_FIXOS);
+  }
+
   // ---------- Movement sheet ----------
   var moveOverlay = document.getElementById("moveSheetOverlay");
-  function openMoveSheet(item, type){
+  function openMoveSheet(item, type, destinoPreSelecionado){
     moveItemId = item.id;
     moveType = type;
     var titleMap = {
@@ -1956,46 +1991,177 @@
     document.getElementById("moveQtyLabel").textContent = "Quantidade ("+item.unit+")";
     document.getElementById("moveQty").value = 1;
     document.getElementById("moveNote").value = "";
+    var destinoWrap = document.getElementById("moveDestinoWrap");
+    var destinoSelect = document.getElementById("moveDestino");
+    if(type === "saida"){
+      destinoWrap.style.display = "block";
+      destinoSelect.innerHTML = '<option value="">Selecionar destino…</option>' +
+        listaDestinos().map(function(d){ return '<option value="'+escapeHtml(d)+'">'+escapeHtml(d)+'</option>'; }).join("");
+      if(destinoPreSelecionado) destinoSelect.value = destinoPreSelecionado;
+    } else {
+      destinoWrap.style.display = "none";
+      destinoSelect.innerHTML = "";
+    }
     moveOverlay.classList.add("open");
   }
   function closeMoveSheet(){ moveOverlay.classList.remove("open"); moveItemId=null; moveType=null; }
 
-  // ---------- Retirada rápida por foto (identificação por IA) ----------
+  // ---------- Leitura de código de barras (direto no navegador, sem IA/custo) ----------
+  function decodificarCodigoBarras(file, onSuccess, onError){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        try{
+          var codeReader = new ZXing.BrowserMultiFormatReader();
+          codeReader.decodeFromImageElement(img)
+            .then(function(result){ onSuccess(result.getText()); })
+            .catch(function(err){ onError(err); });
+        }catch(err){ onError(err); }
+      };
+      img.onerror = function(){ onError(new Error("Não consegui carregar a imagem")); };
+      img.src = reader.result;
+    };
+    reader.onerror = function(){ onError(new Error("Não consegui ler o arquivo")); };
+    reader.readAsDataURL(file);
+  }
+
+  document.getElementById("f_scanBarcodeBtn").onclick = function(){
+    document.getElementById("f_codigoBarrasPhotoInput").click();
+  };
+  document.getElementById("f_codigoBarrasPhotoInput").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+    showToast("Lendo código de barras…");
+    decodificarCodigoBarras(file, function(texto){
+      document.getElementById("f_codigoBarras").value = texto;
+      showToast("Código lido: " + texto);
+    }, function(){
+      showToast("Não consegui ler o código — tenta de novo com mais luz e foco");
+    });
+  });
+
+  // ---------- Retirada rápida por foto do código de barras ----------
   document.getElementById("quickSaidaPhotoInput").addEventListener("change", function(e){
     var file = e.target.files[0];
     e.target.value = "";
     if(!file) return;
     if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
-    compressImage(file, 1000, 0.75, async function(dataUrl){
-      if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
-      showToast("Identificando o item…");
-      try{
-        var base64 = dataUrl.split(",")[1];
-        var itemsPayload = state.estoque.items.map(function(it){
-          return {id:it.id, name:it.name, category:it.category, unit:it.unit, numero_serie:it.numeroSerie||null};
-        });
-        var res = await sb.functions.invoke("identificar-item", {
-          body: { image_base64: base64, media_type: "image/jpeg", items: itemsPayload }
-        });
-        if(res.error) throw res.error;
-        var data = res.data || {};
-        if(!data.ok) throw new Error(data.error || "Falha ao identificar");
-        var item = data.item_id ? state.estoque.items.find(function(i){ return i.id === data.item_id; }) : null;
-        if(item){
-          showToast("Item identificado: " + item.name + " — confira antes de confirmar");
-          openMoveSheet(item, "saida");
-        } else {
-          showToast("Não consegui identificar com certeza — escolha o item na lista abaixo");
-        }
-      }catch(err){
-        console.error(err);
-        showToast("Erro ao identificar a foto — escolha o item na lista");
+    showToast("Lendo código de barras…");
+    decodificarCodigoBarras(file, function(texto){
+      var item = state.estoque.items.find(function(it){ return it.codigoBarras && it.codigoBarras === texto; });
+      if(item){
+        showToast("Item identificado: " + item.name);
+        openMoveSheet(item, "saida");
+      } else {
+        showToast("Código lido (" + texto + ") mas nenhum item cadastrado com ele — escolha o item na lista abaixo");
       }
+    }, function(){
+      showToast("Não consegui ler o código — tenta de novo com mais luz e foco, ou escolha o item na lista");
     });
   });
 
   document.getElementById("moveCancel").onclick = closeMoveSheet;
   moveOverlay.addEventListener("click", function(e){ if(e.target===moveOverlay) closeMoveSheet(); });
+
+  // ---------- Abastecer frigobar (edita quantidade / marca item em falta) ----------
+  var abastecerOverlay = document.getElementById("abastecerSheetOverlay");
+  var abastecerSolicitacaoId = null;
+
+  function itemEstoquePorNome(nome){
+    var alvo = normalizarBusca(nome);
+    return state.estoque.items.find(function(it){ return normalizarBusca(it.name) === alvo; }) || null;
+  }
+
+  function abrirAbastecerSheet(s){
+    abastecerSolicitacaoId = s.id;
+    document.getElementById("abastecerAcomodacaoNome").textContent = acomodacaoNome(s.acomodacaoId);
+    var lista = document.getElementById("abastecerItensLista");
+    lista.innerHTML = (s.itens||[]).map(function(it, i){
+      var matchEstoque = itemEstoquePorNome(it.nome);
+      return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+i+'">' +
+        '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(it.nome)+
+          (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque — não vai descontar)</span>') +
+        '</p>' +
+        '<div class="qty-stepper" style="margin-bottom:8px;">' +
+          '<button type="button" class="abastecerMinus" data-idx="'+i+'">−</button>' +
+          '<input type="number" class="abastecerQty" data-idx="'+i+'" step="1" min="0" value="'+(it.quantidade||1)+'">' +
+          '<button type="button" class="abastecerPlus" data-idx="'+i+'">+</button>' +
+        '</div>' +
+        '<label class="checkbox-row"><input type="checkbox" class="abastecerFaltando" data-idx="'+i+'"> Faltando (não tinha em estoque)</label>' +
+      '</div>';
+    }).join("");
+    lista.querySelectorAll(".abastecerMinus").forEach(function(b){
+      b.onclick = function(){
+        var inp = lista.querySelector('.abastecerQty[data-idx="'+b.getAttribute("data-idx")+'"]');
+        inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
+      };
+    });
+    lista.querySelectorAll(".abastecerPlus").forEach(function(b){
+      b.onclick = function(){
+        var inp = lista.querySelector('.abastecerQty[data-idx="'+b.getAttribute("data-idx")+'"]');
+        inp.value = (parseFloat(inp.value)||0) + 1;
+      };
+    });
+    lista.querySelectorAll(".abastecerFaltando").forEach(function(chk){
+      chk.onchange = function(){
+        var qtyInp = lista.querySelector('.abastecerQty[data-idx="'+chk.getAttribute("data-idx")+'"]');
+        qtyInp.disabled = chk.checked;
+        if(chk.checked) qtyInp.value = 0;
+      };
+    });
+    abastecerOverlay.classList.add("open");
+  }
+  function closeAbastecerSheet(){ abastecerOverlay.classList.remove("open"); abastecerSolicitacaoId = null; }
+  document.getElementById("abastecerCancel").onclick = closeAbastecerSheet;
+  abastecerOverlay.addEventListener("click", function(e){ if(e.target===abastecerOverlay) closeAbastecerSheet(); });
+
+  document.getElementById("abastecerConfirm").onclick = async function(){
+    if(!abastecerSolicitacaoId) return;
+    var s = state.solicitacoes.find(function(x){ return x.id===abastecerSolicitacaoId; });
+    if(!s) return;
+    if(!podeAgirSolicitacao(s)){ showToast("Você não tem permissão para essa ação"); return; }
+    var lista = document.getElementById("abastecerItensLista");
+    var linhas = lista.querySelectorAll("[data-idx]");
+    var destino = acomodacaoNome(s.acomodacaoId);
+    var faltando = [];
+    var btn = document.getElementById("abastecerConfirm"); btn.disabled = true;
+    try{
+      for(var i=0;i<(s.itens||[]).length;i++){
+        var it = s.itens[i];
+        var chk = lista.querySelector('.abastecerFaltando[data-idx="'+i+'"]');
+        var qtyInp = lista.querySelector('.abastecerQty[data-idx="'+i+'"]');
+        var qty = parseFloat(qtyInp.value) || 0;
+        if(chk && chk.checked){
+          faltando.push({nome:it.nome, quantidade:it.quantidade});
+          continue;
+        }
+        if(qty <= 0) continue;
+        var itemEstoque = itemEstoquePorNome(it.nome);
+        if(itemEstoque){
+          var novaQty = Math.max(0, itemEstoque.qty - qty);
+          var updated = await dbUpdate("items", itemEstoque.id, {qty:novaQty}, mapItemFromRow);
+          var idxItem = state.estoque.items.findIndex(function(x){ return x.id===itemEstoque.id; });
+          if(idxItem>-1) state.estoque.items[idxItem] = updated;
+          var mov = await dbInsert("movements", {id:uid(), item_id:itemEstoque.id, type:"saida", qty:qty, note:"Frigobar", destino:destino, date:new Date().toISOString()}, mapMovementFromRow);
+          state.estoque.movements.unshift(mov);
+        }
+      }
+      var payload = {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null),
+        itens_faltando: faltando.length ? faltando : null};
+      var s2 = await dbUpdate("solicitacoes_acomodacao", s.id, payload, mapSolicitacaoFromRow);
+      var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
+      if(idx2>-1) state.solicitacoes[idx2] = s2;
+      closeAbastecerSheet();
+      showToast(faltando.length ? "Abastecido — "+faltando.length+" item(ns) marcado(s) em falta" : "Abastecimento registrado");
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao registrar abastecimento");
+    }finally{
+      btn.disabled = false;
+    }
+  };
 
   document.getElementById("moveMinus").onclick = function(){
     var inp = document.getElementById("moveQty");
@@ -2014,6 +2180,11 @@
     if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
     var item = state.estoque.items.find(function(i){ return i.id===moveItemId; });
     if(!item) return;
+    var destino = "";
+    if(moveType === "saida"){
+      destino = document.getElementById("moveDestino").value;
+      if(!destino){ showToast("Escolha pra onde foi o item"); return; }
+    }
     var note = document.getElementById("moveNote").value.trim();
     var typeForToast = moveType;
     var loggedQty = qty, newQty = item.qty, newQtyEmUso = item.qtyEmUso||0;
@@ -2033,7 +2204,7 @@
     var btn = document.getElementById("moveConfirm"); btn.disabled = true;
     try{
       var updatedItem = await dbUpdate("items", item.id, {qty:newQty, qty_em_uso:newQtyEmUso}, mapItemFromRow);
-      var mov = await dbInsert("movements", {id:uid(), item_id:item.id, type:moveType, qty:loggedQty, note:note, date:new Date().toISOString()}, mapMovementFromRow);
+      var mov = await dbInsert("movements", {id:uid(), item_id:item.id, type:moveType, qty:loggedQty, note:note, destino:destino||null, date:new Date().toISOString()}, mapMovementFromRow);
       var idx = state.estoque.items.findIndex(function(i){ return i.id===item.id; });
       if(idx>-1) state.estoque.items[idx] = updatedItem;
       state.estoque.movements.unshift(mov);
@@ -2608,6 +2779,32 @@
 
   // Busca adultos/crianças/observação do hóspede que está atualmente na
   // acomodação (não precisa ter chegado hoje — cobre estadias em andamento).
+  // Itens de frigobar marcados "faltando" durante a estadia que está terminando
+  // hoje nessa acomodação — usado pra avisar na hora do checkout.
+  function itensFaltantesParaCheckout(acomodacaoId){
+    var a = state.acomodacoes.find(function(x){ return x.id===acomodacaoId; });
+    if(!a || !a.codigoHospedin) return [];
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var hojeFim = hojeInicio.getTime() + 24*3600*1000;
+    var reserva = null;
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      if(r.acomodacao !== a.codigoHospedin) return;
+      var co = parseDataLocal(r.checkout).getTime();
+      if(co >= hojeInicio.getTime() && co < hojeFim) reserva = r;
+    });
+    if(!reserva) return [];
+    var ci = parseDataLocal(reserva.checkin).getTime();
+    var co = parseDataLocal(reserva.checkout).getTime();
+    var itens = [];
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo !== "frigobar" || s.acomodacaoId !== acomodacaoId) return;
+      if(!s.itensFaltando || !s.itensFaltando.length) return;
+      if(s.criadoEm >= ci && s.criadoEm <= co) itens = itens.concat(s.itensFaltando);
+    });
+    return itens;
+  }
+
   function hospedeAtualInfo(acomodacaoId){
     var a = state.acomodacoes.find(function(x){ return x.id===acomodacaoId; });
     if(!a || !a.codigoHospedin) return null;
@@ -2679,6 +2876,13 @@
         }
       }
     }
+    if(s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkout") > -1){
+      var faltantes = itensFaltantesParaCheckout(s.acomodacaoId);
+      if(faltantes.length){
+        var faltantesTxt = faltantes.map(function(it){ return escapeHtml(it.nome); }).join(", ");
+        html += '<p class="item-meta" style="color:var(--red-600);font-weight:700;">⚠️ Ficou em falta durante a estadia: '+faltantesTxt+'</p>';
+      }
+    }
     if(s.status === "bloqueada"){
       html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">🔒 Aguardando recepção liberar</p>';
     } else if(s.status === "pendente"){
@@ -2746,6 +2950,8 @@
             var idx0 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx0>-1) state.solicitacoes[idx0] = s0;
             showToast("Liberado para a limpeza"); renderApp();
+          } else if(act === "finalizar" && s.tipo === "frigobar"){
+            abrirAbastecerSheet(s);
           } else if(act === "finalizar"){
             var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
             var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
