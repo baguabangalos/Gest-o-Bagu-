@@ -3598,21 +3598,50 @@
     });
   }
 
+  var relatorioEmailsCache = null;
+  async function loadRelatorioEmails(){
+    var res = await sb.from("relatorio_destinatarios").select("*").order("criado_em");
+    if(res.error) throw res.error;
+    return res.data || [];
+  }
+
   async function renderAdmin(){
     var main = document.getElementById("adminView");
     main.innerHTML = '<div class="empty">Carregando usuários…</div>';
     try{
       adminUsersCache = await loadAdminUsers();
+      relatorioEmailsCache = await loadRelatorioEmails();
     }catch(err){
       console.error(err);
       main.innerHTML = '<div class="empty">Erro ao carregar usuários — tente de novo.</div>';
       return;
     }
+    var html = '<div class="section-title" style="margin-top:0;">📧 Relatório semanal por email</div>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Todo segunda de manhã, um resumo automático de todas as abas é enviado pra esses emails.</p>';
+    html += '<div class="card">';
+    if(relatorioEmailsCache.length === 0){
+      html += '<p class="item-meta" style="margin-bottom:10px;">Nenhum email cadastrado ainda.</p>';
+    } else {
+      relatorioEmailsCache.forEach(function(r){
+        html += '<div class="qty-row" data-remail-id="'+r.id+'" style="padding:8px 0;">' +
+          '<span class="qty-name">'+escapeHtml(r.email)+'</span>' +
+          '<button type="button" class="btn-edit" data-act="remover-email" data-id="'+r.id+'" title="Remover">🗑️</button>' +
+        '</div>';
+      });
+    }
+    html += '<div style="display:flex;gap:8px;margin-top:10px;">' +
+      '<input type="email" id="novoRelatorioEmail" placeholder="email@exemplo.com" style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);">' +
+      '<button type="button" class="btn-primary" id="adicionarRelatorioEmailBtn" style="white-space:nowrap;padding:0 14px;">+ Adicionar</button>' +
+    '</div>';
+    html += '</div>';
+
+    html += '<div class="section-title" style="margin-top:22px;">Usuários e permissões</div>';
     if(adminUsersCache.length === 0){
-      main.innerHTML = '<div class="empty">Nenhum usuário cadastrado ainda.</div>';
+      html += '<div class="empty">Nenhum usuário cadastrado ainda.</div>';
+      main.innerHTML = html;
       return;
     }
-    var html = '<p style="color:var(--ink-600);font-size:13px;margin:0 0 14px;">Marque o que cada pessoa pode ver e editar. Muda na hora, sem precisar salvar.</p>';
+    html += '<p style="color:var(--ink-600);font-size:13px;margin:0 0 14px;">Marque o que cada pessoa pode ver e editar. Muda na hora, sem precisar salvar.</p>';
     adminUsersCache.forEach(function(u){
       html += '<div class="admin-user-card" data-uid="'+u.id+'">';
       html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+'</div>';
@@ -3641,6 +3670,34 @@
       html += '</div>';
     });
     main.innerHTML = html;
+
+    var addEmailBtn = document.getElementById("adicionarRelatorioEmailBtn");
+    if(addEmailBtn){
+      addEmailBtn.onclick = async function(){
+        var input = document.getElementById("novoRelatorioEmail");
+        var email = input.value.trim();
+        if(!email || email.indexOf("@") === -1){ showToast("Digite um email válido"); return; }
+        addEmailBtn.disabled = true;
+        try{
+          await dbInsert("relatorio_destinatarios", {id:uid(), email:email}, function(r){ return r; });
+          showToast("Email adicionado"); renderAdmin();
+        }catch(err){
+          console.error(err); showToast("Erro ao adicionar email");
+          addEmailBtn.disabled = false;
+        }
+      };
+    }
+    main.querySelectorAll('[data-act="remover-email"]').forEach(function(btn){
+      btn.onclick = async function(){
+        var id = btn.getAttribute("data-id");
+        try{
+          await dbDelete("relatorio_destinatarios", id);
+          showToast("Email removido"); renderAdmin();
+        }catch(err){
+          console.error(err); showToast("Erro ao remover email");
+        }
+      };
+    });
 
     main.querySelectorAll(".admin-user-card").forEach(function(card){
       var uid = card.getAttribute("data-uid");
