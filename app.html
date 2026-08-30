@@ -606,6 +606,7 @@
         <button type="button" class="btn-secondary" id="manutencaoCancel">Cancelar</button>
         <button type="submit" class="btn-primary">Salvar</button>
       </div>
+      <button type="button" class="sheet-actions btn-primary" id="manutencaoIniciarBtn" style="display:none;width:100%;margin-top:10px;background:var(--teal-700);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;">▶ Iniciar</button>
       <button type="button" class="sheet-actions btn-primary" id="manutencaoResolveBtn" style="display:none;width:100%;margin-top:10px;background:var(--teal-900);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;">✓ Marcar como concluída</button>
       <button type="button" class="btn-secondary" id="manutencaoReopenBtn" style="display:none;width:100%;margin-top:10px;border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:600;font-family:inherit;">↺ Reabrir</button>
       <button type="button" class="btn-danger-text" id="manutencaoDelete" style="display:none;">Excluir manutenção</button>
@@ -658,6 +659,7 @@
   function mapManutencaoFromRow(r){
     return {id:r.id, title:r.title, local:r.local, description:r.description, status:r.status,
       createdAt:new Date(r.created_at).getTime(), resolvedAt:(r.resolved_at?new Date(r.resolved_at).getTime():null),
+      iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
       resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id, responsavel:r.responsavel};
   }
   function mapAcomodacaoFromRow(r){
@@ -2670,7 +2672,7 @@
 
   function renderManutencoes(){
     var main = document.getElementById("manutencoesView");
-    var pend = state.manutencoes.filter(function(m){ return m.status==="pendente"; }).sort(function(a,b){ return b.createdAt-a.createdAt; });
+    var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; }).sort(function(a,b){ return b.createdAt-a.createdAt; });
     var done = state.manutencoes.filter(function(m){ return m.status==="concluida"; }).sort(function(a,b){ return (b.resolvedAt||0)-(a.resolvedAt||0); });
     var html = '<div class="seg-toggle">' +
       '<button data-msub="pendentes" class="'+(manutencaoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
@@ -2688,6 +2690,9 @@
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
         if(m.status === "pendente"){
           html += '<p class="item-meta">aberta em '+fmtDate(m.createdAt)+'</p>' +
+            '<div class="item-actions"><button class="btn btn-in" data-act="iniciarManut" data-id="'+m.id+'">▶ Iniciar</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
+        } else if(m.status === "em_andamento"){
+          html += '<p class="item-meta">iniciada há '+fmtDuration(minutesAgo(m.iniciadoEm||m.createdAt))+'</p>' +
             '<div class="item-actions"><button class="btn btn-in" data-act="resolve" data-id="'+m.id+'">✓ Concluir</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
         } else {
           if(m.resolutionNote) html += '<p class="item-meta" style="margin-bottom:4px;"><em>'+escapeHtml(m.resolutionNote)+'</em></p>';
@@ -2721,13 +2726,18 @@
           showToast("Você não tem permissão para editar manutenções"); return;
         }
         try{
-          if(act === "resolve"){
+          if(act === "iniciarManut"){
+            var m0 = await dbUpdate("manutencoes", id, {status:"em_andamento", iniciado_em:new Date().toISOString()}, mapManutencaoFromRow);
+            var idx0 = state.manutencoes.findIndex(function(x){ return x.id===id; });
+            if(idx0>-1) state.manutencoes[idx0] = m0;
+            showToast("Manutenção iniciada"); renderApp();
+          } else if(act === "resolve"){
             var m1 = await dbUpdate("manutencoes", id, {status:"concluida", resolved_at:new Date().toISOString()}, mapManutencaoFromRow);
             var idx1 = state.manutencoes.findIndex(function(x){ return x.id===id; });
             if(idx1>-1) state.manutencoes[idx1] = m1;
             showToast("Manutenção concluída"); renderApp();
           } else if(act === "reopen"){
-            var m2 = await dbUpdate("manutencoes", id, {status:"pendente", resolved_at:null}, mapManutencaoFromRow);
+            var m2 = await dbUpdate("manutencoes", id, {status:"pendente", resolved_at:null, iniciado_em:null}, mapManutencaoFromRow);
             var idx2 = state.manutencoes.findIndex(function(x){ return x.id===id; });
             if(idx2>-1) state.manutencoes[idx2] = m2;
             showToast("Manutenção reaberta"); renderApp();
@@ -3467,6 +3477,50 @@
     return {items:items, avg:avg};
   }
 
+  // Tempo médio de lavagem, "manutenção" (limpeza durante a estadia — é
+  // assim que a Yara chama essa seção, não confundir com o módulo de
+  // conserto/reparo) e abastecimento (do pedido do hóspede até abastecido),
+  // por acomodação, dentro do período selecionado em Supervisão.
+  function computeTempoMedioPorAcomodacao(periodDays){
+    var since = periodDays ? (Date.now() - periodDays*24*3600*1000) : 0;
+    var porAcomodacao = {};
+    state.acomodacoes.filter(function(a){ return a.ativo; }).forEach(function(a){
+      porAcomodacao[a.id] = {nome:a.nome, lavagemDurs:[], manutencaoDurs:[], abastecimentoDurs:[]};
+    });
+
+    state.solicitacoes.forEach(function(s){
+      if(s.status !== "concluido" || !s.concluidoEm || s.concluidoEm < since || !s.iniciadoEm) return;
+      var alvo = porAcomodacao[s.acomodacaoId];
+      if(!alvo) return;
+      if(s.tipo === "lavagem"){
+        var dur1 = Math.floor((s.concluidoEm - s.iniciadoEm)/60000);
+        if(dur1 >= 0) alvo.lavagemDurs.push(dur1);
+      } else if(s.tipo === "limpeza" && s.contexto === "estadia"){
+        var dur3 = Math.floor((s.concluidoEm - s.iniciadoEm)/60000);
+        if(dur3 >= 0) alvo.manutencaoDurs.push(dur3);
+      }
+    });
+
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo !== "frigobar" || s.status !== "concluido" || !s.concluidoEm || s.concluidoEm < since || !s.criadoEm) return;
+      var alvo = porAcomodacao[s.acomodacaoId];
+      if(!alvo) return;
+      var dur2 = Math.floor((s.concluidoEm - s.criadoEm)/60000);
+      if(dur2 >= 0) alvo.abastecimentoDurs.push(dur2);
+    });
+
+    function media(arr){ return arr.length ? Math.round(arr.reduce(function(a,b){ return a+b; },0)/arr.length) : null; }
+
+    return Object.keys(porAcomodacao).map(function(id){
+      var d = porAcomodacao[id];
+      return {id:id, nome:d.nome,
+        lavagemMedia:media(d.lavagemDurs), lavagemN:d.lavagemDurs.length,
+        manutencaoMedia:media(d.manutencaoDurs), manutencaoN:d.manutencaoDurs.length,
+        abastecimentoMedia:media(d.abastecimentoDurs), abastecimentoN:d.abastecimentoDurs.length};
+    }).filter(function(r){ return r.lavagemN>0 || r.manutencaoN>0 || r.abastecimentoN>0; })
+      .sort(function(a,b){ return a.nome.localeCompare(b.nome, "pt-BR"); });
+  }
+
   function renderSupervisao(){
     var main = document.getElementById("supervisaoView");
     var html = buildPainelHtml();
@@ -3494,6 +3548,24 @@
       });
       html += '</div>';
     }
+
+    html += '<div class="section-title" style="margin-top:22px;">⏱️ Tempo médio por acomodação</div>';
+    var tempos = computeTempoMedioPorAcomodacao(parseInt(supervisaoPeriod,10));
+    if(tempos.length === 0){
+      html += '<div class="empty">Ainda não há dados suficientes no período pra calcular médias.</div>';
+    } else {
+      html += '<div class="card">';
+      tempos.forEach(function(r, i){
+        html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<p style="margin:0 0 4px;font-size:14px;font-weight:700;">'+escapeHtml(r.nome)+'</p>' +
+          '<p class="item-meta">🧺 Lavagem: '+(r.lavagemMedia!=null ? ('<b>'+fmtDuration(r.lavagemMedia)+'</b> · '+r.lavagemN+' concluída(s)') : 'sem dados')+'</p>' +
+          '<p class="item-meta">🔧 Manutenção: '+(r.manutencaoMedia!=null ? ('<b>'+fmtDuration(r.manutencaoMedia)+'</b> · '+r.manutencaoN+' concluída(s)') : 'sem dados')+'</p>' +
+          '<p class="item-meta">🥤 Abastecimento: '+(r.abastecimentoMedia!=null ? ('<b>'+fmtDuration(r.abastecimentoMedia)+'</b> · '+r.abastecimentoN+' concluído(s)') : 'sem dados')+'</p>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+
     main.innerHTML = html;
     main.querySelectorAll("[data-hperiod]").forEach(function(b){
       b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); renderSupervisao(); };
@@ -3830,7 +3902,8 @@
     document.getElementById("mn_desc").value = m ? (m.description||"") : "";
     document.getElementById("mn_resolutionNote").value = m ? (m.resolutionNote||"") : "";
     document.getElementById("mn_resolveWrap").style.display = (m && m.status==="concluida") ? "block" : "none";
-    document.getElementById("manutencaoResolveBtn").style.display = (m && m.status==="pendente") ? "block" : "none";
+    document.getElementById("manutencaoIniciarBtn").style.display = (m && m.status==="pendente") ? "block" : "none";
+    document.getElementById("manutencaoResolveBtn").style.display = (m && m.status==="em_andamento") ? "block" : "none";
     document.getElementById("manutencaoReopenBtn").style.display = (m && m.status==="concluida") ? "block" : "none";
     document.getElementById("manutencaoDelete").style.display = (m && podeExcluir("manutencao")) ? "block" : "none";
     manutencaoOverlay.classList.add("open");
@@ -3870,6 +3943,20 @@
     }
   });
 
+  document.getElementById("manutencaoIniciarBtn").onclick = async function(){
+    if(!editingManutencaoId) return;
+    if(!podeEditar("manutencao")){ showToast("Você não tem permissão para editar manutenções"); return; }
+    try{
+      var m5 = await dbUpdate("manutencoes", editingManutencaoId, {status:"em_andamento", iniciado_em:new Date().toISOString()}, mapManutencaoFromRow);
+      var idx5 = state.manutencoes.findIndex(function(x){ return x.id===editingManutencaoId; });
+      if(idx5>-1) state.manutencoes[idx5] = m5;
+      closeManutencaoSheet();
+      showToast("Manutenção iniciada");
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao iniciar manutenção");
+    }
+  };
   document.getElementById("manutencaoResolveBtn").onclick = async function(){
     if(!editingManutencaoId) return;
     if(!podeEditar("manutencao")){ showToast("Você não tem permissão para editar manutenções"); return; }
@@ -3895,7 +3982,7 @@
     if(!editingManutencaoId) return;
     if(!podeEditar("manutencao")){ showToast("Você não tem permissão para editar manutenções"); return; }
     try{
-      var m4 = await dbUpdate("manutencoes", editingManutencaoId, {status:"pendente", resolved_at:null}, mapManutencaoFromRow);
+      var m4 = await dbUpdate("manutencoes", editingManutencaoId, {status:"pendente", resolved_at:null, iniciado_em:null}, mapManutencaoFromRow);
       var idx4 = state.manutencoes.findIndex(function(x){ return x.id===editingManutencaoId; });
       if(idx4>-1) state.manutencoes[idx4] = m4;
       closeManutencaoSheet();
