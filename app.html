@@ -569,6 +569,8 @@
       <input type="text" id="mn_title" required placeholder="Ex: Torneira vazando">
       <label>Local (opcional)</label>
       <input type="text" id="mn_local" placeholder="Ex: Bangalô 3">
+      <label>Responsável (opcional)</label>
+      <input type="text" id="mn_responsavel" placeholder="Ex: João (equipe) ou nome do prestador">
       <label>Descrição (opcional)</label>
       <textarea id="mn_desc" placeholder="Detalhes do problema…"></textarea>
       <div id="mn_resolveWrap" style="display:none;">
@@ -630,7 +632,7 @@
   function mapManutencaoFromRow(r){
     return {id:r.id, title:r.title, local:r.local, description:r.description, status:r.status,
       createdAt:new Date(r.created_at).getTime(), resolvedAt:(r.resolved_at?new Date(r.resolved_at).getTime():null),
-      resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id};
+      resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id, responsavel:r.responsavel};
   }
   function mapAcomodacaoFromRow(r){
     return {id:r.id, nome:r.nome, ativo:r.ativo, ordem:r.ordem, codigoHospedin:r.codigo_hospedin};
@@ -2309,11 +2311,39 @@
   var pendingProcPhoto = null;
   var pendingProcFile = null;
 
+  var procedimentosSearchQuery = "";
+  function normalizarBusca(s){
+    return (s||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  }
+
   function renderProcedimentos(){
     var main = document.getElementById("procedimentosView");
+    main.innerHTML =
+      '<div style="padding:0 0 12px;">' +
+        '<input type="text" id="procSearchInput" placeholder="Buscar por título ou palavra-chave…" value="'+escapeHtml(procedimentosSearchQuery)+'" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;background:#fff;font-family:inherit;">' +
+      '</div>' +
+      '<div id="procResultsContainer"></div>';
+    var input = document.getElementById("procSearchInput");
+    input.addEventListener("input", function(){
+      procedimentosSearchQuery = input.value;
+      renderProcedimentosResultados();
+    });
+    renderProcedimentosResultados();
+  }
+
+  function renderProcedimentosResultados(){
+    var container = document.getElementById("procResultsContainer");
     var list = state.procedimentos.slice().sort(function(a,b){ return b.createdAt - a.createdAt; });
+    var q = normalizarBusca(procedimentosSearchQuery.trim());
+    if(q){
+      list = list.filter(function(p){
+        return normalizarBusca(p.title).indexOf(q) > -1 || normalizarBusca(p.text).indexOf(q) > -1;
+      });
+    }
     if(list.length === 0){
-      main.innerHTML = '<div class="empty">Nenhum procedimento salvo ainda.<br>Toque em "+" para adicionar.</div>';
+      container.innerHTML = q
+        ? '<div class="empty">Nenhum procedimento encontrado com "'+escapeHtml(procedimentosSearchQuery.trim())+'".</div>'
+        : '<div class="empty">Nenhum procedimento salvo ainda.<br>Toque em "+" para adicionar.</div>';
       return;
     }
     var html = "";
@@ -2327,14 +2357,14 @@
       if(p.videoUrl) html += '<p class="item-meta" style="margin-top:6px;"><a href="'+escapeHtml(p.videoUrl)+'" target="_blank" rel="noopener" class="video-link-proc" style="color:var(--teal-700);font-weight:700;text-decoration:none;">▶ Assistir vídeo</a></p>';
       html += '</div>';
     });
-    main.innerHTML = html;
-    main.querySelectorAll(".proc-card").forEach(function(c){
+    container.innerHTML = html;
+    container.querySelectorAll(".proc-card").forEach(function(c){
       c.onclick = function(){
         var p = state.procedimentos.find(function(x){ return x.id === c.getAttribute("data-id"); });
         if(p) openProcedimentoSheet(p);
       };
     });
-    main.querySelectorAll(".video-link-proc").forEach(function(a){
+    container.querySelectorAll(".video-link-proc").forEach(function(a){
       a.onclick = function(e){ e.stopPropagation(); };
     });
   }
@@ -2479,6 +2509,7 @@
       list.forEach(function(m){
         html += '<div class="card manut-card" data-id="'+m.id+'">' +
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
+        if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">👤 '+escapeHtml(m.responsavel)+'</p>';
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
         if(m.status === "pendente"){
           html += '<p class="item-meta">aberta em '+fmtDate(m.createdAt)+'</p>' +
@@ -3474,7 +3505,7 @@
   async function buscarHospede(){
     var q = document.getElementById("hospedeSearchInput").value.trim();
     var results = document.getElementById("hospedeSearchResults");
-    if(!q){ results.innerHTML = ""; return; }
+    if(!q){ carregarTodosHospedes(); return; }
     results.innerHTML = '<div class="empty">Buscando…</div>';
     var digits = onlyDigits(q);
     var upper = q.toUpperCase();
@@ -3493,22 +3524,43 @@
       return;
     }
     var html = "";
-    hs.forEach(function(h){
-      html += '<div class="admin-user-card" data-hid="'+h.id+'">' +
-        '<div class="admin-user-name">'+escapeHtml(h.nome||"(sem nome)")+'</div>' +
-        '<div class="admin-user-email">'+(h.cpf?("CPF "+formatCpf(h.cpf)):"")+(h.passaporte?(" · Passaporte "+escapeHtml(h.passaporte)):"")+'</div>' +
-        (h.fotos.length ? '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">📎 '+h.fotos.length+' foto(s) já registrada(s) — não precisa fotografar de novo.</p>' : '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">Nenhuma foto registrada ainda.</p>') +
-        (h.observacoes ? '<p style="font-size:12.5px;color:var(--ink-700);margin:0 0 8px;">'+escapeHtml(h.observacoes)+'</p>' : '') +
-        '<button type="button" class="admin-role-btn" data-view-hid="'+h.id+'">Ver / editar</button>' +
-      '</div>';
-    });
+    hs.forEach(function(h){ html += hospedeCardHtml(h); });
     results.innerHTML = html;
-    results.querySelectorAll("[data-view-hid]").forEach(function(btn){
+    wireHospedeCards(results, hs);
+  }
+
+  function hospedeCardHtml(h){
+    return '<div class="admin-user-card" data-hid="'+h.id+'">' +
+      '<div class="admin-user-name">'+escapeHtml(h.nome||"(sem nome)")+'</div>' +
+      '<div class="admin-user-email">'+(h.cpf?("CPF "+formatCpf(h.cpf)):"")+(h.passaporte?(" · Passaporte "+escapeHtml(h.passaporte)):"")+'</div>' +
+      (h.fotos.length ? '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">📎 '+h.fotos.length+' foto(s) já registrada(s) — não precisa fotografar de novo.</p>' : '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">Nenhuma foto registrada ainda.</p>') +
+      (h.observacoes ? '<p style="font-size:12.5px;color:var(--ink-700);margin:0 0 8px;">'+escapeHtml(h.observacoes)+'</p>' : '') +
+      '<button type="button" class="admin-role-btn" data-view-hid="'+h.id+'">Ver / editar</button>' +
+    '</div>';
+  }
+  function wireHospedeCards(container, hs){
+    container.querySelectorAll("[data-view-hid]").forEach(function(btn){
       btn.onclick = function(){
         var h = hs.find(function(x){ return x.id === btn.getAttribute("data-view-hid"); });
-        openHospedeSheet(h);
+        if(h) openHospedeSheet(h);
       };
     });
+  }
+
+  async function carregarTodosHospedes(){
+    var results = document.getElementById("hospedeSearchResults");
+    results.innerHTML = '<div class="empty">Carregando…</div>';
+    var res = await sb.from("hospedes").select("*").order("created_at", {ascending:false}).limit(200);
+    if(res.error){ results.innerHTML = '<div class="empty">Erro ao carregar hóspedes.</div>'; console.error(res.error); return; }
+    var hs = (res.data||[]).map(mapHospedeFromRow);
+    if(hs.length === 0){
+      results.innerHTML = '<div class="empty">Nenhum hóspede cadastrado ainda.</div>';
+      return;
+    }
+    var html = '<p class="count-intro" style="margin:0 0 10px;">'+hs.length+' hóspede(s) cadastrado(s)</p>';
+    hs.forEach(function(h){ html += hospedeCardHtml(h); });
+    results.innerHTML = html;
+    wireHospedeCards(results, hs);
   }
 
   function renderHospedes(){
@@ -3525,7 +3577,11 @@
       '</div>';
     document.getElementById("hospedeSearchBtn").onclick = buscarHospede;
     document.getElementById("hospedeSearchInput").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); buscarHospede(); } });
+    document.getElementById("hospedeSearchInput").addEventListener("input", function(e){
+      if(!e.target.value.trim()) carregarTodosHospedes();
+    });
     document.getElementById("hospedeAddDirectBtn").onclick = function(){ openHospedeSheet(null); };
+    carregarTodosHospedes();
   }
 
   function openManutencaoSheet(m){
@@ -3533,6 +3589,7 @@
     document.getElementById("manutencaoSheetTitle").textContent = m ? "Editar manutenção" : "Nova manutenção";
     document.getElementById("mn_title").value = m ? m.title : "";
     document.getElementById("mn_local").value = m ? (m.local||"") : "";
+    document.getElementById("mn_responsavel").value = m ? (m.responsavel||"") : "";
     document.getElementById("mn_desc").value = m ? (m.description||"") : "";
     document.getElementById("mn_resolutionNote").value = m ? (m.resolutionNote||"") : "";
     document.getElementById("mn_resolveWrap").style.display = (m && m.status==="concluida") ? "block" : "none";
@@ -3552,19 +3609,20 @@
     var title = document.getElementById("mn_title").value.trim();
     if(!title) return;
     var local = document.getElementById("mn_local").value.trim();
+    var responsavel = document.getElementById("mn_responsavel").value.trim();
     var description = document.getElementById("mn_desc").value.trim();
     var resolutionNote = document.getElementById("mn_resolutionNote").value.trim();
     try{
       if(editingManutencaoId){
         var mCur = state.manutencoes.find(function(x){ return x.id===editingManutencaoId; });
-        var payload = {title:title, local:local, description:description};
+        var payload = {title:title, local:local, responsavel:responsavel, description:description};
         if(mCur && mCur.status === "concluida") payload.resolution_note = resolutionNote;
         var m1 = await dbUpdate("manutencoes", editingManutencaoId, payload, mapManutencaoFromRow);
         var idx1 = state.manutencoes.findIndex(function(x){ return x.id===editingManutencaoId; });
         if(idx1>-1) state.manutencoes[idx1] = m1;
         showToast("Manutenção atualizada");
       } else {
-        var m2 = await dbInsert("manutencoes", {id:uid(), title:title, local:local, description:description, status:"pendente", origem:"manual"}, mapManutencaoFromRow);
+        var m2 = await dbInsert("manutencoes", {id:uid(), title:title, local:local, responsavel:responsavel, description:description, status:"pendente", origem:"manual"}, mapManutencaoFromRow);
         state.manutencoes.push(m2);
         showToast("Manutenção registrada");
       }
@@ -3580,10 +3638,11 @@
     if(!podeEditar("manutencao")){ showToast("Você não tem permissão para editar manutenções"); return; }
     var title = document.getElementById("mn_title").value.trim();
     var local = document.getElementById("mn_local").value.trim();
+    var responsavel = document.getElementById("mn_responsavel").value.trim();
     var description = document.getElementById("mn_desc").value.trim();
     var resolutionNote = document.getElementById("mn_resolutionNote").value.trim();
     try{
-      var payload = {local:local, description:description, resolution_note:resolutionNote, status:"concluida", resolved_at:new Date().toISOString()};
+      var payload = {local:local, responsavel:responsavel, description:description, resolution_note:resolutionNote, status:"concluida", resolved_at:new Date().toISOString()};
       if(title) payload.title = title;
       var m3 = await dbUpdate("manutencoes", editingManutencaoId, payload, mapManutencaoFromRow);
       var idx3 = state.manutencoes.findIndex(function(x){ return x.id===editingManutencaoId; });
