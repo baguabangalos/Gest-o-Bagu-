@@ -360,8 +360,6 @@
   </div>
   <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:6px;">
     <span id="userBadge" style="font-size:12px;color:var(--ink-400,#888);"></span>
-    <button type="button" id="minhaContaBtn" class="link-btn" style="font-size:12px;width:auto;display:inline-block;margin-top:0;padding:2px 0;white-space:nowrap;">Minha conta</button>
-    <button type="button" id="logoutBtn" class="link-btn" style="font-size:12px;width:auto;display:inline-block;margin-top:0;padding:2px 0;white-space:nowrap;">Sair</button>
     <button type="button" id="enableNotifBtn" class="link-btn" style="font-size:12px;width:auto;display:none;margin-top:0;padding:2px 0;white-space:nowrap;">🔔 Ativar notificações</button>
   </div>
 </header>
@@ -381,6 +379,7 @@
 <main id="limpezaView" style="display:none;"></main>
 <main id="recepcaoView" style="display:none;"></main>
 <main id="supervisaoView" style="display:none;"></main>
+<main id="configuracoesView" style="display:none;"></main>
 
 <button class="fab" id="fab">+</button>
 
@@ -902,14 +901,14 @@
     }
   };
 
-  document.getElementById("logoutBtn").onclick = async function(){
+  async function fazerLogout(){
     await sb.auth.signOut();
     if(realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
     currentUser = null;
     state = null;
     document.getElementById("appShell").style.display = "none";
     showLogin();
-  };
+  }
 
   document.getElementById("nsr_salvar").onclick = async function(){
     var senha = document.getElementById("nsr_senha").value;
@@ -934,14 +933,14 @@
   };
 
   // ---------- Minha conta (trocar e-mail / senha, dentro do app) ----------
-  document.getElementById("minhaContaBtn").onclick = function(){
+  function abrirMinhaConta(){
     document.getElementById("ma_emailAtual").value = (currentUser && currentUser.email) || "";
     document.getElementById("ma_novoEmail").value = "";
     document.getElementById("ma_novaSenha").value = "";
     document.getElementById("ma_confirmarSenha").value = "";
     document.getElementById("ma_msg").style.display = "none";
     document.getElementById("minhaContaSheetOverlay").classList.add("open");
-  };
+  }
   document.getElementById("ma_fechar").onclick = function(){
     document.getElementById("minhaContaSheetOverlay").classList.remove("open");
   };
@@ -1274,14 +1273,14 @@
     if(sec==="hospedes") return "hospedes";
     if(sec==="limpeza") return "limpeza";
     if(sec==="recepcao") return "recepcao";
-    if(sec==="admin" || sec==="supervisao") return null;
+    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes") return null;
     return "procedimentos";
   }
 
   function renderApp(){
     if(appSection === "admin" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
     else if(appSection === "supervisao" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
-    else if(appSection !== "home" && appSection !== "admin" && appSection !== "supervisao" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
+    else if(appSection !== "home" && appSection !== "admin" && appSection !== "supervisao" && appSection !== "configuracoes" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
     renderHeader();
     document.getElementById("homeView").style.display = appSection==="home" ? "block":"none";
     document.getElementById("itemsView").style.display = (appSection==="estoque" && activeView==="items") ? "block":"none";
@@ -1296,6 +1295,7 @@
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
     document.getElementById("recepcaoView").style.display = appSection==="recepcao" ? "block":"none";
     document.getElementById("supervisaoView").style.display = appSection==="supervisao" ? "block":"none";
+    document.getElementById("configuracoesView").style.display = appSection==="configuracoes" ? "block":"none";
 
     document.getElementById("tabs").style.display = (appSection==="estoque" && activeView==="items") ? "flex":"none";
     document.querySelector("footer.bottom-nav").style.display = appSection==="estoque" ? "flex":"none";
@@ -1332,6 +1332,7 @@
     if(appSection === "limpeza") renderLimpeza();
     if(appSection === "recepcao") renderRecepcao();
     if(appSection === "supervisao") renderSupervisao();
+    if(appSection === "configuracoes") renderConfiguracoes();
   }
 
   document.querySelectorAll(".nav-btn").forEach(function(b){
@@ -1405,6 +1406,12 @@
         '<div class="home-card-main"><p class="home-card-title">Administração</p><p class="home-card-sub">gerenciar quem acessa o quê</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
+    cardsHtml +=
+      '<div class="card home-card" data-section="configuracoes">' +
+        '<div class="home-card-ic">⚙️</div>' +
+        '<div class="home-card-main"><p class="home-card-title">Configurações</p><p class="home-card-sub">minha conta e sair</p></div>' +
+        '<div class="home-card-arrow">›</div>' +
+      '</div>';
     main.innerHTML = cardsHtml || '<div class="empty">Você ainda não tem acesso liberado a nenhuma área. Peça para o administrador liberar seu acesso.</div>';
     main.querySelectorAll(".home-card").forEach(function(c){
       c.onclick = function(){
@@ -1414,6 +1421,20 @@
         renderApp();
       };
     });
+  }
+
+  // ---------- Configurações ----------
+  function renderConfiguracoes(){
+    var main = document.getElementById("configuracoesView");
+    main.innerHTML =
+      '<div class="card" style="margin-bottom:16px;">' +
+        '<p style="margin:0 0 3px;font-size:16px;font-weight:700;">'+escapeHtml((currentUser&&currentUser.nome)||"")+'</p>' +
+        '<p style="margin:0;font-size:13px;color:var(--ink-600);">'+escapeHtml((currentUser&&currentUser.email)||"")+(currentUser&&currentUser.role==="admin"?" · admin":"")+'</p>' +
+      '</div>' +
+      '<button type="button" id="cfgMinhaContaBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">🔑 Minha conta<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Trocar e-mail e senha</span></button>' +
+      '<button type="button" id="cfgSairBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">🚪 Sair da conta</button>';
+    document.getElementById("cfgMinhaContaBtn").onclick = abrirMinhaConta;
+    document.getElementById("cfgSairBtn").onclick = fazerLogout;
   }
 
   // ---------- Tabs ----------
