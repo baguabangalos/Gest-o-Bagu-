@@ -121,20 +121,20 @@
 
   // Precisa bater exatamente com os ids inseridos em modulo_operacional.sql
   var ACOMODACOES = {
-    "bangalo-loft":{nome:"Bangalô Loft", itens:ITENS_COMPLETO},
-    "bangalo-panorama-01":{nome:"Bangalô Panorama 01", itens:ITENS_COMPLETO},
-    "bangalo-panorama-02":{nome:"Bangalô Panorama 02", itens:ITENS_COMPLETO},
-    "bangalo-bagua-01":{nome:"Bangalô Baguá 01", itens:ITENS_PADRAO},
-    "bangalo-bagua-02":{nome:"Bangalô Baguá 02", itens:ITENS_PADRAO},
-    "bangalo-bagua-03":{nome:"Bangalô Baguá 03", itens:ITENS_PADRAO},
-    "bangalo-bagua-04":{nome:"Bangalô Baguá 04", itens:ITENS_PADRAO},
-    "bangalo-safari-01":{nome:"Bangalô Safari 01", itens:ITENS_PADRAO},
-    "bangalo-safari-02":{nome:"Bangalô Safari 02", itens:ITENS_PADRAO},
+    "bangalo-loft":{nome:"Bangalô Loft", itens:ITENS_COMPLETO, fogueira:true},
+    "bangalo-panorama-01":{nome:"Bangalô Panorama 01", itens:ITENS_COMPLETO, fogueira:true},
+    "bangalo-panorama-02":{nome:"Bangalô Panorama 02", itens:ITENS_COMPLETO, fogueira:true},
+    "bangalo-bagua-01":{nome:"Bangalô Baguá 01", itens:ITENS_PADRAO, fogueira:true},
+    "bangalo-bagua-02":{nome:"Bangalô Baguá 02", itens:ITENS_PADRAO, fogueira:true},
+    "bangalo-bagua-03":{nome:"Bangalô Baguá 03", itens:ITENS_PADRAO, fogueira:true},
+    "bangalo-bagua-04":{nome:"Bangalô Baguá 04", itens:ITENS_PADRAO, fogueira:true},
+    "bangalo-safari-01":{nome:"Bangalô Safari 01", itens:ITENS_PADRAO, fogueira:true},
+    "bangalo-safari-02":{nome:"Bangalô Safari 02", itens:ITENS_PADRAO, fogueira:true},
     "casa-maria":{nome:"Casa Maria", itens:ITENS_PADRAO},
-    "bangalo-preguica":{nome:"Bangalô Preguiça", itens:ITENS_PADRAO},
-    "joao-de-barro":{nome:"João de Barro", itens:ITENS_PADRAO},
-    "suite-cerrado-01":{nome:"Suite Cerrado 01", itens:ITENS_PADRAO},
-    "suite-cerrado-02":{nome:"Suite Cerrado 02", itens:ITENS_PADRAO},
+    "bangalo-preguica":{nome:"Bangalô Preguiça", itens:ITENS_PADRAO, fogueira:true},
+    "joao-de-barro":{nome:"João de Barro", itens:ITENS_PADRAO, fogueira:true},
+    "suite-cerrado-01":{nome:"Suite Cerrado 01", itens:ITENS_PADRAO, fogueira:true},
+    "suite-cerrado-02":{nome:"Suite Cerrado 02", itens:ITENS_PADRAO, fogueira:true},
     "bangalo-yaya-01":{nome:"Bangalô Yaya 01", itens:ITENS_PADRAO},
     "bangalo-yaya-02":{nome:"Bangalô Yaya 02", itens:ITENS_PADRAO},
     "bangalo-yaya-03":{nome:"Bangalô Yaya 03", itens:ITENS_PADRAO},
@@ -374,7 +374,7 @@
         '<button class="btn-opt" data-tipo="reparo"><span class="ic">🔧</span><span><span>'+t("naoFunciona")+'</span><span class="sub">'+t("reparoSub")+'</span></span></button>' +
         '<a class="btn-opt" href="https://calendly.com/baguabangalos/jacuzzi" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛁</span><span><span>'+t("reservarJacuzzi")+'</span><span class="sub">'+t("agendarHorario")+'</span></span></a>' +
         '<button class="btn-opt" data-tipo="sauna"><span class="ic">🧖</span><span><span>'+t("ligarSauna")+'</span><span class="sub">'+t("pedirLigarAgora")+'</span></span></button>' +
-        '<button class="btn-opt" data-tipo="lenha"><span class="ic">🪵</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' +
+        (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha"><span class="ic">🪵</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' : '') +
         '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>'+t("faleGestao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></button>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
