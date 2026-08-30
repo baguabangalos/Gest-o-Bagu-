@@ -369,6 +369,7 @@
 <main id="reportView" style="display:none;"></main>
 <main id="historyView" style="display:none;"></main>
 <main id="countView" style="display:none;"></main>
+<main id="abastecimentoView" style="display:none;"></main>
 <main id="procedimentosView" style="display:none;"></main>
 <main id="manutencoesView" style="display:none;"></main>
 <main id="adminView" style="display:none;"></main>
@@ -381,6 +382,7 @@
 
 <footer class="bottom-nav" style="display:none;">
   <button class="nav-btn active" data-view="items"><span class="ic">📦</span>Estoque</button>
+  <button class="nav-btn" data-view="abastecimento"><span class="ic">🥤</span>Abastecer</button>
   <button class="nav-btn" data-view="count"><span class="ic">📋</span>Contagem</button>
   <button class="nav-btn" data-view="history"><span class="ic">🕓</span>Histórico</button>
   <button class="nav-btn" data-view="report"><span class="ic">📤</span>Relatório</button>
@@ -1130,6 +1132,7 @@
     document.getElementById("historyView").style.display = (appSection==="estoque" && activeView==="history") ? "block":"none";
     document.getElementById("reportView").style.display = (appSection==="estoque" && activeView==="report") ? "block":"none";
     document.getElementById("countView").style.display = (appSection==="estoque" && activeView==="count") ? "block":"none";
+    document.getElementById("abastecimentoView").style.display = (appSection==="estoque" && activeView==="abastecimento") ? "block":"none";
     document.getElementById("procedimentosView").style.display = appSection==="procedimentos" ? "block":"none";
     document.getElementById("manutencoesView").style.display = appSection==="manutencoes" ? "block":"none";
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
@@ -1164,6 +1167,7 @@
       if(activeView==="history") renderHistory();
       if(activeView==="report") renderReport();
       if(activeView==="count") renderCount();
+      if(activeView==="abastecimento") renderAbastecimento();
     }
     if(appSection === "procedimentos") renderProcedimentos();
     if(appSection === "manutencoes") renderManutencoes();
@@ -3302,6 +3306,33 @@
     html += renderGrupo("🟡 Em andamento", andamento);
     html += renderGrupo("🟢 Concluídos hoje", concluidosHoje);
     return html;
+  }
+
+  var abastecimentoSubView = "pendentes";
+  function renderAbastecimento(){
+    var main = document.getElementById("abastecimentoView");
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var pend = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "pendente"; })
+      .sort(function(a,b){ return a.criadoEm - b.criadoEm; });
+    var feitos = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
+      .sort(function(a,b){ return b.concluidoEm - a.concluidoEm; });
+    var html = '<div class="seg-toggle">' +
+      '<button data-asub="pendentes" class="'+(abastecimentoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
+      '<button data-asub="feitos" class="'+(abastecimentoSubView==="feitos"?"active":"")+'">Abastecidos hoje</button>' +
+    '</div>';
+    var list = abastecimentoSubView === "pendentes" ? pend : feitos;
+    if(list.length === 0){
+      html += '<div class="empty">'+(abastecimentoSubView==="pendentes" ? "Nenhum pedido de frigobar em aberto." : "Nenhum abastecimento feito hoje ainda.")+'</div>';
+    } else {
+      list.forEach(function(s){
+        html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
+      });
+    }
+    main.innerHTML = html;
+    main.querySelectorAll("[data-asub]").forEach(function(b){
+      b.onclick = function(){ abastecimentoSubView = b.getAttribute("data-asub"); renderAbastecimento(); };
+    });
+    wireSolicitacaoActions(main);
   }
 
   function renderRecepcao(){
