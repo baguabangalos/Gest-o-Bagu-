@@ -3550,8 +3550,8 @@
   async function carregarTodosHospedes(){
     var results = document.getElementById("hospedeSearchResults");
     results.innerHTML = '<div class="empty">Carregando…</div>';
-    var res = await sb.from("hospedes").select("*").order("created_at", {ascending:false}).limit(200);
-    if(res.error){ results.innerHTML = '<div class="empty">Erro ao carregar hóspedes.</div>'; console.error(res.error); return; }
+    var res = await sb.from("hospedes").select("*").order("nome", {ascending:true}).limit(200);
+    if(res.error){ results.innerHTML = '<div class="empty">Erro ao carregar hóspedes: '+escapeHtml(res.error.message||"")+'</div>'; console.error(res.error); return; }
     var hs = (res.data||[]).map(mapHospedeFromRow);
     if(hs.length === 0){
       results.innerHTML = '<div class="empty">Nenhum hóspede cadastrado ainda.</div>';
