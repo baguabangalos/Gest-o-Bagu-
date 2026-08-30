@@ -334,6 +334,9 @@
     <input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="username">
     <label>Senha</label>
     <input type="password" id="loginPassword" placeholder="Senha" autocomplete="current-password">
+    <p style="text-align:right;margin:6px 0 0;font-size:12.5px;">
+      <a href="#" id="loginForgotPassword" style="color:var(--ink-600);">Esqueci minha senha</a>
+    </p>
     <div id="loginError" style="color:#c0392b;font-size:13px;margin-top:8px;display:none;"></div>
     <div id="loginInfo" style="color:var(--ink-600);font-size:13px;margin-top:8px;display:none;"></div>
     <div class="sheet-actions" style="margin-top:16px;">
@@ -357,6 +360,7 @@
   </div>
   <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
     <span id="userBadge" style="font-size:12px;color:var(--ink-400,#888);"></span>
+    <button type="button" id="minhaContaBtn" class="link-btn" style="font-size:12px;">Minha conta</button>
     <button type="button" id="logoutBtn" class="link-btn" style="font-size:12px;">Sair</button>
     <button type="button" id="enableNotifBtn" class="link-btn" style="font-size:12px;display:none;">🔔 Ativar notificações</button>
   </div>
@@ -475,6 +479,53 @@
     <div class="sheet-actions">
       <button type="button" class="btn-secondary" id="abastecerCancel">Cancelar</button>
       <button type="button" class="btn-primary" id="abastecerConfirm">✓ Confirmar abastecimento</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sheet: minha conta (trocar email/senha) -->
+<div class="sheet-overlay" id="minhaContaSheetOverlay">
+  <div class="sheet">
+    <h2>Minha conta</h2>
+
+    <label>E-mail atual</label>
+    <input type="email" id="ma_emailAtual" disabled style="background:var(--sand-100);color:var(--ink-600);">
+
+    <label style="margin-top:18px;">Novo e-mail</label>
+    <input type="email" id="ma_novoEmail" placeholder="novo@email.com">
+    <p style="font-size:12px;color:var(--ink-600);margin:4px 0 0;">Chega um link de confirmação no e-mail novo (e às vezes no antigo também) antes de valer.</p>
+    <div class="sheet-actions" style="margin-top:8px;">
+      <button type="button" class="btn-primary" id="ma_salvarEmailBtn" style="width:100%;">Atualizar e-mail</button>
+    </div>
+
+    <label style="margin-top:22px;">Nova senha</label>
+    <input type="password" id="ma_novaSenha" placeholder="Mínimo 6 caracteres">
+    <label style="margin-top:8px;">Confirmar nova senha</label>
+    <input type="password" id="ma_confirmarSenha" placeholder="Digite de novo">
+    <div class="sheet-actions" style="margin-top:8px;">
+      <button type="button" class="btn-primary" id="ma_salvarSenhaBtn" style="width:100%;">Atualizar senha</button>
+    </div>
+
+    <div id="ma_msg" style="font-size:13px;margin-top:14px;display:none;"></div>
+
+    <div class="sheet-actions" style="margin-top:18px;">
+      <button type="button" class="btn-secondary" id="ma_fechar" style="width:100%;">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sheet: definir nova senha (fluxo de "esqueci a senha") -->
+<div class="sheet-overlay" id="novaSenhaRecuperacaoOverlay">
+  <div class="sheet">
+    <h2>Defina uma nova senha</h2>
+    <p style="font-size:13px;color:var(--ink-600);margin:0 0 4px;">Você veio pelo link de recuperação — escolha sua nova senha.</p>
+    <label>Nova senha</label>
+    <input type="password" id="nsr_senha" placeholder="Mínimo 6 caracteres">
+    <label style="margin-top:8px;">Confirmar</label>
+    <input type="password" id="nsr_confirmar" placeholder="Digite de novo">
+    <div id="nsr_msg" style="color:#c0392b;font-size:13px;margin-top:8px;display:none;"></div>
+    <div class="sheet-actions" style="margin-top:16px;">
+      <button type="button" class="btn-primary" id="nsr_salvar" style="width:100%;">Salvar nova senha</button>
     </div>
   </div>
 </div>
@@ -627,6 +678,13 @@
   var SUPABASE_ANON_KEY = "sb_publishable_SjZqlf6p1qP6p_kXeIvmZQ_CETTCP5R"; // Publishable key (Settings > API Keys)
   var VAPID_PUBLIC_KEY = "BOdPayA7TM7NbST3dl0BU0YKe0u96t8tusDrhwiae-kbl0ZgRtl_cmuL-F6afW2LzASWDV6SYVdPED7MAwp_jS4";
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Detecta quando a pessoa clica no link de "esqueci minha senha" do e-mail
+  sb.auth.onAuthStateChange(function(event, session){
+    if(event === "PASSWORD_RECOVERY"){
+      document.getElementById("novaSenhaRecuperacaoOverlay").classList.add("open");
+    }
+  });
 
   var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção"];
   var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção"};
@@ -826,6 +884,24 @@
     }
   };
 
+  document.getElementById("loginForgotPassword").onclick = async function(e){
+    e.preventDefault();
+    var email = document.getElementById("loginEmail").value.trim();
+    if(!email){ showLogin("Digite seu e-mail no campo acima primeiro"); return; }
+    var link = document.getElementById("loginForgotPassword");
+    var textoOriginal = link.textContent;
+    link.textContent = "Enviando…";
+    try{
+      var res = await sb.auth.resetPasswordForEmail(email, {redirectTo: window.location.href.split("#")[0]});
+      if(res.error) throw res.error;
+      showLoginInfo("Link enviado! Confira seu e-mail (" + email + ") pra criar uma nova senha.");
+    }catch(err){
+      showLogin(err.message || "Não consegui enviar o e-mail de recuperação");
+    }finally{
+      link.textContent = textoOriginal;
+    }
+  };
+
   document.getElementById("logoutBtn").onclick = async function(){
     await sb.auth.signOut();
     if(realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
@@ -833,6 +909,84 @@
     state = null;
     document.getElementById("appShell").style.display = "none";
     showLogin();
+  };
+
+  document.getElementById("nsr_salvar").onclick = async function(){
+    var senha = document.getElementById("nsr_senha").value;
+    var confirmar = document.getElementById("nsr_confirmar").value;
+    var msg = document.getElementById("nsr_msg");
+    msg.style.display = "none";
+    if(senha.length < 6){ msg.textContent = "A senha precisa ter pelo menos 6 caracteres"; msg.style.display = "block"; return; }
+    if(senha !== confirmar){ msg.textContent = "As senhas não são iguais"; msg.style.display = "block"; return; }
+    var btn = document.getElementById("nsr_salvar"); btn.disabled = true;
+    try{
+      var res = await sb.auth.updateUser({password: senha});
+      if(res.error) throw res.error;
+      document.getElementById("novaSenhaRecuperacaoOverlay").classList.remove("open");
+      showToast("Senha atualizada! Você já está conectado.");
+      await bootApp();
+    }catch(err){
+      msg.textContent = err.message || "Erro ao salvar a nova senha";
+      msg.style.display = "block";
+    }finally{
+      btn.disabled = false;
+    }
+  };
+
+  // ---------- Minha conta (trocar e-mail / senha, dentro do app) ----------
+  document.getElementById("minhaContaBtn").onclick = function(){
+    document.getElementById("ma_emailAtual").value = (currentUser && currentUser.email) || "";
+    document.getElementById("ma_novoEmail").value = "";
+    document.getElementById("ma_novaSenha").value = "";
+    document.getElementById("ma_confirmarSenha").value = "";
+    document.getElementById("ma_msg").style.display = "none";
+    document.getElementById("minhaContaSheetOverlay").classList.add("open");
+  };
+  document.getElementById("ma_fechar").onclick = function(){
+    document.getElementById("minhaContaSheetOverlay").classList.remove("open");
+  };
+  document.getElementById("minhaContaSheetOverlay").addEventListener("click", function(e){
+    if(e.target.id === "minhaContaSheetOverlay") document.getElementById("minhaContaSheetOverlay").classList.remove("open");
+  });
+
+  function maMostrarMsg(texto, cor){
+    var el = document.getElementById("ma_msg");
+    el.textContent = texto; el.style.color = cor || "var(--ink-600)"; el.style.display = "block";
+  }
+
+  document.getElementById("ma_salvarEmailBtn").onclick = async function(){
+    var novoEmail = document.getElementById("ma_novoEmail").value.trim();
+    if(!novoEmail || novoEmail.indexOf("@") === -1){ maMostrarMsg("Digite um e-mail válido", "#c0392b"); return; }
+    var btn = document.getElementById("ma_salvarEmailBtn"); btn.disabled = true;
+    try{
+      var res = await sb.auth.updateUser({email: novoEmail});
+      if(res.error) throw res.error;
+      maMostrarMsg("Quase lá! Confira sua caixa de entrada (do e-mail novo e, às vezes, do antigo) e clique no link de confirmação.", "var(--teal-700)");
+      document.getElementById("ma_novoEmail").value = "";
+    }catch(err){
+      maMostrarMsg(err.message || "Erro ao atualizar e-mail", "#c0392b");
+    }finally{
+      btn.disabled = false;
+    }
+  };
+
+  document.getElementById("ma_salvarSenhaBtn").onclick = async function(){
+    var senha = document.getElementById("ma_novaSenha").value;
+    var confirmar = document.getElementById("ma_confirmarSenha").value;
+    if(senha.length < 6){ maMostrarMsg("A senha precisa ter pelo menos 6 caracteres", "#c0392b"); return; }
+    if(senha !== confirmar){ maMostrarMsg("As senhas não são iguais", "#c0392b"); return; }
+    var btn = document.getElementById("ma_salvarSenhaBtn"); btn.disabled = true;
+    try{
+      var res = await sb.auth.updateUser({password: senha});
+      if(res.error) throw res.error;
+      maMostrarMsg("Senha atualizada com sucesso!", "var(--teal-700)");
+      document.getElementById("ma_novaSenha").value = "";
+      document.getElementById("ma_confirmarSenha").value = "";
+    }catch(err){
+      maMostrarMsg(err.message || "Erro ao atualizar senha", "#c0392b");
+    }finally{
+      btn.disabled = false;
+    }
   };
 
   async function bootApp(){
