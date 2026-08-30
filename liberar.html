@@ -76,10 +76,18 @@
     background:var(--sand-100); font-size:17px; font-family:inherit; color:var(--ink-900); cursor:pointer;
   }
   .qty-val{min-width:18px; text-align:center; font-weight:700;}
+  .lang-switch{display:flex; justify-content:center; gap:6px; margin-bottom:14px;}
+  .lang-btn{
+    border:1px solid var(--line); background:#fff; border-radius:999px;
+    padding:5px 11px; font-size:12px; font-weight:700; font-family:inherit;
+    color:var(--ink-600); cursor:pointer; font-style:normal;
+  }
+  .lang-btn.active{background:var(--teal-700); border-color:var(--teal-700); color:#fff;}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="lang-switch" id="langSwitch"></div>
   <header>
     <h1>Bagua Bangalôs</h1>
     <p id="acomodacaoLabel">Carregando…</p>
@@ -135,6 +143,119 @@
     "cabana-zazu-03":{nome:"Cabana Zazu 03", itens:ITENS_PADRAO}
   };
 
+  // ---------- Idioma ----------
+  var IDIOMAS = {
+    pt: {nome:"PT", itens:{
+      "Água sem gás":"Água sem gás","Água com gás":"Água com gás",
+      "Água saborizada de limão":"Água saborizada de limão","Água saborizada de maracujá":"Água saborizada de maracujá",
+      "Barra de cereal":"Barra de cereal","Mix de castanhas":"Mix de castanhas",
+      "Cápsula de cappuccino":"Cápsula de cappuccino","Cápsula de café filtrado":"Cápsula de café filtrado","Cápsula de expresso forte":"Cápsula de expresso forte"
+    }},
+    en: {nome:"EN", itens:{
+      "Água sem gás":"Still water","Água com gás":"Sparkling water",
+      "Água saborizada de limão":"Lemon-flavored water","Água saborizada de maracujá":"Passion fruit-flavored water",
+      "Barra de cereal":"Cereal bar","Mix de castanhas":"Mixed nuts",
+      "Cápsula de cappuccino":"Cappuccino capsule","Cápsula de café filtrado":"Filter coffee capsule","Cápsula de expresso forte":"Strong espresso capsule"
+    }},
+    es: {nome:"ES", itens:{
+      "Água sem gás":"Agua sin gas","Água com gás":"Agua con gas",
+      "Água saborizada de limão":"Agua saborizada de limón","Água saborizada de maracujá":"Agua saborizada de maracuyá",
+      "Barra de cereal":"Barrita de cereal","Mix de castanhas":"Mix de frutos secos",
+      "Cápsula de cappuccino":"Cápsula de capuchino","Cápsula de café filtrado":"Cápsula de café filtrado","Cápsula de expresso forte":"Cápsula de expreso fuerte"
+    }},
+    fr: {nome:"FR", itens:{
+      "Água sem gás":"Eau plate","Água com gás":"Eau gazeuse",
+      "Água saborizada de limão":"Eau aromatisée au citron","Água saborizada de maracujá":"Eau aromatisée au fruit de la passion",
+      "Barra de cereal":"Barre de céréales","Mix de castanhas":"Mélange de noix",
+      "Cápsula de cappuccino":"Capsule de cappuccino","Cápsula de café filtrado":"Capsule de café filtre","Cápsula de expresso forte":"Capsule d'espresso fort"
+    }}
+  };
+
+  var T = {
+    carregando: {pt:"Carregando…", en:"Loading…", es:"Cargando…", fr:"Chargement…"},
+    linkInvalido: {pt:"Link inválido ou incompleto.", en:"Invalid or incomplete link.", es:"Enlace inválido o incompleto.", fr:"Lien invalide ou incomplet."},
+    faleRecepcao: {pt:"Por favor, fale com a recepção.", en:"Please speak with the front desk.", es:"Por favor, hable con la recepción.", fr:"Merci de contacter la réception."},
+    verMeusPedidos: {pt:"Ver meus pedidos", en:"View my requests", es:"Ver mis pedidos", fr:"Voir mes demandes"},
+    pedidosRecentes: {pt:" pedido(s) recente(s)", en:" recent request(s)", es:" pedido(s) reciente(s)", fr:" demande(s) récente(s)"},
+    limparQuarto: {pt:"Quero que arrumem meu quarto", en:"I'd like my room cleaned", es:"Quiero que arreglen mi habitación", fr:"Je voudrais faire nettoyer ma chambre"},
+    equipeVaiLa: {pt:"Nossa equipe vai até lá em breve", en:"Our team will be there shortly", es:"Nuestro equipo irá en breve", fr:"Notre équipe passera bientôt"},
+    limpezaAte: {pt:"A arrumação do quarto pode ser pedida até ", en:"Room cleaning can be requested until ", es:"La limpieza puede pedirse hasta las ", fr:"Le ménage peut être demandé jusqu'à "},
+    frigobar: {pt:"Frigobar & cesta de doces", en:"Minibar & snack basket", es:"Minibar y cesta de dulces", fr:"Minibar et panier de friandises"},
+    escolherRepor: {pt:"Escolher o que precisa repor", en:"Choose what needs restocking", es:"Elegir qué reponer", fr:"Choisir ce qu'il faut réapprovisionner"},
+    naoFunciona: {pt:"Algo não está funcionando", en:"Something isn't working", es:"Algo no está funcionando", fr:"Quelque chose ne fonctionne pas"},
+    reparoSub: {pt:"Reparo ou manutenção na acomodação", en:"Repair or maintenance in the room", es:"Reparación o mantenimiento en el alojamiento", fr:"Réparation ou entretien du logement"},
+    reservarJacuzzi: {pt:"Reservar a jacuzzi", en:"Book the jacuzzi", es:"Reservar el jacuzzi", fr:"Réserver le jacuzzi"},
+    agendarHorario: {pt:"Agendar horário", en:"Schedule a time", es:"Programar horario", fr:"Choisir un horaire"},
+    ligarSauna: {pt:"Ligar a sauna", en:"Turn on the sauna", es:"Encender la sauna", fr:"Allumer le sauna"},
+    pedirLigarAgora: {pt:"Pedir pra equipe ligar agora", en:"Ask the team to turn it on now", es:"Pedir al equipo que la encienda ahora", fr:"Demander à l'équipe de l'allumer"},
+    reposicaoLenha: {pt:"Reposição de lenha", en:"Firewood restock", es:"Reposición de leña", fr:"Réapprovisionnement en bois"},
+    pedirMaisLenha: {pt:"Pedir mais lenha na acomodação", en:"Request more firewood", es:"Pedir más leña", fr:"Demander plus de bois"},
+    faleGestao: {pt:"Fale com a gestão", en:"Talk to management", es:"Hable con la gerencia", fr:"Parler à la direction"},
+    whatsappDireto: {pt:"Atendimento direto pelo WhatsApp", en:"Direct WhatsApp support", es:"Atención directa por WhatsApp", fr:"Assistance directe via WhatsApp"},
+    gestaoTexto1: {pt:"Este canal é da gestão e serve para elogios, críticas ou algum problema com a sua estadia que a recepção não conseguiu resolver.",
+      en:"This channel is for management and is meant for compliments, feedback, or an issue with your stay that the front desk wasn't able to resolve.",
+      es:"Este canal es de la gerencia y sirve para elogios, críticas o algún problema con su estadía que la recepción no pudo resolver.",
+      fr:"Ce canal est réservé à la direction pour les compliments, remarques ou un problème lié à votre séjour que la réception n'a pas pu résoudre."},
+    gestaoTexto2: {pt:"Precisa de algo agora (sauna, informações, reposição)? A recepção resolve mais rápido.",
+      en:"Need something right now (sauna, information, restocking)? The front desk can help faster.",
+      es:"¿Necesita algo ahora (sauna, información, reposición)? La recepción resuelve más rápido.",
+      fr:"Besoin de quelque chose maintenant (sauna, informations, réapprovisionnement) ? La réception répond plus vite."},
+    falarRecepcao: {pt:"Falar com a recepção", en:"Talk to the front desk", es:"Hablar con recepción", fr:"Parler à la réception"},
+    continuarGestao: {pt:"Continuar para a gestão", en:"Continue to management", es:"Continuar a gerencia", fr:"Continuer vers la direction"},
+    abrirWhatsapp: {pt:"Abrir WhatsApp", en:"Open WhatsApp", es:"Abrir WhatsApp", fr:"Ouvrir WhatsApp"},
+    escolhaQtd: {pt:"Escolha a quantidade de cada item que você gostaria de repor:", en:"Choose the quantity of each item you'd like restocked:", es:"Elija la cantidad de cada artículo que desea reponer:", fr:"Choisissez la quantité de chaque article à réapprovisionner :"},
+    enviarPedido: {pt:"Enviar pedido", en:"Send request", es:"Enviar pedido", fr:"Envoyer la demande"},
+    voltar: {pt:"‹ Voltar", en:"‹ Back", es:"‹ Volver", fr:"‹ Retour"},
+    conteReparo: {pt:"Conte rapidamente o que precisa de reparo:", en:"Briefly describe what needs repair:", es:"Cuéntenos brevemente qué necesita reparación:", fr:"Décrivez brièvement ce qui doit être réparé :"},
+    reparoPlaceholder: {pt:"Ex: chuveiro sem água quente, luminária do quarto queimada...", en:"E.g: shower has no hot water, room light bulb burned out...", es:"Ej: la ducha no tiene agua caliente, la lámpara de la habitación está quemada...", fr:"Ex : douche sans eau chaude, ampoule de la chambre grillée..."},
+    descrevaProblema: {pt:"Descreva rapidamente o problema", en:"Briefly describe the issue", es:"Describa brevemente el problema", fr:"Décrivez brièvement le problème"},
+    enviando: {pt:"Enviando…", en:"Sending…", es:"Enviando…", fr:"Envoi…"},
+    erroEnviar: {pt:"Não consegui enviar agora. Tente de novo ou fale com a recepção.", en:"Couldn't send it right now. Try again or speak with the front desk.", es:"No se pudo enviar ahora. Intente de nuevo o hable con recepción.", fr:"Impossible d'envoyer pour le moment. Réessayez ou contactez la réception."},
+    seusPedidos: {pt:"📋 Seus pedidos", en:"📋 Your requests", es:"📋 Sus pedidos", fr:"📋 Vos demandes"},
+    fazerOutroPedido: {pt:"+ Fazer outro pedido", en:"+ Make another request", es:"+ Hacer otro pedido", fr:"+ Faire une autre demande"},
+    statusConcluido: {pt:"Concluído", en:"Completed", es:"Completado", fr:"Terminé"},
+    statusACaminho: {pt:"Equipe a caminho", en:"Team on the way", es:"Equipo en camino", fr:"Équipe en route"},
+    statusAguardandoLiberacao: {pt:"Aguardando liberação", en:"Awaiting release", es:"Esperando liberación", fr:"En attente de libération"},
+    statusAguardandoEquipe: {pt:"Aguardando equipe", en:"Awaiting team", es:"Esperando al equipo", fr:"En attente de l'équipe"},
+    tipoLimpeza: {pt:"Arrumação do quarto", en:"Room cleaning", es:"Arreglo de la habitación", fr:"Ménage de la chambre"},
+    tipoReparo: {pt:"Reparo / manutenção", en:"Repair / maintenance", es:"Reparación / mantenimiento", fr:"Réparation / entretien"},
+    tipoFrigobar: {pt:"Frigobar & cesta de doces", en:"Minibar & snack basket", es:"Minibar y cesta de dulces", fr:"Minibar et panier de friandises"}
+  };
+
+  var LANG_KEY = "bagua_idioma";
+  function idiomaPadrao(){
+    var nav = (navigator.language || "pt").slice(0,2).toLowerCase();
+    return IDIOMAS[nav] ? nav : "pt";
+  }
+  var lang = (function(){
+    try{ return localStorage.getItem(LANG_KEY) || idiomaPadrao(); }catch(e){ return idiomaPadrao(); }
+  })();
+
+  function t(key){
+    var entry = T[key];
+    if(!entry) return key;
+    return entry[lang] || entry.pt;
+  }
+  function tItem(nomeItemPt){
+    var mapa = IDIOMAS[lang] && IDIOMAS[lang].itens;
+    return (mapa && mapa[nomeItemPt]) || nomeItemPt;
+  }
+
+  function renderLangSwitch(){
+    var el = document.getElementById("langSwitch");
+    el.innerHTML = Object.keys(IDIOMAS).map(function(code){
+      return '<button type="button" class="lang-btn'+(code===lang?' active':'')+'" data-lang="'+code+'">'+IDIOMAS[code].nome+'</button>';
+    }).join("");
+    el.querySelectorAll("[data-lang]").forEach(function(b){
+      b.onclick = function(){
+        lang = b.getAttribute("data-lang");
+        try{ localStorage.setItem(LANG_KEY, lang); }catch(e){}
+        renderLangSwitch();
+        if(carregarPedidosLocaisBrutos().length > 0) renderAcompanhamento(); else renderMenu();
+      };
+    });
+  }
+
   function uid(){ return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){
@@ -156,10 +277,10 @@
 
   function chaveStorage(){ return "bagua_pedidos_" + slug; }
 
-  function salvarPedidoLocal(id, tabela, label){
+  function salvarPedidoLocal(id, tabela, labelKey){
     try{
       var lista = carregarPedidosLocaisBrutos();
-      lista.push({id:id, tabela:tabela, label:label, criadoEm:Date.now(), concluidoEm:null});
+      lista.push({id:id, tabela:tabela, labelKey:labelKey, criadoEm:Date.now(), concluidoEm:null});
       localStorage.setItem(chaveStorage(), JSON.stringify(lista.slice(-8)));
     }catch(e){ /* localStorage indisponível — só perde o acompanhamento, não trava o pedido */ }
   }
@@ -191,11 +312,13 @@
 
   function statusInfo(tabela, status){
     var concluido = (tabela === "manutencoes") ? "concluida" : "concluido";
-    if(status === concluido) return {icone:"✅", texto:"Concluído", cor:"var(--teal-700)"};
-    if(status === "em_andamento") return {icone:"🧹", texto:"Equipe a caminho", cor:"var(--ink-900)"};
-    if(status === "bloqueada") return {icone:"⏳", texto:"Aguardando liberação", cor:"var(--ink-600)"};
-    return {icone:"⏳", texto:"Aguardando equipe", cor:"var(--ink-600)"};
+    if(status === concluido) return {icone:"✅", texto:t("statusConcluido"), cor:"var(--teal-700)"};
+    if(status === "em_andamento") return {icone:"🧹", texto:t("statusACaminho"), cor:"var(--ink-900)"};
+    if(status === "bloqueada") return {icone:"⏳", texto:t("statusAguardandoLiberacao"), cor:"var(--ink-600)"};
+    return {icone:"⏳", texto:t("statusAguardandoEquipe"), cor:"var(--ink-600)"};
   }
+
+  renderLangSwitch();
 
   var params = new URLSearchParams(window.location.search);
   var slug = params.get("a");
@@ -207,7 +330,7 @@
 
   if(!nome){
     label.textContent = "";
-    content.innerHTML = '<div class="card error-box">Link inválido ou incompleto.<br>Por favor, fale com a recepção.</div>';
+    content.innerHTML = '<div class="card error-box">'+t("linkInvalido")+'<br>'+t("faleRecepcao")+'</div>';
     return;
   }
   label.textContent = nome;
@@ -232,27 +355,27 @@
     var bannerHtml = "";
     if(pedidosAtivos.length > 0){
       bannerHtml = '<button class="btn-opt" id="verMeusPedidos" style="background:var(--teal-100);border-color:var(--teal-500);">' +
-        '<span class="ic">📋</span><span><span>Ver meus pedidos</span><span class="sub">'+pedidosAtivos.length+' pedido(s) recente(s)</span></span></button>';
+        '<span class="ic">📋</span><span><span>'+t("verMeusPedidos")+'</span><span class="sub">'+pedidosAtivos.length+t("pedidosRecentes")+'</span></span></button>';
     }
     var limpezaHtml;
     if(limpezaDisponivel()){
-      limpezaHtml = '<button class="btn-opt" data-tipo="limpeza"><span class="ic">🧹</span><span><span>Quero que arrumem meu quarto</span><span class="sub">Nossa equipe vai até lá em breve</span></span></button>';
+      limpezaHtml = '<button class="btn-opt" data-tipo="limpeza"><span class="ic">🧹</span><span><span>'+t("limparQuarto")+'</span><span class="sub">'+t("equipeVaiLa")+'</span></span></button>';
     } else {
       limpezaHtml = '<div style="display:flex;align-items:center;gap:12px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;">' +
         '<span class="ic" style="font-size:22px;">🕦</span>' +
-        '<span style="font-size:13.5px;color:var(--ink-600);line-height:1.4;">A arrumação do quarto pode ser pedida até <strong>11h30</strong>.</span>' +
+        '<span style="font-size:13.5px;color:var(--ink-600);line-height:1.4;">'+t("limpezaAte")+'<strong>11:30</strong>.</span>' +
       '</div>';
     }
     content.innerHTML =
       '<div class="card">' +
         bannerHtml +
         limpezaHtml +
-        '<button class="btn-opt" id="btnFrigobar"><span class="ic">🥤</span><span><span>Frigobar &amp; cesta de doces</span><span class="sub">Escolher o que precisa repor</span></span></button>' +
-        '<button class="btn-opt" data-tipo="reparo"><span class="ic">🔧</span><span><span>Algo não está funcionando</span><span class="sub">Reparo ou manutenção na acomodação</span></span></button>' +
-        '<a class="btn-opt" href="https://calendly.com/baguabangalos/jacuzzi" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛁</span><span><span>Reservar a jacuzzi</span><span class="sub">Agendar horário</span></span></a>' +
-        '<button class="btn-opt" data-tipo="sauna"><span class="ic">🧖</span><span><span>Ligar a sauna</span><span class="sub">Pedir pra equipe ligar agora</span></span></button>' +
-        '<button class="btn-opt" data-tipo="lenha"><span class="ic">🪵</span><span><span>Reposição de lenha</span><span class="sub">Pedir mais lenha na acomodação</span></span></button>' +
-        '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>Fale com a gestão</span><span class="sub">Atendimento direto pelo WhatsApp</span></span></button>' +
+        '<button class="btn-opt" id="btnFrigobar"><span class="ic">🥤</span><span><span>'+t("frigobar")+'</span><span class="sub">'+t("escolherRepor")+'</span></span></button>' +
+        '<button class="btn-opt" data-tipo="reparo"><span class="ic">🔧</span><span><span>'+t("naoFunciona")+'</span><span class="sub">'+t("reparoSub")+'</span></span></button>' +
+        '<a class="btn-opt" href="https://calendly.com/baguabangalos/jacuzzi" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛁</span><span><span>'+t("reservarJacuzzi")+'</span><span class="sub">'+t("agendarHorario")+'</span></span></a>' +
+        '<button class="btn-opt" data-tipo="sauna"><span class="ic">🧖</span><span><span>'+t("ligarSauna")+'</span><span class="sub">'+t("pedirLigarAgora")+'</span></span></button>' +
+        '<button class="btn-opt" data-tipo="lenha"><span class="ic">🪵</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' +
+        '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>'+t("faleGestao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></button>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
       b.onclick = function(){
@@ -269,10 +392,10 @@
   function renderConfirmacaoGestao(){
     content.innerHTML =
       '<div class="card">' +
-        '<p style="font-size:13.5px;color:var(--ink-600);line-height:1.5;margin:0 0 14px;">Este canal é da gestão e serve para elogios, críticas ou algum problema com a sua estadia que a recepção não conseguiu resolver.</p>' +
-        '<p style="font-size:13.5px;color:var(--ink-900);font-weight:600;line-height:1.5;margin:0 0 16px;">Precisa de algo agora (sauna, informações, reposição)? A recepção resolve mais rápido.</p>' +
-        '<a class="btn-opt" id="btnIrRecepcao" href="'+linkRecepcao+'" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛎️</span><span><span>Falar com a recepção</span><span class="sub">Atendimento direto pelo WhatsApp</span></span></a>' +
-        '<a class="btn-opt" id="btnIrGestao" href="'+linkGestao+'" target="_blank" rel="noopener" style="margin-bottom:0;text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>Continuar para a gestão</span><span class="sub">Abrir WhatsApp</span></span></a>' +
+        '<p style="font-size:13.5px;color:var(--ink-600);line-height:1.5;margin:0 0 14px;">'+t("gestaoTexto1")+'</p>' +
+        '<p style="font-size:13.5px;color:var(--ink-900);font-weight:600;line-height:1.5;margin:0 0 16px;">'+t("gestaoTexto2")+'</p>' +
+        '<a class="btn-opt" id="btnIrRecepcao" href="'+linkRecepcao+'" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛎️</span><span><span>'+t("falarRecepcao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></a>' +
+        '<a class="btn-opt" id="btnIrGestao" href="'+linkGestao+'" target="_blank" rel="noopener" style="margin-bottom:0;text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>'+t("continuarGestao")+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>' +
       '</div>';
   }
 
@@ -280,7 +403,7 @@
     var qtys = acomodacao.itens.map(function(){ return 0; });
     var itemsHtml = acomodacao.itens.map(function(nomeItem, i){
       return '<div class="qty-row" data-idx="'+i+'">' +
-        '<span class="qty-name">'+escapeHtml(nomeItem)+'</span>' +
+        '<span class="qty-name">'+escapeHtml(tItem(nomeItem))+'</span>' +
         '<div class="qty-ctrl">' +
           '<button type="button" class="qty-btn" data-act="minus" data-idx="'+i+'">−</button>' +
           '<span class="qty-val" id="qv_'+i+'">0</span>' +
@@ -290,10 +413,10 @@
     }).join("");
     content.innerHTML =
       '<div class="card">' +
-        '<p style="margin:0 0 8px;font-size:14px;color:var(--ink-600);">Escolha a quantidade de cada item que você gostaria de repor:</p>' +
+        '<p style="margin:0 0 8px;font-size:14px;color:var(--ink-600);">'+t("escolhaQtd")+'</p>' +
         '<div>'+itemsHtml+'</div>' +
-        '<button class="btn-primary" id="fgEnviar" style="margin-top:14px;" disabled>Enviar pedido</button>' +
-        '<button class="btn-ghost" id="fgVoltar">‹ Voltar</button>' +
+        '<button class="btn-primary" id="fgEnviar" style="margin-top:14px;" disabled>'+t("enviarPedido")+'</button>' +
+        '<button class="btn-ghost" id="fgVoltar">'+t("voltar")+'</button>' +
       '</div>';
     document.getElementById("fgVoltar").onclick = renderMenu;
     var enviarBtn = document.getElementById("fgEnviar");
@@ -322,21 +445,21 @@
   function renderReparoForm(){
     content.innerHTML =
       '<div class="card">' +
-        '<p style="margin:0 0 10px;font-size:14px;color:var(--ink-600);">Conte rapidamente o que precisa de reparo:</p>' +
-        '<textarea id="reparoTexto" placeholder="Ex: chuveiro sem água quente, luminária do quarto queimada..."></textarea>' +
-        '<button class="btn-primary" id="reparoEnviar">Enviar pedido</button>' +
-        '<button class="btn-ghost" id="reparoVoltar">‹ Voltar</button>' +
+        '<p style="margin:0 0 10px;font-size:14px;color:var(--ink-600);">'+t("conteReparo")+'</p>' +
+        '<textarea id="reparoTexto" placeholder="'+escapeHtml(t("reparoPlaceholder"))+'"></textarea>' +
+        '<button class="btn-primary" id="reparoEnviar">'+t("enviarPedido")+'</button>' +
+        '<button class="btn-ghost" id="reparoVoltar">'+t("voltar")+'</button>' +
       '</div>';
     document.getElementById("reparoVoltar").onclick = renderMenu;
     document.getElementById("reparoEnviar").onclick = function(){
       var texto = document.getElementById("reparoTexto").value.trim();
-      if(!texto){ showToast("Descreva rapidamente o problema"); return; }
+      if(!texto){ showToast(t("descrevaProblema")); return; }
       enviarReparo(texto);
     };
   }
 
   async function enviarSolicitacao(tipo){
-    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
+    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">'+t("enviando")+'</div>';
     try{
       var id = uid();
       var payload = {
@@ -349,18 +472,18 @@
       };
       var res = await sb.from("solicitacoes_acomodacao").insert(payload);
       if(res.error) throw res.error;
-      salvarPedidoLocal(id, "solicitacoes_acomodacao", TIPO_LABEL_ACOMPANHAMENTO[tipo] || "Pedido");
+      salvarPedidoLocal(id, "solicitacoes_acomodacao", TIPO_LABEL_KEY[tipo] || tipo);
       renderAcompanhamento();
     }catch(err){
       console.error(err);
-      content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
-        '<button class="btn-ghost" id="tentarDeNovo">‹ Voltar</button>';
+      content.innerHTML = '<div class="card error-box">'+t("erroEnviar")+'</div>' +
+        '<button class="btn-ghost" id="tentarDeNovo">'+t("voltar")+'</button>';
       document.getElementById("tentarDeNovo").onclick = renderMenu;
     }
   }
 
   async function enviarFrigobar(itens){
-    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
+    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">'+t("enviando")+'</div>';
     try{
       var id = uid();
       var payload = {
@@ -373,18 +496,18 @@
       };
       var res = await sb.from("solicitacoes_acomodacao").insert(payload);
       if(res.error) throw res.error;
-      salvarPedidoLocal(id, "solicitacoes_acomodacao", "Frigobar & cesta de doces");
+      salvarPedidoLocal(id, "solicitacoes_acomodacao", "tipoFrigobar");
       renderAcompanhamento();
     }catch(err){
       console.error(err);
-      content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
-        '<button class="btn-ghost" id="tentarDeNovo">‹ Voltar</button>';
+      content.innerHTML = '<div class="card error-box">'+t("erroEnviar")+'</div>' +
+        '<button class="btn-ghost" id="tentarDeNovo">'+t("voltar")+'</button>';
       document.getElementById("tentarDeNovo").onclick = renderMenu;
     }
   }
 
   async function enviarReparo(texto){
-    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">Enviando…</div>';
+    content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">'+t("enviando")+'</div>';
     try{
       var id = uid();
       var payload = {
@@ -397,19 +520,19 @@
       };
       var res = await sb.from("manutencoes").insert(payload);
       if(res.error) throw res.error;
-      salvarPedidoLocal(id, "manutencoes", "Reparo / manutenção");
+      salvarPedidoLocal(id, "manutencoes", "tipoReparo");
       renderAcompanhamento();
     }catch(err){
       console.error(err);
-      content.innerHTML = '<div class="card error-box">Não consegui enviar agora. Tente de novo ou fale com a recepção.</div>' +
-        '<button class="btn-ghost" id="tentarDeNovo">‹ Voltar</button>';
+      content.innerHTML = '<div class="card error-box">'+t("erroEnviar")+'</div>' +
+        '<button class="btn-ghost" id="tentarDeNovo">'+t("voltar")+'</button>';
       document.getElementById("tentarDeNovo").onclick = renderMenu;
     }
   }
 
-  var TIPO_LABEL_ACOMPANHAMENTO = {
-    limpeza: "Arrumação do quarto", reparo: "Reparo / manutenção",
-    sauna: "Ligar a sauna", lenha: "Reposição de lenha", frigobar: "Frigobar & cesta de doces"
+  var TIPO_LABEL_KEY = {
+    limpeza: "tipoLimpeza", reparo: "tipoReparo",
+    sauna: "ligarSauna", lenha: "reposicaoLenha", frigobar: "tipoFrigobar"
   };
 
   var canaisAbertos = [];
@@ -425,9 +548,9 @@
 
     content.innerHTML =
       '<div class="card">' +
-        '<p style="margin:0 0 12px;font-size:15px;font-weight:700;">📋 Seus pedidos</p>' +
+        '<p style="margin:0 0 12px;font-size:15px;font-weight:700;">'+t("seusPedidos")+'</p>' +
         '<div id="listaPedidos"></div>' +
-        '<button class="btn-primary" id="novoPedido" style="margin-top:6px;">+ Fazer outro pedido</button>' +
+        '<button class="btn-primary" id="novoPedido" style="margin-top:6px;">'+t("fazerOutroPedido")+'</button>' +
       '</div>';
     document.getElementById("novoPedido").onclick = function(){ pararAcompanhamentoRealtime(); renderMenu(); };
 
@@ -441,7 +564,7 @@
       if(!el) return;
       el.innerHTML =
         '<span style="font-size:20px;">'+info.icone+'</span>' +
-        '<span style="flex:1;"><span style="display:block;font-weight:600;font-size:14.5px;">'+escapeHtml(p.label)+'</span>' +
+        '<span style="flex:1;"><span style="display:block;font-weight:600;font-size:14.5px;">'+escapeHtml(t(p.labelKey))+'</span>' +
         '<span style="font-size:12.5px;color:'+info.cor+';font-weight:600;">'+info.texto+'</span></span>';
     }
 
