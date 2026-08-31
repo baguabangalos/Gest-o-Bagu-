@@ -3631,11 +3631,11 @@
           '<option value="">Selecionar acomodação…</option>' +
           todasAtivas.map(function(a){ return '<option value="'+a.id+'"'+(a.id===revisaoExtratoAcomodacaoId?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("") +
           '</select>' +
-          '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Confira as quantidades antes de descontar do estoque:</p>' +
+          '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Confira as quantidades. Isso cria um pedido pendente em "Abastecer" — o desconto do estoque acontece quando alguém marcar como abastecido, igual aos outros pedidos.</p>' +
           '<div id="reExtratoItensLista">' + itensHtml + '</div>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="reExtratoCancel">Cancelar</button>' +
-            '<button type="button" class="btn-primary" id="reExtratoConfirm">✓ Confirmar e descontar</button>' +
+            '<button type="button" class="btn-primary" id="reExtratoConfirm">✓ Criar pedido de abastecimento</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -3661,30 +3661,25 @@
     document.getElementById("reExtratoConfirm").onclick = async function(){
       var acomodacaoId = document.getElementById("reExtratoAcomodacao").value;
       if(!acomodacaoId){ showToast("Escolha a acomodação"); return; }
-      if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
-      var destino = acomodacaoNome(acomodacaoId);
       var btn = document.getElementById("reExtratoConfirm"); btn.disabled = true;
       try{
-        var descontados = 0;
+        var itensFinal = [];
         for(var i=0;i<resultado.itens.length;i++){
           var qtyInp = lista.querySelector('.reExtratoQty[data-idx="'+i+'"]');
           var qty = parseFloat(qtyInp.value) || 0;
-          if(qty <= 0) continue;
-          var itemEstoque = itemEstoquePorNome(resultado.itens[i].nome);
-          if(!itemEstoque) continue;
-          var novaQty = Math.max(0, itemEstoque.qty - qty);
-          var updated = await dbUpdate("items", itemEstoque.id, {qty:novaQty}, mapItemFromRow);
-          var idxItem = state.estoque.items.findIndex(function(x){ return x.id===itemEstoque.id; });
-          if(idxItem>-1) state.estoque.items[idxItem] = updated;
-          var mov = await dbInsert("movements", {id:uid(), item_id:itemEstoque.id, type:"saida", qty:qty, note:"Extrato Hospedin"+(resultado.numeroExtrato?(" "+resultado.numeroExtrato):""), destino:destino, date:new Date().toISOString()}, mapMovementFromRow);
-          state.estoque.movements.unshift(mov);
-          descontados++;
+          if(qty > 0) itensFinal.push({nome: resultado.itens[i].nome, quantidade: qty});
         }
+        if(itensFinal.length === 0){ showToast("Nenhum item com quantidade maior que zero"); btn.disabled = false; return; }
+        var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"frigobar", origem:"hospedin_extrato",
+          status:"pendente", itens:itensFinal};
+        var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+        state.solicitacoes.unshift(s);
         overlay.remove();
-        showToast(descontados + " item(ns) descontado(s) do estoque");
+        showToast("Pedido de abastecimento criado — já aparece em Pendentes");
+        abastecimentoSubView = "pendentes";
         renderApp();
       }catch(err){
-        console.error(err); showToast("Erro ao descontar do estoque");
+        console.error(err); showToast("Erro ao criar pedido de abastecimento");
         btn.disabled = false;
       }
     };
@@ -3976,8 +3971,9 @@
     }
     html += '<div style="display:flex;gap:8px;margin-top:10px;">' +
       '<input type="email" id="novoRelatorioEmail" placeholder="email@exemplo.com" style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);">' +
-      '<button type="button" class="btn-primary" id="adicionarRelatorioEmailBtn" style="white-space:nowrap;padding:0 14px;">+ Adicionar</button>' +
+      '<button type="button" id="adicionarRelatorioEmailBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-700);color:#fff;border:none;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Adicionar</button>' +
     '</div>';
+    html += '<button type="button" id="enviarRelatorioAgoraBtn" style="display:block;width:100%;margin-top:12px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">📧 Enviar relatório agora</button>';
     html += '</div>';
 
     html += '<div class="section-title" style="margin-top:22px;">Usuários e permissões</div>';
@@ -4029,6 +4025,31 @@
         }catch(err){
           console.error(err); showToast("Erro ao adicionar email");
           addEmailBtn.disabled = false;
+        }
+      };
+    }
+
+    var enviarAgoraBtn = document.getElementById("enviarRelatorioAgoraBtn");
+    if(enviarAgoraBtn){
+      enviarAgoraBtn.onclick = async function(){
+        if(relatorioEmailsCache.length === 0){ showToast("Cadastre pelo menos um email primeiro"); return; }
+        enviarAgoraBtn.disabled = true;
+        enviarAgoraBtn.textContent = "Enviando…";
+        try{
+          var res = await sb.functions.invoke("relatorio-semanal", {body: {}});
+          if(res.error) throw res.error;
+          var data = res.data || {};
+          if(data.ok){
+            showToast("Relatório enviado pra " + (data.enviados||0) + " email(s)!");
+          } else {
+            showToast("A função rodou mas retornou um erro — confere os secrets (RESEND_API_KEY)");
+          }
+        }catch(err){
+          console.error(err);
+          showToast("Erro ao enviar — confere se a Edge Function 'relatorio-semanal' está publicada");
+        }finally{
+          enviarAgoraBtn.disabled = false;
+          enviarAgoraBtn.textContent = "📧 Enviar relatório agora";
         }
       };
     }
