@@ -668,6 +668,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
 (function(){
   "use strict";
@@ -3513,11 +3514,180 @@
         html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
       });
     }
+    html += '<div style="margin-top:16px;">' +
+      '<button type="button" id="importarExtratoBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">📄 Importar extrato do Hospedin (PDF)</button>' +
+      '<input type="file" id="importarExtratoInput" accept="application/pdf" style="display:none;">' +
+    '</div>';
     main.innerHTML = html;
     main.querySelectorAll("[data-asub]").forEach(function(b){
       b.onclick = function(){ abastecimentoSubView = b.getAttribute("data-asub"); renderAbastecimento(); };
     });
     wireSolicitacaoActions(main);
+    document.getElementById("importarExtratoBtn").onclick = function(){
+      document.getElementById("importarExtratoInput").click();
+    };
+    document.getElementById("importarExtratoInput").addEventListener("change", handleImportarExtrato);
+  }
+
+  // ---------- Importar extrato do Hospedin (PDF) ----------
+  if(window.pdfjsLib){
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  }
+
+  async function extrairTextoPdf(file){
+    var buf = await file.arrayBuffer();
+    var pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+    var texto = "";
+    for(var i=1; i<=pdf.numPages; i++){
+      var page = await pdf.getPage(i);
+      var content = await page.getTextContent();
+      texto += content.items.map(function(it){ return it.str; }).join(" ") + " ";
+    }
+    return texto;
+  }
+
+  function parsearExtratoHospedin(texto){
+    var mHeader = texto.match(/Itens consumidos\s+Nome\s+Ponto de venda\s+Data e hora\s+Custo/i);
+    var textoItens = mHeader ? texto.slice(mHeader.index + mHeader[0].length) : "";
+    var idxPag = textoItens.indexOf("Pagamentos");
+    if(idxPag > -1) textoItens = textoItens.slice(0, idxPag);
+
+    var re = /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 %.\-]{0,38}?)\s+Ponto de Venda Padrão\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}:\d{2})\s+(\d+)\s*x\s*R\$\s*([\d.,]+)/g;
+    var m, itens = [];
+    while((m = re.exec(textoItens)) !== null){
+      itens.push({nome: m[1].trim(), qtd: parseInt(m[4],10)});
+    }
+
+    var mLocal = texto.match(/Local:\s*(.+?)\s*Período:/);
+    var local = mLocal ? mLocal[1].trim() : null;
+
+    var mReserva = texto.match(/EXTRATO\s*Nº\s*([A-Za-z0-9:]+)/i);
+
+    return {itens: itens, local: local, numeroExtrato: mReserva ? mReserva[1] : null};
+  }
+
+  function acomodacaoPorNomeAproximado(nomeExtrato){
+    if(!nomeExtrato) return null;
+    var alvo = normalizarBusca(nomeExtrato);
+    var ativas = state.acomodacoes.filter(function(a){ return a.ativo; });
+    var exata = ativas.find(function(a){ return normalizarBusca(a.nome) === alvo; });
+    if(exata) return exata;
+    var parcial = ativas.find(function(a){
+      var n = normalizarBusca(a.nome);
+      return n.indexOf(alvo) > -1 || alvo.indexOf(n) > -1;
+    });
+    return parcial || null;
+  }
+
+  async function handleImportarExtrato(e){
+    var file = e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+    showToast("Lendo o PDF…");
+    try{
+      var texto = await extrairTextoPdf(file);
+      var resultado = parsearExtratoHospedin(texto);
+      if(resultado.itens.length === 0){
+        showToast("Não encontrei a tabela de itens consumidos nesse PDF");
+        return;
+      }
+      abrirRevisaoExtratoSheet(resultado);
+    }catch(err){
+      console.error(err);
+      showToast("Não consegui ler esse PDF — confere se é o extrato certo");
+    }
+  }
+
+  var revisaoExtratoAcomodacaoId = null;
+
+  function abrirRevisaoExtratoSheet(resultado){
+    var acomodacaoMatch = acomodacaoPorNomeAproximado(resultado.local);
+    revisaoExtratoAcomodacaoId = acomodacaoMatch ? acomodacaoMatch.id : null;
+    var todasAtivas = state.acomodacoes.filter(function(a){ return a.ativo; })
+      .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+
+    var itensHtml = resultado.itens.map(function(it, i){
+      var matchEstoque = itemEstoquePorNome(it.nome);
+      return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+i+'">' +
+        '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(it.nome)+
+          (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque)</span>') +
+        '</p>' +
+        '<div class="qty-stepper" style="margin-bottom:0;">' +
+          '<button type="button" class="reExtratoMinus" data-idx="'+i+'">−</button>' +
+          '<input type="number" class="reExtratoQty" data-idx="'+i+'" step="1" min="0" value="'+it.qtd+'">' +
+          '<button type="button" class="reExtratoPlus" data-idx="'+i+'">+</button>' +
+        '</div>' +
+      '</div>';
+    }).join("");
+
+    var html =
+      '<div class="sheet-overlay open" id="revisaoExtratoOverlay">' +
+        '<div class="sheet">' +
+          '<h2>Conferir itens do extrato</h2>' +
+          (resultado.local ?
+            '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 4px;">O extrato diz "'+escapeHtml(resultado.local)+'" — confere se é a acomodação certa:</p>'
+            : '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 4px;">Não encontrei o nome da acomodação no extrato — escolha manualmente:</p>') +
+          '<select id="reExtratoAcomodacao" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
+          '<option value="">Selecionar acomodação…</option>' +
+          todasAtivas.map(function(a){ return '<option value="'+a.id+'"'+(a.id===revisaoExtratoAcomodacaoId?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("") +
+          '</select>' +
+          '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Confira as quantidades antes de descontar do estoque:</p>' +
+          '<div id="reExtratoItensLista">' + itensHtml + '</div>' +
+          '<div class="sheet-actions">' +
+            '<button type="button" class="btn-secondary" id="reExtratoCancel">Cancelar</button>' +
+            '<button type="button" class="btn-primary" id="reExtratoConfirm">✓ Confirmar e descontar</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+
+    var overlay = document.getElementById("revisaoExtratoOverlay");
+    var lista = document.getElementById("reExtratoItensLista");
+    lista.querySelectorAll(".reExtratoMinus").forEach(function(b){
+      b.onclick = function(){
+        var inp = lista.querySelector('.reExtratoQty[data-idx="'+b.getAttribute("data-idx")+'"]');
+        inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
+      };
+    });
+    lista.querySelectorAll(".reExtratoPlus").forEach(function(b){
+      b.onclick = function(){
+        var inp = lista.querySelector('.reExtratoQty[data-idx="'+b.getAttribute("data-idx")+'"]');
+        inp.value = (parseFloat(inp.value)||0) + 1;
+      };
+    });
+    document.getElementById("reExtratoCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+
+    document.getElementById("reExtratoConfirm").onclick = async function(){
+      var acomodacaoId = document.getElementById("reExtratoAcomodacao").value;
+      if(!acomodacaoId){ showToast("Escolha a acomodação"); return; }
+      if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+      var destino = acomodacaoNome(acomodacaoId);
+      var btn = document.getElementById("reExtratoConfirm"); btn.disabled = true;
+      try{
+        var descontados = 0;
+        for(var i=0;i<resultado.itens.length;i++){
+          var qtyInp = lista.querySelector('.reExtratoQty[data-idx="'+i+'"]');
+          var qty = parseFloat(qtyInp.value) || 0;
+          if(qty <= 0) continue;
+          var itemEstoque = itemEstoquePorNome(resultado.itens[i].nome);
+          if(!itemEstoque) continue;
+          var novaQty = Math.max(0, itemEstoque.qty - qty);
+          var updated = await dbUpdate("items", itemEstoque.id, {qty:novaQty}, mapItemFromRow);
+          var idxItem = state.estoque.items.findIndex(function(x){ return x.id===itemEstoque.id; });
+          if(idxItem>-1) state.estoque.items[idxItem] = updated;
+          var mov = await dbInsert("movements", {id:uid(), item_id:itemEstoque.id, type:"saida", qty:qty, note:"Extrato Hospedin"+(resultado.numeroExtrato?(" "+resultado.numeroExtrato):""), destino:destino, date:new Date().toISOString()}, mapMovementFromRow);
+          state.estoque.movements.unshift(mov);
+          descontados++;
+        }
+        overlay.remove();
+        showToast(descontados + " item(ns) descontado(s) do estoque");
+        renderApp();
+      }catch(err){
+        console.error(err); showToast("Erro ao descontar do estoque");
+        btn.disabled = false;
+      }
+    };
   }
 
   function renderRecepcao(){
