@@ -3259,19 +3259,6 @@
     return candidatos;
   }
 
-  async function criarSolicitacaoLimpezaComRoupaCama(acomodacaoId, origem){
-    var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia", origem:origem||"equipe", status:"pendente"};
-    var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
-    state.solicitacoes.unshift(s);
-    var devendo = acomodacoesDevendoRoupaCamaHoje();
-    if(devendo[acomodacaoId] != null){
-      var payload2 = {id:uid(), acomodacao_id:acomodacaoId, tipo:"roupa_cama", contexto:String(devendo[acomodacaoId]), origem:"sistema", status:"pendente"};
-      var s2 = await dbInsert("solicitacoes_acomodacao", payload2, mapSolicitacaoFromRow);
-      state.solicitacoes.unshift(s2);
-    }
-    return s;
-  }
-
   // Todas as acomodações com estadia cobrindo hoje (chegaram até hoje, ainda não saíram) —
   // usado tanto pro contador "Limpeza" quanto pra saber quais ainda não pediram nada.
   function acomodacoesOcupadasHojeIds(){
@@ -3795,7 +3782,10 @@
         if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
         solicitarLimpezaBtn.disabled = true;
         try{
-          await criarSolicitacaoLimpezaComRoupaCama(acomodacaoId, "equipe");
+          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia",
+            origem:"equipe", status:"pendente"};
+          var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+          state.solicitacoes.unshift(s);
           showToast("Limpeza solicitada!");
           renderApp();
         }catch(err){
