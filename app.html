@@ -765,7 +765,7 @@
       sb.from("manutencoes").select("*").order("created_at", {ascending:false}).limit(5000),
       sb.from("hospedin_ocupacao").select("*").gte("checkout", hospedinCutoffDate()).order("checkin", {ascending:false}).limit(5000),
       sb.from("acomodacoes").select("*").order("ordem"),
-      sb.from("solicitacoes_acomodacao").select("*").is("excluido_em", null).order("criado_em", {ascending:false}).limit(5000),
+      sb.from("solicitacoes_acomodacao").select("*").order("criado_em", {ascending:false}).limit(5000),
       sb.from("staff_names").select("*")
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
@@ -785,7 +785,7 @@
       procedimentos: (procRes.data||[]).map(mapProcedimentoFromRow),
       manutencoes: (manRes.data||[]).map(mapManutencaoFromRow),
       acomodacoes: (acoRes.data||[]).map(mapAcomodacaoFromRow),
-      solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow),
+      solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !s.excluidoEm; }),
       staffNames: staffNames
     };
   }
