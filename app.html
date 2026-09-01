@@ -1007,7 +1007,6 @@
     state = await loadAllFromSupabase();
     if(currentUser.role === "admin" || podeVer("limpeza") || podeVer("recepcao")){
       await garantirTarefasLavagemHoje();
-      await garantirTarefasRoupaCamaHoje();
     }
     renderApp();
     setupRealtimeNotifications();
@@ -3227,22 +3226,29 @@
 
   // Cria tarefa de troca de roupa de cama pra quem está no dia 3, 6, 9...
   // da estadia (contando o check-in como dia 1).
-  async function garantirTarefasRoupaCamaHoje(){
-    if(!state.estoque.hospedinOcupacao || state.estoque.hospedinOcupacao.length === 0) return;
+  // Calcula quais acomodações estão devendo troca de roupa de cama hoje
+  // (dia 3, 6, 9... da estadia) — só o cálculo, sem criar nada no banco.
+  // Isso aparece junto do card "Possível limpeza"; só vira tarefa de
+  // verdade quando alguém solicitar a limpeza daquele quarto.
+  function acomodacoesDevendoRoupaCamaHoje(){
+    if(!state.estoque.hospedinOcupacao || state.estoque.hospedinOcupacao.length === 0) return {};
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var codigoToId = {};
     state.acomodacoes.forEach(function(a){ if(a.codigoHospedin) codigoToId[a.codigoHospedin] = a.id; });
 
     var idsComTarefaHoje = {};
     state.solicitacoes.forEach(function(s){
-      if(s.tipo === "roupa_cama" && s.criadoEm >= hojeInicio.getTime()) idsComTarefaHoje[s.acomodacaoId] = true;
+      if(s.criadoEm < hojeInicio.getTime()) return;
+      if(s.tipo === "roupa_cama" || (s.tipo === "limpeza" && (s.contexto === "estadia" || s.contexto === "estadia_recusada"))){
+        idsComTarefaHoje[s.acomodacaoId] = true;
+      }
     });
 
     var candidatos = {};
     (state.estoque.hospedinOcupacao||[]).forEach(function(r){
       if(!hospedinLinhaValida(r)) return;
       var id = codigoToId[r.acomodacao];
-      if(!id) return;
+      if(!id || idsComTarefaHoje[id]) return;
       var ci = parseDataLocal(r.checkin).getTime();
       var co = parseDataLocal(r.checkout).getTime();
       if(ci <= hojeInicio.getTime() && co > hojeInicio.getTime()){
@@ -3250,16 +3256,20 @@
         if(diaEstadia > 0 && diaEstadia % 3 === 0) candidatos[id] = diaEstadia;
       }
     });
+    return candidatos;
+  }
 
-    var idsNovos = Object.keys(candidatos).filter(function(id){ return !idsComTarefaHoje[id]; });
-    for(var i=0;i<idsNovos.length;i++){
-      var id = idsNovos[i];
-      try{
-        var payload = {id:uid(), acomodacao_id:id, tipo:"roupa_cama", contexto:String(candidatos[id]), origem:"sistema", status:"pendente"};
-        var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
-        state.solicitacoes.unshift(s);
-      }catch(err){ console.error("Erro ao criar tarefa de roupa de cama:", err); }
+  async function criarSolicitacaoLimpezaComRoupaCama(acomodacaoId, origem){
+    var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia", origem:origem||"equipe", status:"pendente"};
+    var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+    state.solicitacoes.unshift(s);
+    var devendo = acomodacoesDevendoRoupaCamaHoje();
+    if(devendo[acomodacaoId] != null){
+      var payload2 = {id:uid(), acomodacao_id:acomodacaoId, tipo:"roupa_cama", contexto:String(devendo[acomodacaoId]), origem:"sistema", status:"pendente"};
+      var s2 = await dbInsert("solicitacoes_acomodacao", payload2, mapSolicitacaoFromRow);
+      state.solicitacoes.unshift(s2);
     }
+    return s;
   }
 
   // Todas as acomodações com estadia cobrindo hoje (chegaram até hoje, ainda não saíram) —
@@ -3391,10 +3401,14 @@
         if(lista.length === 0 && !temPlaceholders) return "";
         var h = '<div class="section-title">'+titulo+(lista.length?(' · '+lista.length):'')+'</div>';
         if(temPlaceholders){
+          var devendoRoupaCama = acomodacoesDevendoRoupaCamaHoje();
           placeholders.forEach(function(id){
             h += '<div class="card manut-card" style="background:var(--sand-100);opacity:.85;">' +
               '<p class="item-name" style="margin:0 0 3px;">🔒 🧹 Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(id))+'</span></p>' +
               '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Hóspede ainda não solicitou</p>';
+            if(devendoRoupaCama[id] != null){
+              h += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🧺 Também está devendo troca de roupa de cama (dia '+devendoRoupaCama[id]+')</p>';
+            }
             var infoPlaceholder = hospedeAtualInfo(id);
             if(infoPlaceholder && infoPlaceholder.observacao){
               h += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">📝 '+escapeHtml(infoPlaceholder.observacao)+'</p>';
@@ -3781,10 +3795,7 @@
         if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
         solicitarLimpezaBtn.disabled = true;
         try{
-          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia",
-            origem:"equipe", status:"pendente"};
-          var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
-          state.solicitacoes.unshift(s);
+          await criarSolicitacaoLimpezaComRoupaCama(acomodacaoId, "equipe");
           showToast("Limpeza solicitada!");
           renderApp();
         }catch(err){
