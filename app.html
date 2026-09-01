@@ -729,7 +729,8 @@
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
       concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null),
       iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null, itensFaltando:r.itens_faltando||null,
-      liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null)};
+      liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null),
+      criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -763,7 +764,7 @@
       sb.from("manutencoes").select("*").order("created_at", {ascending:false}),
       sb.from("hospedin_ocupacao").select("*").gte("checkout", hospedinCutoffDate()).order("checkin", {ascending:false}).limit(5000),
       sb.from("acomodacoes").select("*").order("ordem"),
-      sb.from("solicitacoes_acomodacao").select("*").order("criado_em", {ascending:false}),
+      sb.from("solicitacoes_acomodacao").select("*").is("excluido_em", null).order("criado_em", {ascending:false}),
       sb.from("staff_names").select("*")
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
@@ -3084,6 +3085,10 @@
         html += '<p class="item-meta" style="color:var(--red-600);font-weight:700;">⚠️ Ficou em falta durante a estadia: '+faltantesTxt+'</p>';
       }
     }
+    if(s.origem === "hospede") html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">📱 Solicitado pelo hóspede (link)</p>';
+    else if(s.criadoPor) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">👤 Solicitado pela conta de '+escapeHtml(nomeStaff(s.criadoPor))+' (equipe)</p>';
+    else if(s.origem === "sistema") html += '<p class="item-meta">🔧 Gerado automaticamente pelo sistema</p>';
+    if(s.liberadoPor) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🔓 Liberado pela conta de '+escapeHtml(nomeStaff(s.liberadoPor))+' (equipe)</p>';
     if(s.status === "bloqueada"){
       html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">🔒 Aguardando recepção liberar</p>';
     } else if(s.status === "pendente"){
@@ -3094,7 +3099,6 @@
         var atraso = m >= 30;
         html += '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?"⚠️ ":"")+'esperando há '+fmtDuration(m)+'</p>';
       }
-      if(s.liberadoPor) html += '<p class="item-meta">liberado por '+escapeHtml(nomeStaff(s.liberadoPor))+'</p>';
     } else if(s.status === "em_andamento"){
       html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+'</p>';
     } else {
@@ -3159,8 +3163,8 @@
             if(idx2>-1) state.solicitacoes[idx2] = s2;
             showToast(s.tipo==="frigobar" ? "Abastecimento registrado" : "Concluído"); renderApp();
           } else if(act === "excluir"){
-            if(!confirm("Excluir este pedido? Não pode ser desfeito.")) return;
-            await dbDelete("solicitacoes_acomodacao", id);
+            if(!confirm("Excluir este pedido? Ele sai da lista, mas o registro fica guardado.")) return;
+            await dbUpdate("solicitacoes_acomodacao", id, {excluido_em:new Date().toISOString(), excluido_por:(currentUser?currentUser.id:null)}, function(r){ return r; });
             state.solicitacoes = state.solicitacoes.filter(function(x){ return x.id!==id; });
             showToast("Excluído"); renderApp();
           }
@@ -3439,7 +3443,7 @@
         try{
           var agora = new Date().toISOString();
           var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia_recusada",
-            origem:"equipe", status:"concluido", concluido_em:agora, concluido_por:(currentUser?currentUser.id:null)};
+            origem:"equipe", status:"concluido", concluido_em:agora, concluido_por:(currentUser?currentUser.id:null), criado_por:(currentUser?currentUser.id:null)};
           var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
           state.solicitacoes.unshift(s);
           showToast("Marcado — hóspede não quis limpeza hoje");
@@ -3682,7 +3686,7 @@
           if(qty > 0) itensFinal.push({nome: resultado.itens[i].nome, quantidade: qty});
         }
         if(itensFinal.length === 0){ showToast("Nenhum item com quantidade maior que zero"); btn.disabled = false; return; }
-        var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"frigobar", origem:"hospedin_extrato",
+        var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"frigobar", origem:"hospedin_extrato", criado_por:(currentUser?currentUser.id:null),
           status:"pendente", itens:itensFinal};
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
@@ -3762,7 +3766,7 @@
         try{
           var statusInicial = (contexto === "checkin") ? "pendente" : "bloqueada";
           var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"lavagem", contexto:contexto,
-            origem:"equipe", status:statusInicial};
+            origem:"equipe", status:statusInicial, criado_por:(currentUser?currentUser.id:null)};
           var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
           state.solicitacoes.unshift(s);
           showToast("Lavagem adicionada!");
@@ -3783,7 +3787,7 @@
         solicitarLimpezaBtn.disabled = true;
         try{
           var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia",
-            origem:"equipe", status:"pendente"};
+            origem:"equipe", status:"pendente", criado_por:(currentUser?currentUser.id:null)};
           var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
           state.solicitacoes.unshift(s);
           showToast("Limpeza solicitada!");
@@ -3803,7 +3807,7 @@
         if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
         abrirBtn.disabled = true;
         try{
-          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"ventilacao", origem:"equipe", status:"pendente",
+          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"ventilacao", origem:"equipe", status:"pendente", criado_por:(currentUser?currentUser.id:null),
             iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)};
           var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
           state.solicitacoes.unshift(s);
