@@ -2948,23 +2948,35 @@
   // observação (forma de pagamento, parcelas, código promocional, tipo de
   // quarto/tarifa/cama no HBOOK) — isso é ruído de reserva, não é recado do
   // hóspede. Essa função tira só esse bloco padrão e devolve o que sobrar.
+  // Hospedin/Booking manda um bloco enorme de texto padrão de reserva junto
+  // da observação (política de cancelamento, café da manhã incluído, forma
+  // de pagamento, regras de berço, tags "Genius", etc.) — isso é ruído
+  // administrativo, não é recado do hóspede. Mantemos só o que sobra depois
+  // de tirar esses trechos: cama/distribuição, decoração, data comemorativa,
+  // upgrade — o resto (política, pagamento, cancelamento) sai fora.
+  var PALAVRAS_OBSERVACAO_BLOQUEADAS = [
+    "reserva com", "reserva confirmada", "codigo promocional",
+    "parcelas", "tipo de quarto no hbook", "tipo de tarifa no hbook", "tipo de cama:",
+    "genius", "pequeno-almoco", "pequeno almoco", "incluido na tarifa", "regulamento",
+    "bercos", "deposito", "pre-pagamento", "prepagamento", "reembolsavel",
+    "pre-paid", "prepaid", "free cancellation", "cancellation", "cancelamento", "cancelar",
+    "approximate time of arrival", "horario previsto", "nao-fumante", "nao fumante", " fumante",
+    "non-smoking", "valor cobrado", "valor total", "metodo de pagamento", "cartao de credito",
+    "condicoes para", "condicoes de", "maximo de clientes", "maximo de", "hbook",
+    "nao adicionou", "adicionou nenhuma cama", "reservation has been", " paid ", "this reservation"
+  ];
+
   function filtrarObservacaoPadrao(texto){
     if(!texto) return "";
-    var LIMITE = "(?=\\||--?\\s*Reserva com|--?\\s*C[oó]digo promocional|Tipo de Quarto no HBOOK|Tipo de Tarifa no HBOOK|Tipo de cama|$)";
-    var padroes = [
-      /--?\s*Reserva com cart[ãa]o de cr[ée]dito\.?\s*/gi,
-      /--?\s*Reserva com m[ée]todo de pagamento\s*\S*\s*/gi,
-      new RegExp("N[ºo°]\\s*Parcelas\\s*:?[\\s\\S]*?" + LIMITE, "gi"),
-      new RegExp("--?\\s*C[oó]digo promocional usado\\s*:?[\\s\\S]*?" + LIMITE, "gi"),
-      new RegExp("Tipo de Quarto no HBOOK\\s*:?[\\s\\S]*?" + LIMITE, "gi"),
-      new RegExp("Tipo de Tarifa no HBOOK\\s*:?[\\s\\S]*?" + LIMITE, "gi"),
-      new RegExp("Tipo de cama\\s*:?[\\s\\S]*?" + LIMITE, "gi")
-    ];
-    var out = texto;
-    padroes.forEach(function(p){ out = out.replace(p, " "); });
-    out = out.replace(/\|/g, " ").replace(/--+/g, " ").replace(/\s{2,}/g, " ").trim();
-    out = out.replace(/^[-.\s]+|[-.\s]+$/g, "").trim();
-    return out;
+    // separa por ponto final, quebra de linha, ou traço que NÃO seja parte de
+    // uma palavra composta (tipo "pequeno-almoço" continua junto)
+    var partes = texto.split(/\.\s+|\n|-(?![a-zà-ÿ])|(?<![a-zà-ÿ])-/);
+    var mantidas = partes.map(function(p){ return p.trim(); }).filter(function(p){
+      if(!p || p.length < 3) return false;
+      var norm = normalizarBusca(p);
+      return !PALAVRAS_OBSERVACAO_BLOQUEADAS.some(function(palavra){ return norm.indexOf(palavra) > -1; });
+    });
+    return mantidas.join(" ").replace(/\s{2,}/g, " ").replace(/^[-.\s!]+|[-.\s!]+$/g, "").trim();
   }
 
   // Busca adultos/crianças/observação do hóspede que está atualmente na
@@ -3366,9 +3378,8 @@
       // Agrupa cada tarefa aberta num dos 4 blocos.
       function grupoDe(s){
         if(s.tipo === "lavagem") return (s.contexto === "checkin") ? "checkin" : "checkout";
-        if(s.tipo === "roupa_cama") return "checkin";
         if(s.tipo === "ventilacao") return "ventilacao";
-        return "manutencao"; // limpeza/estadia e qualquer outro caem aqui
+        return "manutencao"; // limpeza/estadia, roupa_cama e qualquer outro caem aqui
       }
       var grupos = {checkin:[], checkout:[], manutencao:[], ventilacao:[]};
       abertos.forEach(function(s){ grupos[grupoDe(s)].push(s); });
