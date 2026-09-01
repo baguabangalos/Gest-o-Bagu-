@@ -730,7 +730,8 @@
       concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null),
       iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null, itensFaltando:r.itens_faltando||null,
       liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null),
-      criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por};
+      criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por,
+      searchableCode:r.searchable_code};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -757,14 +758,14 @@
   async function loadAllFromSupabase(){
     var results = await Promise.all([
       sb.from("items").select("*").order("name"),
-      sb.from("movements").select("*").order("date", {ascending:false}),
+      sb.from("movements").select("*").order("date", {ascending:false}).limit(5000),
       sb.from("suppliers").select("*").order("name"),
       sb.from("count_sessions").select("*").order("date", {ascending:false}),
       sb.from("procedimentos").select("*").order("criado_em", {ascending:false}),
-      sb.from("manutencoes").select("*").order("created_at", {ascending:false}),
+      sb.from("manutencoes").select("*").order("created_at", {ascending:false}).limit(5000),
       sb.from("hospedin_ocupacao").select("*").gte("checkout", hospedinCutoffDate()).order("checkin", {ascending:false}).limit(5000),
       sb.from("acomodacoes").select("*").order("ordem"),
-      sb.from("solicitacoes_acomodacao").select("*").is("excluido_em", null).order("criado_em", {ascending:false}),
+      sb.from("solicitacoes_acomodacao").select("*").is("excluido_em", null).order("criado_em", {ascending:false}).limit(5000),
       sb.from("staff_names").select("*")
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
@@ -3194,9 +3195,11 @@
       var co = parseDataLocal(r.checkout).getTime();
       if(ci >= hojeInicio.getTime() && ci < hojeFim.getTime()){
         acomodacoesHoje[id] = acomodacoesHoje[id] || {}; acomodacoesHoje[id].checkin = true;
+        acomodacoesHoje[id].searchableCode = r.searchable_code || null;
       }
       if(co >= hojeInicio.getTime() && co < hojeFim.getTime()){
         acomodacoesHoje[id] = acomodacoesHoje[id] || {}; acomodacoesHoje[id].checkout = true;
+        acomodacoesHoje[id].searchableCode = r.searchable_code || null;
       }
     });
     return acomodacoesHoje;
@@ -3208,9 +3211,11 @@
     var acomodacoesHoje = classificarOcupacaoHoje();
 
     var idsComTarefa = {};
+    var codigoParaTarefa = {}; // searchable_code da reserva -> solicitação já existente hoje
     state.solicitacoes.forEach(function(s){
       if(s.tipo === "lavagem" && s.criadoEm >= hojeInicio.getTime()){
         idsComTarefa[s.acomodacaoId] = true;
+        if(s.searchableCode) codigoParaTarefa[s.searchableCode] = s;
       }
     });
 
@@ -3219,9 +3224,27 @@
       var id = idsNovos[i];
       var info = acomodacoesHoje[id];
       var contexto = (info.checkin && info.checkout) ? "checkin_checkout" : (info.checkin ? "checkin" : "checkout");
+
+      // Se já existe uma tarefa de hoje pra essa MESMA reserva (mesmo
+      // searchable_code), mas em outra acomodação, é upgrade/mudança de
+      // quarto — move a tarefa existente em vez de criar uma nova, pra não
+      // sobrar tarefa duplicada na acomodação antiga.
+      var tarefaExistente = info.searchableCode ? codigoParaTarefa[info.searchableCode] : null;
+      if(tarefaExistente && tarefaExistente.acomodacaoId !== id){
+        try{
+          var statusNovo = (contexto === "checkin") ? "pendente" : "bloqueada";
+          var atualizada = await dbUpdate("solicitacoes_acomodacao", tarefaExistente.id,
+            {acomodacao_id:id, contexto:contexto, status:statusNovo}, mapSolicitacaoFromRow);
+          var idx = state.solicitacoes.findIndex(function(x){ return x.id===tarefaExistente.id; });
+          if(idx>-1) state.solicitacoes[idx] = atualizada;
+          idsComTarefa[id] = true;
+        }catch(err){ console.error("Erro ao mover tarefa de lavagem pra nova acomodação:", err); }
+        continue;
+      }
+
       try{
         var statusInicial = (contexto === "checkin") ? "pendente" : "bloqueada";
-        var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:statusInicial};
+        var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:statusInicial, searchable_code:info.searchableCode||null};
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
       }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
