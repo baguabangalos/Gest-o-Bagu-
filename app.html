@@ -2847,11 +2847,74 @@
   var editingManutencaoId = null;
   var manutencaoSubView = "pendentes";
 
+  // Painel simples "onde posso ir agora" — pensado especificamente pra quem
+  // faz manutenção/serviços gerais e só precisa de uma resposta rápida e
+  // óbvia, sem precisar interpretar ícones ou status técnico.
+  function computeOndePossoIr(){
+    var podeIr = [], podeIrComHospede = [], aguarde = [];
+
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo !== "lavagem" || !s.contexto || s.contexto.indexOf("checkout") === -1) return;
+      if(s.status === "concluido") return;
+      var nome = acomodacaoNome(s.acomodacaoId);
+      if(s.status === "bloqueada"){
+        aguarde.push({nome:nome, motivo:"Checkout ainda não confirmado pela recepção"});
+      } else {
+        podeIr.push({nome:nome, motivo:"Checkout liberado pela recepção"});
+      }
+    });
+
+    state.manutencoes.forEach(function(m){
+      if(m.status !== "pendente" && m.status !== "em_andamento") return;
+      if(!m.local) return;
+      var localNorm = normalizarBusca(m.local);
+      var acomodacaoMatch = state.acomodacoes.find(function(a){
+        var nomeNorm = normalizarBusca(a.nome);
+        return localNorm.indexOf(nomeNorm) > -1 || nomeNorm.indexOf(localNorm) > -1;
+      });
+      if(!acomodacaoMatch) return;
+      var info = hospedeAtualInfo(acomodacaoMatch.id);
+      if(info){
+        podeIrComHospede.push({nome:acomodacaoMatch.nome, motivo:m.title});
+      } else {
+        podeIr.push({nome:acomodacaoMatch.nome, motivo:m.title});
+      }
+    });
+
+    return {podeIr:podeIr, podeIrComHospede:podeIrComHospede, aguarde:aguarde};
+  }
+
+  function renderOndePossoIrHtml(){
+    var dados = computeOndePossoIr();
+    function bloco(titulo, cor, lista, vazio){
+      var h = '<div class="card" style="border-left:7px solid '+cor+';margin-bottom:12px;">' +
+        '<p style="margin:0 0 10px;font-size:17px;font-weight:800;color:'+cor+';">'+titulo+'</p>';
+      if(lista.length === 0){
+        h += '<p class="item-meta">'+vazio+'</p>';
+      } else {
+        lista.forEach(function(item, i){
+          h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:9px;margin-top:9px;':'')+'">' +
+            '<p style="margin:0;font-size:16px;font-weight:700;">'+escapeHtml(item.nome)+'</p>' +
+            '<p style="margin:2px 0 0;font-size:12.5px;color:var(--ink-600);">'+escapeHtml(item.motivo)+'</p>' +
+          '</div>';
+        });
+      }
+      h += '</div>';
+      return h;
+    }
+    var html = '<div class="section-title" style="margin-top:0;">🚦 Onde posso ir agora</div>';
+    html += bloco('✅ PODE IR', 'var(--teal-700)', dados.podeIr, 'Nenhuma acomodação liberada agora.');
+    html += bloco('⚠️ PODE IR — TEM HÓSPEDE, BATA NA PORTA', 'var(--amber-600)', dados.podeIrComHospede, 'Nenhuma.');
+    html += bloco('🔒 AINDA NÃO PODE IR', 'var(--red-600)', dados.aguarde, 'Nenhuma pendência de liberação.');
+    return html;
+  }
+
   function renderManutencoes(){
     var main = document.getElementById("manutencoesView");
     var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; }).sort(function(a,b){ return b.createdAt-a.createdAt; });
     var done = state.manutencoes.filter(function(m){ return m.status==="concluida"; }).sort(function(a,b){ return (b.resolvedAt||0)-(a.resolvedAt||0); });
-    var html = '<div class="seg-toggle">' +
+    var html = renderOndePossoIrHtml();
+    html += '<div class="seg-toggle">' +
       '<button data-msub="pendentes" class="'+(manutencaoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-msub="concluidas" class="'+(manutencaoSubView==="concluidas"?"active":"")+'">Concluídas</button>' +
     '</div>';
@@ -3245,7 +3308,16 @@
       try{
         var statusInicial = (contexto === "checkin") ? "pendente" : "bloqueada";
         var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:statusInicial, searchable_code:info.searchableCode||null};
-        var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+        var s;
+        try{
+          s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+        }catch(errPrimeiraTentativa){
+          // Provavelmente a coluna searchable_code ainda não existe no banco
+          // (migração não rodada) — tenta de novo sem ela, pra nunca deixar
+          // de criar a tarefa por causa disso.
+          delete payload.searchable_code;
+          s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+        }
         state.solicitacoes.unshift(s);
       }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
     }
