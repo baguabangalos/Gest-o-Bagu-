@@ -744,7 +744,8 @@
       iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null, itensFaltando:r.itens_faltando||null,
       liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null),
       criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por,
-      searchableCode:r.searchable_code, fotoAbastecimento:r.foto_abastecimento};
+      searchableCode:r.searchable_code, fotoAbastecimento:r.foto_abastecimento,
+      incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -3191,6 +3192,9 @@
     }
     if(s.fotoAbastecimento){
       html += '<a href="'+s.fotoAbastecimento+'" target="_blank" rel="noopener" style="display:block;margin:6px 0;"><img src="'+s.fotoAbastecimento+'" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;" alt="Foto do abastecimento"></a>';
+    }
+    if(s.incluiTrocaRoupaCama){
+      html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🧺 Também trocar roupa de cama (dia '+s.diaEstadiaRoupaCama+')</p>';
     }
     var mostrarInfoHospede = (s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1) ||
       (s.tipo === "limpeza" && s.contexto === "estadia") ||
