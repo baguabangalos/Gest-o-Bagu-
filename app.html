@@ -630,6 +630,13 @@
       <button type="button" class="btn-secondary" id="hospedeAddFotoBtn" style="width:100%;margin-top:8px;">📷 Adicionar foto</button>
       <input type="file" id="h_foto_input" accept="image/*" style="display:none;">
 <input type="file" id="quickSaidaPhotoInput" accept="image/*" style="display:none;">
+      <label>🥤 Welcome drink entregue (opcional)</label>
+      <label class="checkbox-row"><input type="checkbox" id="wd_agua_sem_gas"> Água sem gás</label>
+      <label class="checkbox-row"><input type="checkbox" id="wd_agua_com_gas"> Água com gás</label>
+      <label class="checkbox-row"><input type="checkbox" id="wd_heineken"> Heineken</label>
+      <label class="checkbox-row"><input type="checkbox" id="wd_capsula_cappuccino"> Cápsula de cappuccino</label>
+      <label class="checkbox-row"><input type="checkbox" id="wd_capsula_cafe_filtrado"> Cápsula de café filtrado</label>
+      <label class="checkbox-row"><input type="checkbox" id="wd_capsula_expresso_forte"> Cápsula de expresso forte</label>
       <label>Observações (opcional)</label>
       <textarea id="h_obs" placeholder="Ex: sempre pede quarto térreo"></textarea>
       <div class="sheet-actions">
@@ -4326,6 +4333,34 @@
     e.target.value = "";
   });
 
+  var WELCOME_DRINK_ITENS = {
+    wd_agua_sem_gas: "Água sem gás",
+    wd_agua_com_gas: "Água com gás",
+    wd_heineken: "Heineken",
+    wd_capsula_cappuccino: "Cápsula de cappuccino",
+    wd_capsula_cafe_filtrado: "Cápsula de café filtrado",
+    wd_capsula_expresso_forte: "Cápsula de expresso forte"
+  };
+  async function processarWelcomeDrink(){
+    var algumErro = false;
+    for(var checkboxId in WELCOME_DRINK_ITENS){
+      var chk = document.getElementById(checkboxId);
+      if(!chk || !chk.checked) continue;
+      var nomeItem = WELCOME_DRINK_ITENS[checkboxId];
+      var item = itemEstoquePorNome(nomeItem);
+      if(!item){ algumErro = true; continue; }
+      try{
+        var novaQty = Math.max(0, item.qty - 1);
+        var updated = await dbUpdate("items", item.id, {qty:novaQty}, mapItemFromRow);
+        var idx = state.estoque.items.findIndex(function(x){ return x.id===item.id; });
+        if(idx>-1) state.estoque.items[idx] = updated;
+        var mov = await dbInsert("movements", {id:uid(), item_id:item.id, type:"saida", qty:1, note:"Welcome drink", destino:"Welcome drink", date:new Date().toISOString()}, mapMovementFromRow);
+        state.estoque.movements.unshift(mov);
+      }catch(err){ console.error(err); algumErro = true; }
+    }
+    if(algumErro) showToast("Hóspede salvo, mas algum item do welcome drink não foi descontado — confere se o nome no Estoque bate certinho");
+  }
+
   async function openHospedeSheet(h, prefill){
     editingHospedeId = h ? h.id : null;
     pendingHospedeFotos = [];
@@ -4335,6 +4370,9 @@
     document.getElementById("h_cpf").value = h ? formatCpf(h.cpf) : ((prefill && prefill.cpf) || "");
     document.getElementById("h_passaporte").value = h ? (h.passaporte||"") : ((prefill && prefill.passaporte) || "");
     document.getElementById("h_obs").value = h ? (h.observacoes||"") : "";
+    ["wd_agua_sem_gas","wd_agua_com_gas","wd_heineken","wd_capsula_cappuccino","wd_capsula_cafe_filtrado","wd_capsula_expresso_forte"].forEach(function(id){
+      document.getElementById(id).checked = false;
+    });
     document.getElementById("hospedeDelete").style.display = h ? "block" : "none";
     renderHospedeFotosGrid();
     hospedeOverlay.classList.add("open");
@@ -4393,6 +4431,7 @@
         await dbInsert("hospedes", payload, mapHospedeFromRow);
         showToast("Hóspede cadastrado");
       }
+      await processarWelcomeDrink();
       hospedeOverlay.classList.remove("open");
       renderHospedes();
     }catch(err){
