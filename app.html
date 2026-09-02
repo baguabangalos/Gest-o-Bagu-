@@ -746,7 +746,7 @@
         return await fn(atual);
       }catch(err){
         var msg = (err && err.message) || "";
-        var m = msg.match(/column ["']?([a-zA-Z_]+)["']?/i);
+        var m = msg.match(/column ["']?([a-zA-Z_]+)["']?/i) || msg.match(/the ['"]([a-zA-Z_]+)['"] column/i);
         if(m && atual && Object.prototype.hasOwnProperty.call(atual, m[1])){
           var novo = {};
           for(var k in atual){ if(k !== m[1]) novo[k] = atual[k]; }
@@ -1125,11 +1125,11 @@
       return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
     });
   }
-  function showToast(msg){
+  function showToast(msg, duracaoMs){
     var t = document.getElementById("toast");
     t.textContent = msg;
     t.classList.add("show");
-    setTimeout(function(){ t.classList.remove("show"); }, 1800);
+    setTimeout(function(){ t.classList.remove("show"); }, duracaoMs || 1800);
   }
 
   // ---------- Notificação sonora de pedidos novos (tempo real) ----------
@@ -3810,7 +3810,7 @@
         abastecimentoSubView = "pendentes";
         renderApp();
       }catch(err){
-        console.error(err); showToast("Erro ao criar pedido de abastecimento");
+        console.error(err); showToast("Erro: " + ((err && err.message) || "erro ao criar pedido de abastecimento"), 6000);
         btn.disabled = false;
       }
     };
