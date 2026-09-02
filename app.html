@@ -475,6 +475,12 @@
     <h2>Abastecer — <span id="abastecerAcomodacaoNome"></span></h2>
     <p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Confira a quantidade de cada item antes de confirmar. Marque "Faltando" se não tinha em estoque para repor — isso vai avisar na hora do checkout.</p>
     <div id="abastecerItensLista"></div>
+    <label style="margin-top:14px;">Foto do frigobar abastecido (opcional)</label>
+    <div id="abastecerFotoPreviewWrap" style="display:none;margin-bottom:8px;">
+      <img id="abastecerFotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;">
+    </div>
+    <button type="button" id="abastecerFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">📷 Tirar foto</button>
+    <input type="file" id="abastecerFotoInput" accept="image/*" capture="environment" style="display:none;">
     <div class="sheet-actions">
       <button type="button" class="btn-secondary" id="abastecerCancel">Cancelar</button>
       <button type="button" class="btn-primary" id="abastecerConfirm">✓ Confirmar abastecimento</button>
@@ -731,7 +737,7 @@
       iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null, itensFaltando:r.itens_faltando||null,
       liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null),
       criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por,
-      searchableCode:r.searchable_code};
+      searchableCode:r.searchable_code, fotoAbastecimento:r.foto_abastecimento};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -2182,7 +2188,7 @@
     else { openMoveSheet(item, act === "in" ? "entrada" : "saida"); }
   });
 
-  var DESTINOS_FIXOS = ["Recepção", "Venda avulsa", "Empréstimo restaurante"];
+  var DESTINOS_FIXOS = ["Recepção", "Welcome drink", "Venda avulsa", "Empréstimo restaurante"];
   function listaDestinos(){
     var acomodacoesNomes = state.acomodacoes.filter(function(a){ return a.ativo; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); })
@@ -2279,6 +2285,21 @@
 
   // ---------- Abastecer frigobar (edita quantidade / marca item em falta) ----------
   var abastecerOverlay = document.getElementById("abastecerSheetOverlay");
+  var abastecerFotoPendente = null;
+  document.getElementById("abastecerFotoBtn").onclick = function(){
+    document.getElementById("abastecerFotoInput").click();
+  };
+  document.getElementById("abastecerFotoInput").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+    compressImage(file, 1000, 0.75, function(dataUrl){
+      if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
+      abastecerFotoPendente = dataUrl;
+      document.getElementById("abastecerFotoPreview").src = dataUrl;
+      document.getElementById("abastecerFotoPreviewWrap").style.display = "block";
+    });
+  });
   var abastecerSolicitacaoId = null;
 
   function itemEstoquePorNome(nome){
@@ -2288,6 +2309,8 @@
 
   function abrirAbastecerSheet(s){
     abastecerSolicitacaoId = s.id;
+    abastecerFotoPendente = null;
+    document.getElementById("abastecerFotoPreviewWrap").style.display = "none";
     document.getElementById("abastecerAcomodacaoNome").textContent = acomodacaoNome(s.acomodacaoId);
     var lista = document.getElementById("abastecerItensLista");
     lista.innerHTML = (s.itens||[]).map(function(it, i){
@@ -2361,7 +2384,7 @@
         }
       }
       var payload = {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null),
-        itens_faltando: faltando.length ? faltando : null};
+        itens_faltando: faltando.length ? faltando : null, foto_abastecimento: abastecerFotoPendente};
       var s2 = await dbUpdate("solicitacoes_acomodacao", s.id, payload, mapSolicitacaoFromRow);
       var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
       if(idx2>-1) state.solicitacoes[idx2] = s2;
@@ -2403,7 +2426,11 @@
     if(moveType === "entrada"){
       newQty = item.qty + qty;
     } else if(moveType === "saida"){
-      newQty = Math.max(0, item.qty - qty);
+      // "Recepção" é só um lugar de guarda temporária (ex: welcome drink
+      // esperando ser entregue) — não conta como saída de verdade ainda.
+      // O desconto real acontece quando o item sai de fato pra um destino
+      // final (Welcome drink, uma acomodação, venda avulsa, etc.).
+      newQty = (destino === "Recepção") ? item.qty : Math.max(0, item.qty - qty);
     } else if(moveType === "uso"){
       loggedQty = Math.min(qty, item.qty);
       newQty = Math.max(0, item.qty - loggedQty);
@@ -2425,7 +2452,9 @@
         entrada:"Entrada registrada", saida:"Saída registrada",
         uso:"Marcado como em uso", retorno:"Retorno registrado"
       };
-      showToast(toastMap[typeForToast] || "Registrado");
+      var msgToast = toastMap[typeForToast] || "Registrado";
+      if(typeForToast === "saida" && destino === "Recepção") msgToast = "Movido pra recepção — ainda não descontado do estoque";
+      showToast(msgToast);
       renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao registrar — tente novamente");
@@ -3153,6 +3182,9 @@
       var itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
       html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
     }
+    if(s.fotoAbastecimento){
+      html += '<a href="'+s.fotoAbastecimento+'" target="_blank" rel="noopener" style="display:block;margin:6px 0;"><img src="'+s.fotoAbastecimento+'" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;" alt="Foto do abastecimento"></a>';
+    }
     var mostrarInfoHospede = (s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1) ||
       (s.tipo === "limpeza" && s.contexto === "estadia") ||
       (s.tipo === "roupa_cama");
@@ -3684,10 +3716,19 @@
     if(idxPag > -1) textoItens = textoItens.slice(0, idxPag);
 
     var re = /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 %.\-]{0,38}?)\s+Ponto de Venda Padrão\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}:\d{2})\s+(\d+)\s*x\s*R\$\s*([\d.,]+)/g;
-    var m, itens = [];
+    var m, todosItens = [];
     while((m = re.exec(textoItens)) !== null){
-      itens.push({nome: m[1].trim(), qtd: parseInt(m[4],10)});
+      todosItens.push({nome: m[1].trim(), qtd: parseInt(m[4],10)});
     }
+
+    // Só considera itens que realmente existem cadastrados no Estoque como
+    // Frigobar — descarta cobranças que não são reposição de verdade
+    // (carga de lenha, juros, taxas, etc.), mesmo que apareçam na mesma
+    // tabela "Itens consumidos" do extrato.
+    var itens = todosItens.filter(function(it){
+      var match = itemEstoquePorNome(it.nome);
+      return match && match.category === "Frigobar";
+    });
 
     var mLocal = texto.match(/Local:\s*(.+?)\s*Período:/);
     var local = mLocal ? mLocal[1].trim() : null;
@@ -3719,7 +3760,7 @@
       var texto = await extrairTextoPdf(file);
       var resultado = parsearExtratoHospedin(texto);
       if(resultado.itens.length === 0){
-        showToast("Não encontrei a tabela de itens consumidos nesse PDF");
+        showToast("Não encontrei nenhum item de frigobar nesse extrato (pode ter só cobranças como lenha, taxas etc.)");
         return;
       }
       abrirRevisaoExtratoSheet(resultado);
@@ -4320,6 +4361,18 @@
     if(!cpf && !passaporte){ showToast("Preencha o CPF ou o passaporte"); return; }
     var submitBtn = e.target.querySelector('button[type="submit"]'); submitBtn.disabled = true;
     try{
+      if(!editingHospedeId){
+        var orPartes = [];
+        if(cpf) orPartes.push("cpf.eq." + cpf);
+        if(passaporte) orPartes.push("passaporte.eq." + passaporte);
+        var dupRes = await sb.from("hospedes").select("id").or(orPartes.join(","));
+        if(dupRes.error) throw dupRes.error;
+        if(dupRes.data && dupRes.data.length > 0){
+          showToast("Esse CPF ou passaporte já está cadastrado");
+          submitBtn.disabled = false;
+          return;
+        }
+      }
       var novasFotos = [];
       for(var i=0;i<pendingHospedeFotos.length;i++){
         var pf = pendingHospedeFotos[i];
@@ -4430,13 +4483,13 @@
     var main = document.getElementById("hospedesView");
     main.innerHTML =
       '<div style="padding:16px;">' +
+        '<button type="button" id="hospedeAddDirectBtn" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:14.5px;font-weight:700;margin-bottom:18px;">+ Cadastrar novo hóspede</button>' +
         '<label style="display:block;font-size:12.5px;font-weight:700;color:var(--ink-600);margin-bottom:6px;">Buscar por CPF ou passaporte</label>' +
         '<div style="display:flex;gap:8px;">' +
           '<input type="text" id="hospedeSearchInput" placeholder="Digite e busque" style="flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:var(--sand-50);">' +
           '<button type="button" class="btn-primary" id="hospedeSearchBtn" style="white-space:nowrap;">Buscar</button>' +
         '</div>' +
         '<div id="hospedeSearchResults" style="margin-top:16px;"></div>' +
-        '<button type="button" class="btn-secondary" id="hospedeAddDirectBtn" style="width:100%;margin-top:16px;">+ Cadastrar hóspede sem buscar</button>' +
       '</div>';
     document.getElementById("hospedeSearchBtn").onclick = buscarHospede;
     document.getElementById("hospedeSearchInput").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); buscarHospede(); } });
