@@ -735,15 +735,44 @@
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
+  // Se uma coluna nova ainda não existir no banco (porque a migração SQL
+  // ainda não foi rodada), isso detecta o erro, tira só aquele campo do
+  // pedido, e tenta salvar de novo — assim uma coluna faltando nunca quebra
+  // a criação de nada no app, em lugar nenhum.
+  async function comColunasFaltantesToleradas(fn, payload){
+    var atual = payload;
+    for(var tentativas=0; tentativas<5; tentativas++){
+      try{
+        return await fn(atual);
+      }catch(err){
+        var msg = (err && err.message) || "";
+        var m = msg.match(/column ["']?([a-zA-Z_]+)["']?/i);
+        if(m && atual && Object.prototype.hasOwnProperty.call(atual, m[1])){
+          var novo = {};
+          for(var k in atual){ if(k !== m[1]) novo[k] = atual[k]; }
+          atual = novo;
+          continue;
+        }
+        throw err;
+      }
+    }
+    return await fn(atual);
+  }
   async function dbInsert(table, payload, mapFn){
-    var res = await sb.from(table).insert(payload).select().single();
-    if(res.error) throw res.error;
-    return mapFn(res.data);
+    var data = await comColunasFaltantesToleradas(async function(p){
+      var res = await sb.from(table).insert(p).select().single();
+      if(res.error) throw res.error;
+      return res.data;
+    }, payload);
+    return mapFn(data);
   }
   async function dbUpdate(table, id, payload, mapFn){
-    var res = await sb.from(table).update(payload).eq("id", id).select().single();
-    if(res.error) throw res.error;
-    return mapFn(res.data);
+    var data = await comColunasFaltantesToleradas(async function(p){
+      var res = await sb.from(table).update(p).eq("id", id).select().single();
+      if(res.error) throw res.error;
+      return res.data;
+    }, payload);
+    return mapFn(data);
   }
   async function dbDelete(table, id){
     var res = await sb.from(table).delete().eq("id", id);
@@ -3308,16 +3337,7 @@
       try{
         var statusInicial = (contexto === "checkin") ? "pendente" : "bloqueada";
         var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:statusInicial, searchable_code:info.searchableCode||null};
-        var s;
-        try{
-          s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
-        }catch(errPrimeiraTentativa){
-          // Provavelmente a coluna searchable_code ainda não existe no banco
-          // (migração não rodada) — tenta de novo sem ela, pra nunca deixar
-          // de criar a tarefa por causa disso.
-          delete payload.searchable_code;
-          s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
-        }
+        var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
       }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
     }
