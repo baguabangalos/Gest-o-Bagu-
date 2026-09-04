@@ -378,6 +378,7 @@
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
 <main id="recepcaoView" style="display:none;"></main>
+<main id="servicoGeralView" style="display:none;"></main>
 <main id="supervisaoView" style="display:none;"></main>
 <main id="configuracoesView" style="display:none;"></main>
 
@@ -745,7 +746,8 @@
       liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null),
       criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por,
       searchableCode:r.searchable_code, fotoAbastecimento:r.foto_abastecimento,
-      incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama};
+      incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama,
+      jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -1299,6 +1301,10 @@
         h1.textContent = "Recepção";
         sub.textContent = "Acompanhamento dos pedidos em andamento";
         alertPill.style.display = "none";
+      } else if(appSection === "servicogeral"){
+        h1.textContent = "Serviço Geral";
+        sub.textContent = "Jacuzzi e manutenção predial";
+        alertPill.style.display = "none";
       } else if(appSection === "supervisao"){
         h1.textContent = "Supervisão";
         sub.textContent = "Painel geral e histórico";
@@ -1318,6 +1324,7 @@
     if(sec==="hospedes") return "hospedes";
     if(sec==="limpeza") return "limpeza";
     if(sec==="recepcao") return "recepcao";
+    if(sec==="servicogeral") return "servico_geral";
     if(sec==="admin" || sec==="supervisao" || sec==="configuracoes") return null;
     return "procedimentos";
   }
@@ -1339,6 +1346,7 @@
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
     document.getElementById("recepcaoView").style.display = appSection==="recepcao" ? "block":"none";
+    document.getElementById("servicoGeralView").style.display = appSection==="servicogeral" ? "block":"none";
     document.getElementById("supervisaoView").style.display = appSection==="supervisao" ? "block":"none";
     document.getElementById("configuracoesView").style.display = appSection==="configuracoes" ? "block":"none";
 
@@ -1376,6 +1384,7 @@
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
     if(appSection === "recepcao") renderRecepcao();
+    if(appSection === "servicogeral") renderServicoGeral();
     if(appSection === "supervisao") renderSupervisao();
     if(appSection === "configuracoes") renderConfiguracoes();
   }
@@ -1436,6 +1445,14 @@
       '<div class="card home-card" data-section="recepcao">' +
         '<div class="home-card-ic">🛎️</div>' +
         '<div class="home-card-main"><p class="home-card-title">Recepção</p><p class="home-card-sub">'+escapeHtml(recepSub)+'</p></div>' +
+        '<div class="home-card-arrow">›</div>' +
+      '</div>';
+    }
+    if(podeVer("servico_geral")){
+      cardsHtml +=
+      '<div class="card home-card" data-section="servicogeral">' +
+        '<div class="home-card-ic">🛁</div>' +
+        '<div class="home-card-main"><p class="home-card-title">Serviço Geral</p><p class="home-card-sub">jacuzzi e manutenção predial</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
@@ -3868,6 +3885,104 @@
     };
   }
 
+  // ---------- Serviço Geral (jacuzzi + manutenção predial) ----------
+  var JACUZZI_ACOMODACOES_NOMES = [
+    "Bangalô Loft", "Bangalô Baguá 01", "Bangalô Baguá 02", "Bangalô Baguá 03", "Bangalô Baguá 04",
+    "Bangalô Panorama 01", "Bangalô Panorama 02", "Bangalô Safari 01", "Bangalô Safari 02"
+  ];
+  var servicoGeralSubView = "jacuzzi";
+
+  function acomodacoesComJacuzziIds(){
+    var alvo = JACUZZI_ACOMODACOES_NOMES.map(normalizarBusca);
+    return state.acomodacoes.filter(function(a){ return alvo.indexOf(normalizarBusca(a.nome)) > -1; }).map(function(a){ return a.id; });
+  }
+
+  function computeJacuzziTarefas(){
+    var idsJacuzzi = acomodacoesComJacuzziIds();
+    var pode = [], naoPode = [];
+    state.solicitacoes.forEach(function(s){
+      if(idsJacuzzi.indexOf(s.acomodacaoId) === -1) return;
+      if(s.jacuzziConcluidaEm) return; // já foi feita, some da lista
+      var nome = acomodacaoNome(s.acomodacaoId);
+      if(s.tipo === "lavagem" && s.contexto === "checkin" && s.status !== "concluido"){
+        (s.status === "bloqueada" ? naoPode : pode).push({id:s.id, nome:nome, tag:"🛎️ CHECK-IN", cor:"var(--teal-700)", motivo:s.status==="bloqueada"?"Aguardando liberação":null});
+      } else if(s.tipo === "lavagem" && (s.contexto === "checkout" || s.contexto === "checkin_checkout") && s.status !== "concluido"){
+        (s.status === "bloqueada" ? naoPode : pode).push({id:s.id, nome:nome, tag:"🚪 CHECKOUT", cor:"var(--teal-900)", motivo:s.status==="bloqueada"?"Aguardando a recepção confirmar que o hóspede já saiu":null});
+      } else if(s.tipo === "limpeza" && s.contexto === "estadia" && s.status !== "concluido"){
+        pode.push({id:s.id, nome:nome, tag:"🧹 LIMPEZA SOLICITADA", cor:"var(--amber-600)", motivo:null});
+      }
+    });
+    return {pode:pode, naoPode:naoPode};
+  }
+
+  function renderServicoGeral(){
+    var main = document.getElementById("servicoGeralView");
+    var html = '<div class="seg-toggle">' +
+      '<button data-sgsub="jacuzzi" class="'+(servicoGeralSubView==="jacuzzi"?"active":"")+'">🛁 Jacuzzi</button>' +
+      '<button data-sgsub="predial" class="'+(servicoGeralSubView==="predial"?"active":"")+'">🔧 Manutenção Predial</button>' +
+    '</div>';
+
+    function cardItem(item, podeIr){
+      var h = '<div class="card" style="margin-bottom:10px;">' +
+        '<span style="display:inline-block;font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;margin-bottom:8px;color:#fff;background:'+item.cor+';">'+item.tag+'</span>' +
+        '<p style="margin:0 0 6px;font-size:17px;font-weight:800;">'+escapeHtml(item.nome)+'</p>' +
+        '<p style="margin:0 0 10px;font-size:15px;font-weight:800;color:'+(podeIr?"var(--teal-700)":"var(--red-600)")+';">'+(podeIr?"✅ PODE IR":"🔒 NÃO PODE IR")+'</p>';
+      if(item.motivo) h += '<p class="item-meta" style="margin-bottom:10px;">'+escapeHtml(item.motivo)+'</p>';
+      if(podeIr) h += '<button type="button" class="sg-concluir-btn" data-id="'+item.id+'" data-tipo="'+(servicoGeralSubView==="jacuzzi"?"jacuzzi":"predial")+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:14.5px;font-weight:700;">✓ Concluir</button>';
+      else h += '<div style="background:var(--sand-200);color:var(--ink-400);border-radius:9px;padding:11px;text-align:center;font-size:13px;font-weight:700;">🔒 Aguarde a liberação</div>';
+      h += '</div>';
+      return h;
+    }
+
+    if(servicoGeralSubView === "jacuzzi"){
+      var jac = computeJacuzziTarefas();
+      html += '<p class="section-title" style="color:var(--teal-700);">✅ PODE</p>';
+      html += jac.pode.length ? jac.pode.map(function(it){ return cardItem(it, true); }).join("") : '<div class="empty">Nenhuma jacuzzi liberada agora.</div>';
+      html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">🔒 NÃO PODE</p>';
+      html += jac.naoPode.length ? jac.naoPode.map(function(it){ return cardItem(it, false); }).join("") : '<div class="empty">Nenhuma pendência de liberação.</div>';
+    } else {
+      var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; });
+      html += '<p class="section-title" style="color:var(--teal-700);">✅ PODE</p>';
+      if(pend.length === 0){
+        html += '<div class="empty">Nenhuma manutenção pendente agora.</div>';
+      } else {
+        pend.forEach(function(m){
+          html += cardItem({id:m.id, nome:m.title+(m.local?(" — "+m.local):""), tag:"🔧 CONSERTO", cor:"var(--ink-600)", motivo:m.description||null}, true);
+        });
+      }
+      html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">🔒 NÃO PODE</p>';
+      html += '<div class="empty">Nenhuma pendência de liberação.</div>';
+    }
+
+    main.innerHTML = html;
+    main.querySelectorAll("[data-sgsub]").forEach(function(b){
+      b.onclick = function(){ servicoGeralSubView = b.getAttribute("data-sgsub"); renderServicoGeral(); };
+    });
+    main.querySelectorAll(".sg-concluir-btn").forEach(function(b){
+      b.onclick = async function(){
+        var id = b.getAttribute("data-id");
+        var tipo = b.getAttribute("data-tipo");
+        b.disabled = true;
+        try{
+          if(tipo === "jacuzzi"){
+            var s = await dbUpdate("solicitacoes_acomodacao", id, {jacuzzi_concluida_em:new Date().toISOString(), jacuzzi_concluida_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+            var idx = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idx>-1) state.solicitacoes[idx] = s;
+          } else {
+            var m = await dbUpdate("manutencoes", id, {status:"concluida", resolved_at:new Date().toISOString()}, mapManutencaoFromRow);
+            var idxM = state.manutencoes.findIndex(function(x){ return x.id===id; });
+            if(idxM>-1) state.manutencoes[idxM] = m;
+          }
+          showToast("Concluído!");
+          renderServicoGeral();
+        }catch(err){
+          console.error(err); showToast("Erro ao concluir");
+          b.disabled = false;
+        }
+      };
+    });
+  }
+
   function renderRecepcao(){
     var main = document.getElementById("recepcaoView");
     var html = buildPainelHtml(true);
@@ -4103,7 +4218,8 @@
     {key:"manutencao", label:"Manutenções"},
     {key:"hospedes", label:"Hóspedes/Documentos"},
     {key:"limpeza", label:"Limpeza (pedidos dos hóspedes)"},
-    {key:"recepcao", label:"Recepção (painel de acompanhamento)"}
+    {key:"recepcao", label:"Recepção (painel de acompanhamento)"},
+    {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"}
   ];
   var adminUsersCache = null; // [{id,nome,email,role,ativo,permissoes:{modulo:{ver,editar}}}]
 
