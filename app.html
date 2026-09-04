@@ -747,7 +747,7 @@
       criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por,
       searchableCode:r.searchable_code, fotoAbastecimento:r.foto_abastecimento,
       incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama,
-      jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por};
+      jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por, jacuzziFoto:r.jacuzzi_foto};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -3213,6 +3213,10 @@
     if(s.incluiTrocaRoupaCama){
       html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🧺 Também trocar roupa de cama (dia '+s.diaEstadiaRoupaCama+')</p>';
     }
+    if(s.jacuzziConcluidaEm){
+      html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🛁 Jacuzzi feita por '+escapeHtml(nomeStaff(s.jacuzziConcluidaPor))+'</p>';
+      if(s.jacuzziFoto) html += '<a href="'+s.jacuzziFoto+'" target="_blank" rel="noopener" style="display:block;margin:6px 0;"><img src="'+s.jacuzziFoto+'" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;" alt="Foto da jacuzzi"></a>';
+    }
     var mostrarInfoHospede = (s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1) ||
       (s.tipo === "limpeza" && s.contexto === "estadia") ||
       (s.tipo === "roupa_cama");
@@ -3915,6 +3919,8 @@
     return {pode:pode, naoPode:naoPode};
   }
 
+  var servicoGeralFotosPendentes = {};
+
   function renderServicoGeral(){
     var main = document.getElementById("servicoGeralView");
     var html = '<div class="seg-toggle">' +
@@ -3922,12 +3928,20 @@
       '<button data-sgsub="predial" class="'+(servicoGeralSubView==="predial"?"active":"")+'">🔧 Manutenção Predial</button>' +
     '</div>';
 
-    function cardItem(item, podeIr){
+    function cardItem(item, podeIr, mostrarFoto){
       var h = '<div class="card" style="margin-bottom:10px;">' +
         '<span style="display:inline-block;font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;margin-bottom:8px;color:#fff;background:'+item.cor+';">'+item.tag+'</span>' +
         '<p style="margin:0 0 6px;font-size:17px;font-weight:800;">'+escapeHtml(item.nome)+'</p>' +
         '<p style="margin:0 0 10px;font-size:15px;font-weight:800;color:'+(podeIr?"var(--teal-700)":"var(--red-600)")+';">'+(podeIr?"✅ PODE IR":"🔒 NÃO PODE IR")+'</p>';
       if(item.motivo) h += '<p class="item-meta" style="margin-bottom:10px;">'+escapeHtml(item.motivo)+'</p>';
+      if(podeIr && mostrarFoto){
+        var fotoAtual = servicoGeralFotosPendentes[item.id];
+        h += '<div id="sgFotoPreviewWrap_'+item.id+'" style="'+(fotoAtual?'':'display:none;')+'margin-bottom:8px;">' +
+          '<img id="sgFotoPreview_'+item.id+'" src="'+(fotoAtual||'')+'" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;">' +
+        '</div>' +
+        '<button type="button" class="sg-foto-btn" data-id="'+item.id+'" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:8px;">📷 '+(fotoAtual?'Trocar foto':'Tirar foto da jacuzzi')+'</button>' +
+        '<input type="file" class="sg-foto-input" data-id="'+item.id+'" accept="image/*" capture="environment" style="display:none;">';
+      }
       if(podeIr) h += '<button type="button" class="sg-concluir-btn" data-id="'+item.id+'" data-tipo="'+(servicoGeralSubView==="jacuzzi"?"jacuzzi":"predial")+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:14.5px;font-weight:700;">✓ Concluir</button>';
       else h += '<div style="background:var(--sand-200);color:var(--ink-400);border-radius:9px;padding:11px;text-align:center;font-size:13px;font-weight:700;">🔒 Aguarde a liberação</div>';
       h += '</div>';
@@ -3937,9 +3951,9 @@
     if(servicoGeralSubView === "jacuzzi"){
       var jac = computeJacuzziTarefas();
       html += '<p class="section-title" style="color:var(--teal-700);">✅ PODE</p>';
-      html += jac.pode.length ? jac.pode.map(function(it){ return cardItem(it, true); }).join("") : '<div class="empty">Nenhuma jacuzzi liberada agora.</div>';
+      html += jac.pode.length ? jac.pode.map(function(it){ return cardItem(it, true, true); }).join("") : '<div class="empty">Nenhuma jacuzzi liberada agora.</div>';
       html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">🔒 NÃO PODE</p>';
-      html += jac.naoPode.length ? jac.naoPode.map(function(it){ return cardItem(it, false); }).join("") : '<div class="empty">Nenhuma pendência de liberação.</div>';
+      html += jac.naoPode.length ? jac.naoPode.map(function(it){ return cardItem(it, false, false); }).join("") : '<div class="empty">Nenhuma pendência de liberação.</div>';
     } else {
       var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; });
       html += '<p class="section-title" style="color:var(--teal-700);">✅ PODE</p>';
@@ -3947,7 +3961,7 @@
         html += '<div class="empty">Nenhuma manutenção pendente agora.</div>';
       } else {
         pend.forEach(function(m){
-          html += cardItem({id:m.id, nome:m.title+(m.local?(" — "+m.local):""), tag:"🔧 CONSERTO", cor:"var(--ink-600)", motivo:m.description||null}, true);
+          html += cardItem({id:m.id, nome:m.title+(m.local?(" — "+m.local):""), tag:"🔧 CONSERTO", cor:"var(--ink-600)", motivo:m.description||null}, true, false);
         });
       }
       html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">🔒 NÃO PODE</p>';
@@ -3958,6 +3972,28 @@
     main.querySelectorAll("[data-sgsub]").forEach(function(b){
       b.onclick = function(){ servicoGeralSubView = b.getAttribute("data-sgsub"); renderServicoGeral(); };
     });
+    main.querySelectorAll(".sg-foto-btn").forEach(function(btn){
+      btn.onclick = function(){
+        var id = btn.getAttribute("data-id");
+        main.querySelector('.sg-foto-input[data-id="'+id+'"]').click();
+      };
+    });
+    main.querySelectorAll(".sg-foto-input").forEach(function(inp){
+      inp.addEventListener("change", function(e){
+        var id = inp.getAttribute("data-id");
+        var file = e.target.files[0];
+        e.target.value = "";
+        if(!file) return;
+        compressImage(file, 1000, 0.75, function(dataUrl){
+          if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
+          servicoGeralFotosPendentes[id] = dataUrl;
+          document.getElementById("sgFotoPreview_"+id).src = dataUrl;
+          document.getElementById("sgFotoPreviewWrap_"+id).style.display = "block";
+          var btn = main.querySelector('.sg-foto-btn[data-id="'+id+'"]');
+          if(btn) btn.textContent = "📷 Trocar foto";
+        });
+      });
+    });
     main.querySelectorAll(".sg-concluir-btn").forEach(function(b){
       b.onclick = async function(){
         var id = b.getAttribute("data-id");
@@ -3965,9 +4001,12 @@
         b.disabled = true;
         try{
           if(tipo === "jacuzzi"){
-            var s = await dbUpdate("solicitacoes_acomodacao", id, {jacuzzi_concluida_em:new Date().toISOString(), jacuzzi_concluida_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+            var payload = {jacuzzi_concluida_em:new Date().toISOString(), jacuzzi_concluida_por:(currentUser?currentUser.id:null)};
+            if(servicoGeralFotosPendentes[id]) payload.jacuzzi_foto = servicoGeralFotosPendentes[id];
+            var s = await dbUpdate("solicitacoes_acomodacao", id, payload, mapSolicitacaoFromRow);
             var idx = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx>-1) state.solicitacoes[idx] = s;
+            delete servicoGeralFotosPendentes[id];
           } else {
             var m = await dbUpdate("manutencoes", id, {status:"concluida", resolved_at:new Date().toISOString()}, mapManutencaoFromRow);
             var idxM = state.manutencoes.findIndex(function(x){ return x.id===id; });
