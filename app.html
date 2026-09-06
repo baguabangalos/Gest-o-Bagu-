@@ -751,6 +751,11 @@
   function mapCountSessionFromRow(r){
     return {id:r.id, date:new Date(r.date).getTime(), entries:r.entries||[]};
   }
+  function mapPedidoCompraFromRow(r){
+    return {id:r.id, itens:r.itens||[], foto:r.foto, observacao:r.observacao, status:r.status,
+      criadoEm:new Date(r.criado_em).getTime(), criadoPor:r.criado_por,
+      recebidoEm:(r.recebido_em?new Date(r.recebido_em).getTime():null), recebidoPor:r.recebido_por};
+  }
   function mapProcedimentoFromRow(r){
     return {id:r.id, title:r.title, text:r.text_content, photo:r.photo, fileName:r.file_name, fileData:r.file_data,
       videoUrl:r.video_url, createdAt:new Date(r.created_at).getTime()};
@@ -838,10 +843,11 @@
       sb.from("hospedin_ocupacao").select("*").gte("checkout", hospedinCutoffDate()).order("checkin", {ascending:false}).limit(5000),
       sb.from("acomodacoes").select("*").order("ordem"),
       sb.from("solicitacoes_acomodacao").select("*").order("criado_em", {ascending:false}).limit(5000),
-      sb.from("staff_names").select("*")
+      sb.from("staff_names").select("*"),
+      sb.from("pedidos_compra").select("*").order("criado_em", {ascending:false}).limit(500)
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
-    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9];
+    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10];
     var hospedinOcupacao = hospedinRes.data || [];
     var staffNames = {};
     (staffRes.data||[]).forEach(function(p){ staffNames[p.id] = p.nome; });
@@ -852,7 +858,8 @@
         suppliers: (supRes.data||[]).map(mapSupplierFromRow),
         countSessions: (csRes.data||[]).map(mapCountSessionFromRow),
         hospedinOcupacao: hospedinOcupacao,
-        hospedinData: computeHospedinSummary(hospedinOcupacao, 7, 7)
+        hospedinData: computeHospedinSummary(hospedinOcupacao, 7, 7),
+        pedidosCompra: (pedRes.data||[]).map(mapPedidoCompraFromRow)
       },
       procedimentos: (procRes.data||[]).map(mapProcedimentoFromRow),
       manutencoes: (manRes.data||[]).map(mapManutencaoFromRow),
@@ -1999,7 +2006,8 @@
       '</div>' +
       '<button type="button" class="link-btn" id="reportSupplierManager">🚚 Gerenciar fornecedores</button>' +
       '<button type="button" class="link-btn" id="reportHospedinSync">🔗 Sincronizar com Hospedin</button>' +
-      '<div id="purchaseSuggestSection"></div>';
+      '<div id="purchaseSuggestSection"></div>' +
+      '<div id="pedidosCompraSection" style="margin-top:22px;"></div>';
     document.getElementById("reportText").textContent = text;
     document.getElementById("sendWa").onclick = function(){
       var url = "https://wa.me/?text=" + encodeURIComponent(text);
@@ -2017,6 +2025,221 @@
       openHospedinSync();
     };
     renderPurchaseSuggestSection();
+    renderPedidosCompraSection();
+  }
+
+  // ---------- Pedidos de compra (facilita lançar entradas quando chegam) ----------
+  function renderPedidosCompraSection(){
+    var el = document.getElementById("pedidosCompraSection");
+    if(!el) return;
+    var pendentes = (state.estoque.pedidosCompra||[]).filter(function(p){ return p.status === "pendente"; });
+    var html = '<div class="section-title" style="margin-top:0;">📦 Pedidos de compra</div>';
+    html += '<p class="count-intro">Registre o que você pediu ao fornecedor. Quando chegar, confirme aqui e a entrada já é lançada sozinha.</p>';
+    if(pendentes.length === 0){
+      html += '<div class="empty">Nenhum pedido em aberto.</div>';
+    } else {
+      html += '<div class="card">';
+      pendentes.forEach(function(p, i){
+        var itensTxt = p.itens.map(function(it){ return escapeHtml(it.nome)+" ("+it.quantidade+")"; }).join(", ");
+        html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<p style="margin:0 0 4px;font-size:14px;font-weight:700;">'+itensTxt+'</p>';
+        if(p.observacao) html += '<p class="item-meta" style="margin-bottom:6px;">'+escapeHtml(p.observacao)+'</p>';
+        if(p.foto) html += '<a href="'+p.foto+'" target="_blank" rel="noopener" style="display:block;margin-bottom:8px;"><img src="'+p.foto+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:9px;display:block;"></a>';
+        html += '<p class="item-meta" style="margin-bottom:8px;">pedido em '+fmtDate(p.criadoEm)+' por '+escapeHtml(nomeStaff(p.criadoPor))+'</p>' +
+          '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">✓ Chegou</button>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '<button type="button" id="novoPedidoCompraBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-top:10px;">+ Novo pedido de compra</button>';
+    el.innerHTML = html;
+    el.querySelectorAll(".pedidoChegouBtn").forEach(function(btn){
+      btn.onclick = function(){
+        var p = (state.estoque.pedidosCompra||[]).find(function(x){ return x.id === btn.getAttribute("data-id"); });
+        if(p) abrirReceberPedidoSheet(p);
+      };
+    });
+    document.getElementById("novoPedidoCompraBtn").onclick = abrirNovoPedidoCompraSheet;
+  }
+
+  var pedidoCompraFotoPendente = null;
+  function abrirNovoPedidoCompraSheet(){
+    pedidoCompraFotoPendente = null;
+    var todosItens = state.estoque.items.slice().sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    var html =
+      '<div class="sheet-overlay open" id="novoPedidoCompraOverlay">' +
+        '<div class="sheet">' +
+          '<h2>Novo pedido de compra</h2>' +
+          '<label>Foto da nota/print do pedido (opcional)</label>' +
+          '<div id="pedidoFotoPreviewWrap" style="display:none;margin-bottom:8px;">' +
+            '<img id="pedidoFotoPreview" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;">' +
+          '</div>' +
+          '<button type="button" id="pedidoFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:14px;">📷 Anexar foto</button>' +
+          '<input type="file" id="pedidoFotoInput" accept="image/*" style="display:none;">' +
+          '<label>Itens pedidos</label>' +
+          '<div id="pedidoItensLista"></div>' +
+          '<div style="display:flex;gap:8px;margin:4px 0 14px;">' +
+            '<select id="pedidoExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);">' +
+            '<option value="">Selecionar item…</option>' +
+            todosItens.map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+' ('+CATEGORY_LABEL[it.category]+')</option>'; }).join("") +
+            '</select>' +
+            '<button type="button" id="pedidoExtraAddBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>' +
+          '</div>' +
+          '<label>Observação (opcional)</label>' +
+          '<textarea id="pedidoObservacao" placeholder="Ex: pedido feito com o fornecedor X, prazo de 3 dias"></textarea>' +
+          '<div class="sheet-actions">' +
+            '<button type="button" class="btn-secondary" id="pedidoCancel">Cancelar</button>' +
+            '<button type="button" class="btn-primary" id="pedidoConfirm">✓ Registrar pedido</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+
+    var overlay = document.getElementById("novoPedidoCompraOverlay");
+    var lista = document.getElementById("pedidoItensLista");
+    var contador = 0;
+
+    document.getElementById("pedidoFotoBtn").onclick = function(){ document.getElementById("pedidoFotoInput").click(); };
+    document.getElementById("pedidoFotoInput").addEventListener("change", function(e){
+      var file = e.target.files[0]; e.target.value = "";
+      if(!file) return;
+      compressImage(file, 1000, 0.75, function(dataUrl){
+        if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
+        pedidoCompraFotoPendente = dataUrl;
+        document.getElementById("pedidoFotoPreview").src = dataUrl;
+        document.getElementById("pedidoFotoPreviewWrap").style.display = "block";
+      });
+    });
+
+    document.getElementById("pedidoExtraAddBtn").onclick = function(){
+      var sel = document.getElementById("pedidoExtraSelect");
+      var nome = sel.value;
+      if(!nome){ showToast("Escolha um item"); return; }
+      if(lista.querySelector('[data-nome-item="'+CSS.escape(nome)+'"]')){ showToast("Esse item já está na lista"); return; }
+      var idx = contador++;
+      var div = document.createElement("div");
+      div.className = "card";
+      div.style.cssText = "margin-bottom:8px;padding:12px 14px;";
+      div.setAttribute("data-nome-item", nome);
+      div.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+          '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;flex:1;">'+escapeHtml(nome)+'</p>' +
+          '<button type="button" class="pedidoRemover" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">✕</button>' +
+        '</div>' +
+        '<div class="qty-stepper" style="margin-bottom:0;">' +
+          '<button type="button" class="pedidoMinus">−</button>' +
+          '<input type="number" class="pedidoQty" step="1" min="1" value="1">' +
+          '<button type="button" class="pedidoPlus">+</button>' +
+        '</div>';
+      lista.appendChild(div);
+      div.querySelector(".pedidoMinus").onclick = function(){ var i=div.querySelector(".pedidoQty"); i.value = Math.max(1,(parseFloat(i.value)||1)-1); };
+      div.querySelector(".pedidoPlus").onclick = function(){ var i=div.querySelector(".pedidoQty"); i.value = (parseFloat(i.value)||1)+1; };
+      div.querySelector(".pedidoRemover").onclick = function(){ div.remove(); };
+      sel.value = "";
+    };
+
+    document.getElementById("pedidoCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+
+    document.getElementById("pedidoConfirm").onclick = async function(){
+      var itens = [];
+      lista.querySelectorAll("[data-nome-item]").forEach(function(div){
+        var nome = div.getAttribute("data-nome-item");
+        var qty = parseFloat(div.querySelector(".pedidoQty").value) || 0;
+        if(qty > 0) itens.push({nome:nome, quantidade:qty});
+      });
+      if(itens.length === 0){ showToast("Adicione pelo menos um item"); return; }
+      var btn = document.getElementById("pedidoConfirm"); btn.disabled = true;
+      try{
+        var payload = {id:uid(), itens:itens, foto:pedidoCompraFotoPendente,
+          observacao:document.getElementById("pedidoObservacao").value.trim()||null,
+          status:"pendente", criado_por:(currentUser?currentUser.id:null)};
+        var p = await dbInsert("pedidos_compra", payload, mapPedidoCompraFromRow);
+        state.estoque.pedidosCompra.unshift(p);
+        overlay.remove();
+        showToast("Pedido de compra registrado");
+        renderPedidosCompraSection();
+      }catch(err){
+        console.error(err); showToast("Erro ao registrar pedido");
+        btn.disabled = false;
+      }
+    };
+  }
+
+  function abrirReceberPedidoSheet(p){
+    var html =
+      '<div class="sheet-overlay open" id="receberPedidoOverlay">' +
+        '<div class="sheet">' +
+          '<h2>Confirmar chegada do pedido</h2>' +
+          '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Confira a quantidade que chegou de verdade — pode ser diferente do que foi pedido.</p>' +
+          '<div id="receberItensLista">' +
+            p.itens.map(function(it, i){
+              var matchEstoque = itemEstoquePorNome(it.nome);
+              return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+i+'">' +
+                '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(it.nome)+
+                  (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque)</span>') +
+                '</p>' +
+                '<p class="item-meta" style="margin-bottom:8px;">pedido: '+it.quantidade+'</p>' +
+                '<div class="qty-stepper" style="margin-bottom:0;">' +
+                  '<button type="button" class="receberMinus" data-idx="'+i+'">−</button>' +
+                  '<input type="number" class="receberQty" data-idx="'+i+'" step="1" min="0" value="'+it.quantidade+'">' +
+                  '<button type="button" class="receberPlus" data-idx="'+i+'">+</button>' +
+                '</div>' +
+              '</div>';
+            }).join("") +
+          '</div>' +
+          '<div class="sheet-actions">' +
+            '<button type="button" class="btn-secondary" id="receberCancel">Cancelar</button>' +
+            '<button type="button" class="btn-primary" id="receberConfirm">✓ Confirmar recebimento</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+
+    var overlay = document.getElementById("receberPedidoOverlay");
+    var lista = document.getElementById("receberItensLista");
+    lista.querySelectorAll(".receberMinus").forEach(function(b){
+      b.onclick = function(){
+        var inp = lista.querySelector('.receberQty[data-idx="'+b.getAttribute("data-idx")+'"]');
+        inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
+      };
+    });
+    lista.querySelectorAll(".receberPlus").forEach(function(b){
+      b.onclick = function(){
+        var inp = lista.querySelector('.receberQty[data-idx="'+b.getAttribute("data-idx")+'"]');
+        inp.value = (parseFloat(inp.value)||0) + 1;
+      };
+    });
+    document.getElementById("receberCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+
+    document.getElementById("receberConfirm").onclick = async function(){
+      if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+      var btn = document.getElementById("receberConfirm"); btn.disabled = true;
+      try{
+        for(var i=0;i<p.itens.length;i++){
+          var qtyInp = lista.querySelector('.receberQty[data-idx="'+i+'"]');
+          var qty = parseFloat(qtyInp.value) || 0;
+          if(qty <= 0) continue;
+          var itemEstoque = itemEstoquePorNome(p.itens[i].nome);
+          if(!itemEstoque) continue;
+          var novaQty = itemEstoque.qty + qty;
+          var updated = await dbUpdate("items", itemEstoque.id, {qty:novaQty}, mapItemFromRow);
+          var idxItem = state.estoque.items.findIndex(function(x){ return x.id===itemEstoque.id; });
+          if(idxItem>-1) state.estoque.items[idxItem] = updated;
+          var mov = await dbInsert("movements", {id:uid(), item_id:itemEstoque.id, type:"entrada", qty:qty, note:"Pedido de compra recebido", date:new Date().toISOString()}, mapMovementFromRow);
+          state.estoque.movements.unshift(mov);
+        }
+        var pAtualizado = await dbUpdate("pedidos_compra", p.id, {status:"recebido", recebido_em:new Date().toISOString(), recebido_por:(currentUser?currentUser.id:null)}, mapPedidoCompraFromRow);
+        var idxP = state.estoque.pedidosCompra.findIndex(function(x){ return x.id===p.id; });
+        if(idxP>-1) state.estoque.pedidosCompra[idxP] = pAtualizado;
+        overlay.remove();
+        showToast("Entrada registrada no estoque!");
+        renderPedidosCompraSection();
+      }catch(err){
+        console.error(err); showToast("Erro ao confirmar recebimento"); btn.disabled = false;
+      }
+    };
   }
 
   function renderPurchaseSuggestSection(){
@@ -2487,13 +2710,17 @@
   }
 
   var abastecerItensExtras = []; // itens adicionados na hora, além dos que vieram no pedido original
+  var abastecerIdsRemovidos = {}; // idx marcados como removidos da lista (originais ou extras)
 
   function linhaItemAbastecer(nome, qtyInicial, idx){
     var matchEstoque = itemEstoquePorNome(nome);
     return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+idx+'">' +
-      '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(nome)+
-        (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque — não vai descontar)</span>') +
-      '</p>' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+        '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;flex:1;">'+escapeHtml(nome)+
+          (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque — não vai descontar)</span>') +
+        '</p>' +
+        '<button type="button" class="abastecerRemover" data-idx="'+idx+'" title="Remover item" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">✕</button>' +
+      '</div>' +
       '<div class="qty-stepper" style="margin-bottom:8px;">' +
         '<button type="button" class="abastecerMinus" data-idx="'+idx+'">−</button>' +
         '<input type="number" class="abastecerQty" data-idx="'+idx+'" step="1" min="0" value="'+qtyInicial+'">' +
@@ -2507,6 +2734,7 @@
     var minus = lista.querySelector('.abastecerMinus[data-idx="'+idx+'"]');
     var plus = lista.querySelector('.abastecerPlus[data-idx="'+idx+'"]');
     var chk = lista.querySelector('.abastecerFaltando[data-idx="'+idx+'"]');
+    var remover = lista.querySelector('.abastecerRemover[data-idx="'+idx+'"]');
     if(minus) minus.onclick = function(){
       var inp = lista.querySelector('.abastecerQty[data-idx="'+idx+'"]');
       inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
@@ -2520,12 +2748,18 @@
       qtyInp.disabled = chk.checked;
       if(chk.checked) qtyInp.value = 0;
     };
+    if(remover) remover.onclick = function(){
+      var card = lista.querySelector('[data-idx="'+idx+'"]');
+      if(card) card.remove();
+      abastecerIdsRemovidos[idx] = true;
+    };
   }
 
   function abrirAbastecerSheet(s){
     abastecerSolicitacaoId = s.id;
     abastecerFotoPendente = null;
     abastecerItensExtras = [];
+    abastecerIdsRemovidos = {};
     document.getElementById("abastecerFotoPreviewWrap").style.display = "none";
     document.getElementById("abastecerAcomodacaoNome").textContent = acomodacaoNome(s.acomodacaoId);
     var lista = document.getElementById("abastecerItensLista");
@@ -2555,6 +2789,7 @@
     var btn = document.getElementById("abastecerConfirm"); btn.disabled = true;
     try{
       for(var i=0;i<(s.itens||[]).length;i++){
+        if(abastecerIdsRemovidos[i]) continue;
         var it = s.itens[i];
         var chk = lista.querySelector('.abastecerFaltando[data-idx="'+i+'"]');
         var qtyInp = lista.querySelector('.abastecerQty[data-idx="'+i+'"]');
@@ -2577,6 +2812,7 @@
       }
       for(var j=0;j<abastecerItensExtras.length;j++){
         var idxExtra = "extra_" + j;
+        if(abastecerIdsRemovidos[idxExtra]) continue;
         var nomeExtra = abastecerItensExtras[j];
         var chkExtra = lista.querySelector('.abastecerFaltando[data-idx="'+idxExtra+'"]');
         var qtyInpExtra = lista.querySelector('.abastecerQty[data-idx="'+idxExtra+'"]');
@@ -3896,6 +4132,7 @@
       });
     }
     html += '<div style="margin-top:16px;">' +
+      '<button type="button" id="novoAbastecimentoAvulsoBtn" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:10px;">+ Criar abastecimento avulso</button>' +
       '<button type="button" id="importarExtratoBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">📄 Importar extrato do Hospedin (PDF)</button>' +
       '<input type="file" id="importarExtratoInput" accept="application/pdf" style="display:none;">' +
     '</div>';
@@ -3908,6 +4145,101 @@
       document.getElementById("importarExtratoInput").click();
     };
     document.getElementById("importarExtratoInput").addEventListener("change", handleImportarExtrato);
+    document.getElementById("novoAbastecimentoAvulsoBtn").onclick = abrirNovoAbastecimentoAvulsoSheet;
+  }
+
+  function abrirNovoAbastecimentoAvulsoSheet(){
+    var todasAtivas = state.acomodacoes.filter(function(a){ return a.ativo; })
+      .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+
+    var html =
+      '<div class="sheet-overlay open" id="novoAbastecimentoAvulsoOverlay">' +
+        '<div class="sheet">' +
+          '<h2>Novo abastecimento avulso</h2>' +
+          '<label>Acomodação</label>' +
+          '<select id="avulsoAcomodacao" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
+          '<option value="">Selecionar acomodação…</option>' +
+          todasAtivas.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
+          '</select>' +
+          '<label>Itens</label>' +
+          '<div id="avulsoItensLista"></div>' +
+          '<div style="display:flex;gap:8px;margin:4px 0 14px;">' +
+            '<select id="avulsoExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);">' +
+            '<option value="">Selecionar item…</option>' +
+            itensFrigobar.map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("") +
+            '</select>' +
+            '<button type="button" id="avulsoExtraAddBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>' +
+          '</div>' +
+          '<div class="sheet-actions">' +
+            '<button type="button" class="btn-secondary" id="avulsoCancel">Cancelar</button>' +
+            '<button type="button" class="btn-primary" id="avulsoConfirm">✓ Criar pedido de abastecimento</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+
+    var overlay = document.getElementById("novoAbastecimentoAvulsoOverlay");
+    var lista = document.getElementById("avulsoItensLista");
+    var contador = 0;
+
+    document.getElementById("avulsoExtraAddBtn").onclick = function(){
+      var sel = document.getElementById("avulsoExtraSelect");
+      var nome = sel.value;
+      if(!nome){ showToast("Escolha um item"); return; }
+      if(lista.querySelector('[data-nome-item="'+CSS.escape(nome)+'"]')){ showToast("Esse item já está na lista"); return; }
+      var idx = contador++;
+      var div = document.createElement("div");
+      div.className = "card";
+      div.style.cssText = "margin-bottom:8px;padding:12px 14px;";
+      div.setAttribute("data-nome-item", nome);
+      div.innerHTML =
+        '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(nome)+'</p>' +
+        '<div class="qty-stepper" style="margin-bottom:0;">' +
+          '<button type="button" class="avulsoMinus" data-idx="'+idx+'">−</button>' +
+          '<input type="number" class="avulsoQty" data-idx="'+idx+'" step="1" min="1" value="1">' +
+          '<button type="button" class="avulsoPlus" data-idx="'+idx+'">+</button>' +
+        '</div>';
+      lista.appendChild(div);
+      div.querySelector(".avulsoMinus").onclick = function(){
+        var inp = div.querySelector(".avulsoQty");
+        inp.value = Math.max(1, (parseFloat(inp.value)||1) - 1);
+      };
+      div.querySelector(".avulsoPlus").onclick = function(){
+        var inp = div.querySelector(".avulsoQty");
+        inp.value = (parseFloat(inp.value)||1) + 1;
+      };
+      sel.value = "";
+    };
+
+    document.getElementById("avulsoCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+
+    document.getElementById("avulsoConfirm").onclick = async function(){
+      var acomodacaoId = document.getElementById("avulsoAcomodacao").value;
+      if(!acomodacaoId){ showToast("Escolha a acomodação"); return; }
+      var itens = [];
+      lista.querySelectorAll("[data-nome-item]").forEach(function(div){
+        var nome = div.getAttribute("data-nome-item");
+        var qty = parseFloat(div.querySelector(".avulsoQty").value) || 0;
+        if(qty > 0) itens.push({nome:nome, quantidade:qty});
+      });
+      if(itens.length === 0){ showToast("Adicione pelo menos um item"); return; }
+      var btn = document.getElementById("avulsoConfirm"); btn.disabled = true;
+      try{
+        var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"frigobar", origem:"equipe",
+          criado_por:(currentUser?currentUser.id:null), status:"pendente", itens:itens};
+        var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+        state.solicitacoes.unshift(s);
+        overlay.remove();
+        showToast("Pedido de abastecimento criado");
+        abastecimentoSubView = "pendentes";
+        renderApp();
+      }catch(err){
+        console.error(err); showToast("Erro ao criar pedido");
+        btn.disabled = false;
+      }
+    };
   }
 
   // ---------- Importar extrato do Hospedin (PDF) ----------
