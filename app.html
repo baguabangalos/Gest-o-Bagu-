@@ -470,12 +470,39 @@
   </div>
 </div>
 
+<!-- Sheet: editar movimentação existente (entrada/saída) -->
+<div class="sheet-overlay" id="editMoveSheetOverlay">
+  <div class="sheet">
+    <h2 id="editMoveSheetTitle">Editar movimentação</h2>
+    <label>Quantidade</label>
+    <div class="qty-stepper">
+      <button type="button" id="editMoveMinus">−</button>
+      <input type="number" id="editMoveQty" step="0.01" min="0">
+      <button type="button" id="editMovePlus">+</button>
+    </div>
+    <div id="editMoveDestinoWrap" style="display:none;">
+      <label>Para onde foi</label>
+      <select id="editMoveDestino"></select>
+    </div>
+    <label>Observação (opcional)</label>
+    <textarea id="editMoveNote"></textarea>
+    <div class="sheet-actions">
+      <button type="button" class="btn-secondary" id="editMoveCancel">Cancelar</button>
+      <button type="button" class="btn-primary" id="editMoveConfirm">Salvar alteração</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sheet: abastecer frigobar (edita quantidade / marca item em falta) -->
 <div class="sheet-overlay" id="abastecerSheetOverlay">
   <div class="sheet">
     <h2>Abastecer — <span id="abastecerAcomodacaoNome"></span></h2>
     <p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Confira a quantidade de cada item antes de confirmar. Marque "Faltando" se não tinha em estoque para repor — isso vai avisar na hora do checkout.</p>
     <div id="abastecerItensLista"></div>
+    <div style="display:flex;gap:8px;margin:4px 0 14px;">
+      <select id="abastecerExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);"></select>
+      <button type="button" id="abastecerExtraAddBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>
+    </div>
     <label style="margin-top:14px;">Foto do frigobar abastecido (opcional)</label>
     <div id="abastecerFotoPreviewWrap" style="display:none;margin-bottom:8px;">
       <img id="abastecerFotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;">
@@ -1230,7 +1257,9 @@
           var label = TIPO_LABEL[s.tipo] || s.tipo;
           showToast("🔔 Novo pedido: " + label + " — " + acomodacaoNome(s.acomodacaoId));
         }
-        renderApp();
+        // Não recarrega a tela se a pessoa estiver contando o estoque —
+        // isso apagaria os números já digitados e ainda não salvos.
+        if(!(appSection==="estoque" && activeView==="count")) renderApp();
       });
     }
     if(ouveManutencao){
@@ -1240,7 +1269,7 @@
         if(!state.manutencoes.some(function(x){ return x.id===m.id; })) state.manutencoes.unshift(m);
         playNotifySound();
         showToast("🔔 Novo pedido de reparo — " + (m.local||""));
-        renderApp();
+        if(!(appSection==="estoque" && activeView==="count")) renderApp();
       });
     }
     realtimeChannel.subscribe();
@@ -1658,15 +1687,61 @@
       var tagClass = tagInfo.cls;
       var tagText = tagInfo.label;
       var qtyText = m.type==='ajuste' ? ((m.delta>=0?'+':'')+fmtQty(m.delta)) : fmtQty(m.qty);
-      html += '<div class="move-row">' +
+      var podeMexer = (m.type === "entrada" || m.type === "saida") && (podeEditar("estoque") || podeExcluir("estoque"));
+      html += '<div class="move-row" style="flex-wrap:wrap;">' +
         '<div><span class="move-tag '+tagClass+'">'+tagText+'</span> ' +
         '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
         (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
         (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
-        '</div><div class="move-date">'+fmtDate(m.date)+'</div></div>';
+        '</div><div style="display:flex;align-items:center;gap:8px;">' +
+        '<div class="move-date">'+fmtDate(m.date)+'</div>' +
+        (podeMexer ? (
+          (podeEditar("estoque") ? '<button type="button" class="move-edit-btn" data-id="'+m.id+'" title="Editar" style="background:none;border:none;font-size:15px;padding:2px;">✏️</button>' : '') +
+          (podeExcluir("estoque") ? '<button type="button" class="move-del-btn" data-id="'+m.id+'" title="Excluir" style="background:none;border:none;font-size:15px;padding:2px;">🗑️</button>' : '')
+        ) : '') +
+        '</div></div>';
     });
     html += '</div>';
     container.innerHTML = html;
+    wireMoveEditDelete(container);
+  }
+
+  function efeitoNoEstoque(type, qty, destino){
+    if(type === "entrada") return qty;
+    if(type === "saida") return (destino === "Recepção") ? 0 : -qty;
+    return 0;
+  }
+
+  function wireMoveEditDelete(container){
+    container.querySelectorAll(".move-edit-btn").forEach(function(btn){
+      btn.onclick = function(){
+        var m = state.estoque.movements.find(function(x){ return x.id === btn.getAttribute("data-id"); });
+        if(m) abrirEditarMovimentoSheet(m);
+      };
+    });
+    container.querySelectorAll(".move-del-btn").forEach(function(btn){
+      btn.onclick = async function(){
+        var m = state.estoque.movements.find(function(x){ return x.id === btn.getAttribute("data-id"); });
+        if(!m) return;
+        if(!confirm("Excluir essa movimentação? O estoque é ajustado de volta automaticamente.")) return;
+        btn.disabled = true;
+        try{
+          var item = state.estoque.items.find(function(i){ return i.id === m.itemId; });
+          if(item){
+            var efeito = efeitoNoEstoque(m.type, m.qty, m.destino);
+            var novaQty = Math.max(0, item.qty - efeito);
+            var updated = await dbUpdate("items", item.id, {qty:novaQty}, mapItemFromRow);
+            var idx = state.estoque.items.findIndex(function(x){ return x.id===item.id; });
+            if(idx>-1) state.estoque.items[idx] = updated;
+          }
+          await dbDelete("movements", m.id);
+          state.estoque.movements = state.estoque.movements.filter(function(x){ return x.id !== m.id; });
+          showToast("Movimentação excluída"); renderHistory();
+        }catch(err){
+          console.error(err); showToast("Erro ao excluir"); btn.disabled = false;
+        }
+      };
+    });
   }
 
   // Soma de saídas + reduções de ajuste (contagem) por item, no período dado.
@@ -2308,9 +2383,88 @@
   document.getElementById("moveCancel").onclick = closeMoveSheet;
   moveOverlay.addEventListener("click", function(e){ if(e.target===moveOverlay) closeMoveSheet(); });
 
+  // ---------- Editar movimentação existente ----------
+  var editMoveOverlay = document.getElementById("editMoveSheetOverlay");
+  var editMoveAlvo = null; // a movimentação sendo editada
+
+  function abrirEditarMovimentoSheet(m){
+    editMoveAlvo = m;
+    var it = state.estoque.items.find(function(i){ return i.id === m.itemId; });
+    document.getElementById("editMoveSheetTitle").textContent = (m.type==="entrada"?"Editar entrada — ":"Editar saída — ") + (it?it.name:"item removido");
+    document.getElementById("editMoveQty").value = m.qty;
+    document.getElementById("editMoveNote").value = m.note || "";
+    var destinoWrap = document.getElementById("editMoveDestinoWrap");
+    var destinoSelect = document.getElementById("editMoveDestino");
+    if(m.type === "saida"){
+      destinoWrap.style.display = "block";
+      destinoSelect.innerHTML = listaDestinos().map(function(d){ return '<option value="'+escapeHtml(d)+'">'+escapeHtml(d)+'</option>'; }).join("");
+      destinoSelect.value = m.destino || "";
+    } else {
+      destinoWrap.style.display = "none";
+    }
+    editMoveOverlay.classList.add("open");
+  }
+  function closeEditMoveSheet(){ editMoveOverlay.classList.remove("open"); editMoveAlvo = null; }
+  document.getElementById("editMoveCancel").onclick = closeEditMoveSheet;
+  editMoveOverlay.addEventListener("click", function(e){ if(e.target===editMoveOverlay) closeEditMoveSheet(); });
+  document.getElementById("editMoveMinus").onclick = function(){
+    var inp = document.getElementById("editMoveQty");
+    inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
+  };
+  document.getElementById("editMovePlus").onclick = function(){
+    var inp = document.getElementById("editMoveQty");
+    inp.value = (parseFloat(inp.value)||0) + 1;
+  };
+
+  document.getElementById("editMoveConfirm").onclick = async function(){
+    if(!editMoveAlvo) return;
+    var novaQty = parseFloat(document.getElementById("editMoveQty").value);
+    if(isNaN(novaQty) || novaQty < 0){ showToast("Quantidade inválida"); return; }
+    var novoDestino = editMoveAlvo.type === "saida" ? document.getElementById("editMoveDestino").value : editMoveAlvo.destino;
+    if(editMoveAlvo.type === "saida" && !novoDestino){ showToast("Escolha pra onde foi"); return; }
+    var novaNota = document.getElementById("editMoveNote").value.trim();
+    var btn = document.getElementById("editMoveConfirm"); btn.disabled = true;
+    try{
+      var item = state.estoque.items.find(function(i){ return i.id === editMoveAlvo.itemId; });
+      if(item){
+        var efeitoAntigo = efeitoNoEstoque(editMoveAlvo.type, editMoveAlvo.qty, editMoveAlvo.destino);
+        var efeitoNovo = efeitoNoEstoque(editMoveAlvo.type, novaQty, novoDestino);
+        var novaQtyItem = Math.max(0, item.qty - efeitoAntigo + efeitoNovo);
+        var updatedItem = await dbUpdate("items", item.id, {qty:novaQtyItem}, mapItemFromRow);
+        var idxItem = state.estoque.items.findIndex(function(x){ return x.id===item.id; });
+        if(idxItem>-1) state.estoque.items[idxItem] = updatedItem;
+      }
+      var payloadMov = {qty:novaQty, note:novaNota, destino:(editMoveAlvo.type==="saida"?novoDestino:editMoveAlvo.destino)};
+      var updatedMov = await dbUpdate("movements", editMoveAlvo.id, payloadMov, mapMovementFromRow);
+      var idxMov = state.estoque.movements.findIndex(function(x){ return x.id===editMoveAlvo.id; });
+      if(idxMov>-1) state.estoque.movements[idxMov] = updatedMov;
+      closeEditMoveSheet();
+      showToast("Movimentação atualizada");
+      renderHistory();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar alteração"); btn.disabled = false;
+    }
+  };
+
   // ---------- Abastecer frigobar (edita quantidade / marca item em falta) ----------
   var abastecerOverlay = document.getElementById("abastecerSheetOverlay");
   var abastecerFotoPendente = null;
+  document.getElementById("abastecerExtraAddBtn").onclick = function(){
+    var sel = document.getElementById("abastecerExtraSelect");
+    var nome = sel.value;
+    if(!nome){ showToast("Escolha um item"); return; }
+    var lista = document.getElementById("abastecerItensLista");
+    if(lista.querySelector('[data-nome-extra="'+CSS.escape(nome)+'"]')){ showToast("Esse item já está na lista"); return; }
+    var novoIdx = "extra_" + abastecerItensExtras.length;
+    abastecerItensExtras.push(nome);
+    var div = document.createElement("div");
+    div.innerHTML = linhaItemAbastecer(nome, 1, novoIdx);
+    var elemento = div.firstElementChild;
+    elemento.setAttribute("data-nome-extra", nome);
+    lista.appendChild(elemento);
+    wireLinhaAbastecer(lista, novoIdx);
+    sel.value = "";
+  };
   document.getElementById("abastecerFotoBtn").onclick = function(){
     document.getElementById("abastecerFotoInput").click();
   };
@@ -2332,45 +2486,56 @@
     return state.estoque.items.find(function(it){ return normalizarBusca(it.name) === alvo; }) || null;
   }
 
+  var abastecerItensExtras = []; // itens adicionados na hora, além dos que vieram no pedido original
+
+  function linhaItemAbastecer(nome, qtyInicial, idx){
+    var matchEstoque = itemEstoquePorNome(nome);
+    return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+idx+'">' +
+      '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(nome)+
+        (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque — não vai descontar)</span>') +
+      '</p>' +
+      '<div class="qty-stepper" style="margin-bottom:8px;">' +
+        '<button type="button" class="abastecerMinus" data-idx="'+idx+'">−</button>' +
+        '<input type="number" class="abastecerQty" data-idx="'+idx+'" step="1" min="0" value="'+qtyInicial+'">' +
+        '<button type="button" class="abastecerPlus" data-idx="'+idx+'">+</button>' +
+      '</div>' +
+      '<label class="checkbox-row"><input type="checkbox" class="abastecerFaltando" data-idx="'+idx+'"> Faltando (não tinha em estoque)</label>' +
+    '</div>';
+  }
+
+  function wireLinhaAbastecer(lista, idx){
+    var minus = lista.querySelector('.abastecerMinus[data-idx="'+idx+'"]');
+    var plus = lista.querySelector('.abastecerPlus[data-idx="'+idx+'"]');
+    var chk = lista.querySelector('.abastecerFaltando[data-idx="'+idx+'"]');
+    if(minus) minus.onclick = function(){
+      var inp = lista.querySelector('.abastecerQty[data-idx="'+idx+'"]');
+      inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
+    };
+    if(plus) plus.onclick = function(){
+      var inp = lista.querySelector('.abastecerQty[data-idx="'+idx+'"]');
+      inp.value = (parseFloat(inp.value)||0) + 1;
+    };
+    if(chk) chk.onchange = function(){
+      var qtyInp = lista.querySelector('.abastecerQty[data-idx="'+idx+'"]');
+      qtyInp.disabled = chk.checked;
+      if(chk.checked) qtyInp.value = 0;
+    };
+  }
+
   function abrirAbastecerSheet(s){
     abastecerSolicitacaoId = s.id;
     abastecerFotoPendente = null;
+    abastecerItensExtras = [];
     document.getElementById("abastecerFotoPreviewWrap").style.display = "none";
     document.getElementById("abastecerAcomodacaoNome").textContent = acomodacaoNome(s.acomodacaoId);
     var lista = document.getElementById("abastecerItensLista");
-    lista.innerHTML = (s.itens||[]).map(function(it, i){
-      var matchEstoque = itemEstoquePorNome(it.nome);
-      return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+i+'">' +
-        '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(it.nome)+
-          (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque — não vai descontar)</span>') +
-        '</p>' +
-        '<div class="qty-stepper" style="margin-bottom:8px;">' +
-          '<button type="button" class="abastecerMinus" data-idx="'+i+'">−</button>' +
-          '<input type="number" class="abastecerQty" data-idx="'+i+'" step="1" min="0" value="'+(it.quantidade||1)+'">' +
-          '<button type="button" class="abastecerPlus" data-idx="'+i+'">+</button>' +
-        '</div>' +
-        '<label class="checkbox-row"><input type="checkbox" class="abastecerFaltando" data-idx="'+i+'"> Faltando (não tinha em estoque)</label>' +
-      '</div>';
-    }).join("");
-    lista.querySelectorAll(".abastecerMinus").forEach(function(b){
-      b.onclick = function(){
-        var inp = lista.querySelector('.abastecerQty[data-idx="'+b.getAttribute("data-idx")+'"]');
-        inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
-      };
-    });
-    lista.querySelectorAll(".abastecerPlus").forEach(function(b){
-      b.onclick = function(){
-        var inp = lista.querySelector('.abastecerQty[data-idx="'+b.getAttribute("data-idx")+'"]');
-        inp.value = (parseFloat(inp.value)||0) + 1;
-      };
-    });
-    lista.querySelectorAll(".abastecerFaltando").forEach(function(chk){
-      chk.onchange = function(){
-        var qtyInp = lista.querySelector('.abastecerQty[data-idx="'+chk.getAttribute("data-idx")+'"]');
-        qtyInp.disabled = chk.checked;
-        if(chk.checked) qtyInp.value = 0;
-      };
-    });
+    lista.innerHTML = (s.itens||[]).map(function(it, i){ return linhaItemAbastecer(it.nome, it.quantidade||1, i); }).join("");
+    (s.itens||[]).forEach(function(it, i){ wireLinhaAbastecer(lista, i); });
+
+    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    document.getElementById("abastecerExtraSelect").innerHTML = '<option value="">Selecionar item…</option>' +
+      itensFrigobar.map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("");
+
     abastecerOverlay.classList.add("open");
   }
   function closeAbastecerSheet(){ abastecerOverlay.classList.remove("open"); abastecerSolicitacaoId = null; }
@@ -2386,6 +2551,7 @@
     var linhas = lista.querySelectorAll("[data-idx]");
     var destino = acomodacaoNome(s.acomodacaoId);
     var faltando = [];
+    var itensFinais = [];
     var btn = document.getElementById("abastecerConfirm"); btn.disabled = true;
     try{
       for(var i=0;i<(s.itens||[]).length;i++){
@@ -2398,6 +2564,7 @@
           continue;
         }
         if(qty <= 0) continue;
+        itensFinais.push({nome:it.nome, quantidade:qty});
         var itemEstoque = itemEstoquePorNome(it.nome);
         if(itemEstoque){
           var novaQty = Math.max(0, itemEstoque.qty - qty);
@@ -2408,8 +2575,27 @@
           state.estoque.movements.unshift(mov);
         }
       }
+      for(var j=0;j<abastecerItensExtras.length;j++){
+        var idxExtra = "extra_" + j;
+        var nomeExtra = abastecerItensExtras[j];
+        var chkExtra = lista.querySelector('.abastecerFaltando[data-idx="'+idxExtra+'"]');
+        var qtyInpExtra = lista.querySelector('.abastecerQty[data-idx="'+idxExtra+'"]');
+        var qtyExtra = parseFloat(qtyInpExtra.value) || 0;
+        if(chkExtra && chkExtra.checked){ faltando.push({nome:nomeExtra, quantidade:1}); continue; }
+        if(qtyExtra <= 0) continue;
+        itensFinais.push({nome:nomeExtra, quantidade:qtyExtra});
+        var itemEstoqueExtra = itemEstoquePorNome(nomeExtra);
+        if(itemEstoqueExtra){
+          var novaQtyExtra = Math.max(0, itemEstoqueExtra.qty - qtyExtra);
+          var updatedExtra = await dbUpdate("items", itemEstoqueExtra.id, {qty:novaQtyExtra}, mapItemFromRow);
+          var idxItemExtra = state.estoque.items.findIndex(function(x){ return x.id===itemEstoqueExtra.id; });
+          if(idxItemExtra>-1) state.estoque.items[idxItemExtra] = updatedExtra;
+          var movExtra = await dbInsert("movements", {id:uid(), item_id:itemEstoqueExtra.id, type:"saida", qty:qtyExtra, note:"Frigobar (adicionado na hora)", destino:destino, date:new Date().toISOString()}, mapMovementFromRow);
+          state.estoque.movements.unshift(movExtra);
+        }
+      }
       var payload = {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null),
-        itens_faltando: faltando.length ? faltando : null, foto_abastecimento: abastecerFotoPendente};
+        itens_faltando: faltando.length ? faltando : null, foto_abastecimento: abastecerFotoPendente, itens: itensFinais};
       var s2 = await dbUpdate("solicitacoes_acomodacao", s.id, payload, mapSolicitacaoFromRow);
       var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
       if(idx2>-1) state.solicitacoes[idx2] = s2;
