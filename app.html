@@ -421,6 +421,7 @@
         <option value="Limpeza">Produtos de limpeza</option>
         <option value="Enxoval">Enxoval</option>
         <option value="Manutenção">Manutenção</option>
+        <option value="Uniformes">Uniformes</option>
       </select>
       <label>Unidade</label>
       <input type="text" id="f_unit" placeholder="Ex: un, kg, L, pacote" required>
@@ -460,6 +461,23 @@
     <div id="moveDestinoWrap" style="display:none;">
       <label>Para onde foi</label>
       <select id="moveDestino"></select>
+    </div>
+    <div id="moveUniformeWrap" style="display:none;">
+      <label>Nome de quem recebeu o uniforme</label>
+      <input type="text" id="moveUniformeNome" placeholder="Nome completo">
+      <label>Comprovante de recebimento</label>
+      <div id="moveUniformePreviewWrap" style="display:none;margin-bottom:8px;">
+        <img id="moveUniformePreview" style="width:100%;max-height:160px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#fff;display:block;">
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button type="button" id="moveUniformeFotoBtn" style="flex:1;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13px;font-weight:700;">📷 Foto do termo</button>
+        <button type="button" id="moveUniformeAssinarBtn" style="flex:1;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13px;font-weight:700;">✍️ Assinar na tela</button>
+      </div>
+      <input type="file" id="moveUniformeFotoInput" accept="image/*" style="display:none;">
+      <div id="moveUniformeAssinaturaWrap" style="display:none;margin-bottom:8px;">
+        <canvas id="moveUniformeCanvas" width="300" height="150" style="width:100%;height:150px;border:1px solid var(--line);border-radius:10px;background:#fff;touch-action:none;display:block;"></canvas>
+        <button type="button" id="moveUniformeLimparBtn" style="display:block;width:100%;margin-top:6px;background:none;border:none;color:var(--ink-600);font-family:inherit;font-size:12.5px;font-weight:700;text-decoration:underline;">Limpar e assinar de novo</button>
+      </div>
     </div>
     <label>Observação (opcional)</label>
     <textarea id="moveNote" placeholder="Ex: compra no mercado, uso na limpeza dos quartos…"></textarea>
@@ -727,8 +745,8 @@
     }
   });
 
-  var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção"];
-  var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção"};
+  var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção","Uniformes"];
+  var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção","Uniformes":"Uniformes"};
   var WEEKDAYS = [
     {key:"dom",label:"Dom"},{key:"seg",label:"Seg"},{key:"ter",label:"Ter"},
     {key:"qua",label:"Qua"},{key:"qui",label:"Qui"},{key:"sex",label:"Sex"},{key:"sab",label:"Sáb"}
@@ -743,7 +761,8 @@
   }
   function mapMovementFromRow(r){
     return {id:r.id, itemId:r.item_id, type:r.type, qty:Number(r.qty), delta:(r.delta!=null?Number(r.delta):undefined),
-      note:r.note, destino:r.destino, date:new Date(r.date).getTime()};
+      note:r.note, destino:r.destino, date:new Date(r.date).getTime(),
+      recebidoPorNome:r.recebido_por_nome, comprovanteUniforme:r.comprovante_uniforme};
   }
   function mapSupplierFromRow(r){
     return {id:r.id, name:r.name, phone:r.phone, notes:r.notes, orderDays:r.order_days||[]};
@@ -1700,6 +1719,9 @@
         '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
         (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
         (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
+        (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">👤 Recebido por '+escapeHtml(m.recebidoPorNome)+
+          (m.comprovanteUniforme ? ' · <a href="'+m.comprovanteUniforme+'" target="_blank" rel="noopener" style="color:var(--teal-700);">ver comprovante</a>' : '') +
+          '</span>' : '') +
         '</div><div style="display:flex;align-items:center;gap:8px;">' +
         '<div class="move-date">'+fmtDate(m.date)+'</div>' +
         (podeMexer ? (
@@ -2521,6 +2543,64 @@
 
   // ---------- Movement sheet ----------
   var moveOverlay = document.getElementById("moveSheetOverlay");
+  var moveUniformeComprovantePendente = null;
+
+  document.getElementById("moveUniformeFotoBtn").onclick = function(){
+    document.getElementById("moveUniformeAssinaturaWrap").style.display = "none";
+    document.getElementById("moveUniformeFotoInput").click();
+  };
+  document.getElementById("moveUniformeFotoInput").addEventListener("change", function(e){
+    var file = e.target.files[0]; e.target.value = "";
+    if(!file) return;
+    compressImage(file, 1000, 0.75, function(dataUrl){
+      if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
+      moveUniformeComprovantePendente = dataUrl;
+      document.getElementById("moveUniformePreview").src = dataUrl;
+      document.getElementById("moveUniformePreviewWrap").style.display = "block";
+    });
+  });
+
+  // ---------- Assinatura na tela (quadro simples por toque/mouse) ----------
+  var assinaturaDesenhando = false;
+  var assinaturaTemTraco = false;
+  function iniciarQuadroAssinatura(){
+    var wrap = document.getElementById("moveUniformeAssinaturaWrap");
+    wrap.style.display = "block";
+    document.getElementById("moveUniformePreviewWrap").style.display = "none";
+    var canvas = document.getElementById("moveUniformeCanvas");
+    var ctx = canvas.getContext("2d");
+    // ajusta a resolução real do canvas pro tamanho exibido, pra não ficar borrado
+    var rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width; canvas.height = rect.height;
+    ctx.fillStyle = "#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = "#2b2620"; ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    assinaturaTemTraco = false;
+
+    function pos(e){
+      var r = canvas.getBoundingClientRect();
+      var cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+      var cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+      return {x:cx, y:cy};
+    }
+    function comecar(e){
+      e.preventDefault();
+      assinaturaDesenhando = true; assinaturaTemTraco = true;
+      var p = pos(e);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    }
+    function desenhar(e){
+      if(!assinaturaDesenhando) return;
+      e.preventDefault();
+      var p = pos(e);
+      ctx.lineTo(p.x, p.y); ctx.stroke();
+    }
+    function parar(){ assinaturaDesenhando = false; }
+
+    canvas.onmousedown = comecar; canvas.onmousemove = desenhar; canvas.onmouseup = parar; canvas.onmouseleave = parar;
+    canvas.ontouchstart = comecar; canvas.ontouchmove = desenhar; canvas.ontouchend = parar;
+  }
+  document.getElementById("moveUniformeAssinarBtn").onclick = iniciarQuadroAssinatura;
+  document.getElementById("moveUniformeLimparBtn").onclick = iniciarQuadroAssinatura;
   function openMoveSheet(item, type, destinoPreSelecionado){
     moveItemId = item.id;
     moveType = type;
@@ -2542,6 +2622,16 @@
     } else {
       destinoWrap.style.display = "none";
       destinoSelect.innerHTML = "";
+    }
+    var uniformeWrap = document.getElementById("moveUniformeWrap");
+    if(type === "saida" && item.category === "Uniformes"){
+      uniformeWrap.style.display = "block";
+      document.getElementById("moveUniformeNome").value = "";
+      document.getElementById("moveUniformePreviewWrap").style.display = "none";
+      document.getElementById("moveUniformeAssinaturaWrap").style.display = "none";
+      moveUniformeComprovantePendente = null;
+    } else {
+      uniformeWrap.style.display = "none";
     }
     moveOverlay.classList.add("open");
   }
@@ -2868,6 +2958,19 @@
       if(!destino){ showToast("Escolha pra onde foi o item"); return; }
     }
     var note = document.getElementById("moveNote").value.trim();
+    var recebidoPorNome = null, comprovanteUniforme = null;
+    if(moveType === "saida" && item.category === "Uniformes"){
+      recebidoPorNome = document.getElementById("moveUniformeNome").value.trim();
+      if(!recebidoPorNome){ showToast("Informe o nome de quem recebeu o uniforme"); return; }
+      if(moveUniformeComprovantePendente){
+        comprovanteUniforme = moveUniformeComprovantePendente;
+      } else if(assinaturaTemTraco){
+        comprovanteUniforme = document.getElementById("moveUniformeCanvas").toDataURL("image/png");
+      } else {
+        showToast("Tire uma foto do termo ou peça pra assinar na tela antes de confirmar");
+        return;
+      }
+    }
     var typeForToast = moveType;
     var loggedQty = qty, newQty = item.qty, newQtyEmUso = item.qtyEmUso||0;
     if(moveType === "entrada"){
@@ -2890,7 +2993,7 @@
     var btn = document.getElementById("moveConfirm"); btn.disabled = true;
     try{
       var updatedItem = await dbUpdate("items", item.id, {qty:newQty, qty_em_uso:newQtyEmUso}, mapItemFromRow);
-      var mov = await dbInsert("movements", {id:uid(), item_id:item.id, type:moveType, qty:loggedQty, note:note, destino:destino||null, date:new Date().toISOString()}, mapMovementFromRow);
+      var mov = await dbInsert("movements", {id:uid(), item_id:item.id, type:moveType, qty:loggedQty, note:note, destino:destino||null, date:new Date().toISOString(), recebido_por_nome:recebidoPorNome, comprovante_uniforme:comprovanteUniforme}, mapMovementFromRow);
       var idx = state.estoque.items.findIndex(function(i){ return i.id===item.id; });
       if(idx>-1) state.estoque.items[idx] = updatedItem;
       state.estoque.movements.unshift(mov);
