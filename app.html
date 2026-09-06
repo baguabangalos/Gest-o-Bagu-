@@ -464,7 +464,8 @@
     </div>
     <div id="moveUniformeWrap" style="display:none;">
       <label>Nome de quem recebeu o uniforme</label>
-      <input type="text" id="moveUniformeNome" placeholder="Nome completo">
+      <input type="text" id="moveUniformeNome" placeholder="Nome completo" list="funcionariosDatalist">
+      <datalist id="funcionariosDatalist"></datalist>
       <label>Comprovante de recebimento</label>
       <div id="moveUniformePreviewWrap" style="display:none;margin-bottom:8px;">
         <img id="moveUniformePreview" style="width:100%;max-height:160px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#fff;display:block;">
@@ -2553,6 +2554,9 @@
   });
 
   var DESTINOS_FIXOS = ["Recepção", "Welcome drink", "Venda avulsa", "Empréstimo restaurante"];
+  // Nomes sugeridos ao registrar quem recebeu um uniforme — ainda dá pra
+  // digitar qualquer outro nome que não esteja nessa lista.
+  var FUNCIONARIOS_CONHECIDOS = ["Guilherme"];
   function listaDestinos(){
     var acomodacoesNomes = state.acomodacoes.filter(function(a){ return a.ativo; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); })
@@ -2633,7 +2637,7 @@
     document.getElementById("moveNote").value = "";
     var destinoWrap = document.getElementById("moveDestinoWrap");
     var destinoSelect = document.getElementById("moveDestino");
-    if(type === "saida"){
+    if(type === "saida" && item.category !== "Uniformes"){
       destinoWrap.style.display = "block";
       destinoSelect.innerHTML = '<option value="">Selecionar destino…</option>' +
         listaDestinos().map(function(d){ return '<option value="'+escapeHtml(d)+'">'+escapeHtml(d)+'</option>'; }).join("");
@@ -2646,6 +2650,7 @@
     if(type === "saida" && item.category === "Uniformes"){
       uniformeWrap.style.display = "block";
       document.getElementById("moveUniformeNome").value = "";
+      document.getElementById("funcionariosDatalist").innerHTML = FUNCIONARIOS_CONHECIDOS.map(function(n){ return '<option value="'+escapeHtml(n)+'">'; }).join("");
       document.getElementById("moveUniformePreviewWrap").style.display = "none";
       document.getElementById("moveUniformeAssinaturaWrap").style.display = "none";
       moveUniformeComprovantePendente = null;
@@ -2972,7 +2977,7 @@
     var item = state.estoque.items.find(function(i){ return i.id===moveItemId; });
     if(!item) return;
     var destino = "";
-    if(moveType === "saida"){
+    if(moveType === "saida" && item.category !== "Uniformes"){
       destino = document.getElementById("moveDestino").value;
       if(!destino){ showToast("Escolha pra onde foi o item"); return; }
     }
