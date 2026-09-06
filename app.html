@@ -725,6 +725,12 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Visualizador de foto/assinatura em tela cheia, dentro do próprio app -->
+<div id="fotoViewerOverlay" style="display:none;position:fixed;inset:0;background:rgba(20,16,10,.92);z-index:100;align-items:center;justify-content:center;padding:20px;flex-direction:column;">
+  <img id="fotoViewerImg" style="max-width:100%;max-height:80vh;border-radius:10px;background:#fff;object-fit:contain;">
+  <button type="button" id="fotoViewerFechar" style="margin-top:18px;background:#fff;color:var(--ink-900);border:none;border-radius:10px;padding:12px 24px;font-family:inherit;font-size:14px;font-weight:700;">Fechar</button>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
@@ -1200,6 +1206,20 @@
     t.classList.add("show");
     setTimeout(function(){ t.classList.remove("show"); }, duracaoMs || 1800);
   }
+
+  function abrirFotoViewer(src){
+    if(!src) return;
+    document.getElementById("fotoViewerImg").src = src;
+    document.getElementById("fotoViewerOverlay").style.display = "flex";
+  }
+  function fecharFotoViewer(){
+    document.getElementById("fotoViewerOverlay").style.display = "none";
+    document.getElementById("fotoViewerImg").src = "";
+  }
+  document.getElementById("fotoViewerFechar").onclick = fecharFotoViewer;
+  document.getElementById("fotoViewerOverlay").addEventListener("click", function(e){
+    if(e.target.id === "fotoViewerOverlay") fecharFotoViewer();
+  });
 
   // ---------- Notificação sonora de pedidos novos (tempo real) ----------
   function playNotifySound(){
@@ -1719,9 +1739,8 @@
         '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
         (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
         (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
-        (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">👤 Recebido por '+escapeHtml(m.recebidoPorNome)+
-          (m.comprovanteUniforme ? ' · <a href="'+m.comprovanteUniforme+'" target="_blank" rel="noopener" style="color:var(--teal-700);">ver comprovante</a>' : '') +
-          '</span>' : '') +
+        (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">👤 Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
+          (m.comprovanteUniforme ? '<br><img src="'+m.comprovanteUniforme+'" onclick="abrirFotoViewer(this.src)" style="max-width:90px;max-height:60px;border-radius:6px;border:1px solid var(--line);cursor:pointer;margin-top:4px;" alt="comprovante">' : '') : '') +
         '</div><div style="display:flex;align-items:center;gap:8px;">' +
         '<div class="move-date">'+fmtDate(m.date)+'</div>' +
         (podeMexer ? (
@@ -2066,7 +2085,7 @@
         html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
           '<p style="margin:0 0 4px;font-size:14px;font-weight:700;">'+itensTxt+'</p>';
         if(p.observacao) html += '<p class="item-meta" style="margin-bottom:6px;">'+escapeHtml(p.observacao)+'</p>';
-        if(p.foto) html += '<a href="'+p.foto+'" target="_blank" rel="noopener" style="display:block;margin-bottom:8px;"><img src="'+p.foto+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:9px;display:block;"></a>';
+        if(p.foto) html += '<img src="'+p.foto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:120px;object-fit:cover;border-radius:9px;display:block;margin-bottom:8px;cursor:pointer;">';
         html += '<p class="item-meta" style="margin-bottom:8px;">pedido em '+fmtDate(p.criadoEm)+' por '+escapeHtml(nomeStaff(p.criadoPor))+'</p>' +
           '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">✓ Chegou</button>' +
         '</div>';
@@ -3733,14 +3752,14 @@
       html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
     }
     if(s.fotoAbastecimento){
-      html += '<a href="'+s.fotoAbastecimento+'" target="_blank" rel="noopener" style="display:block;margin:6px 0;"><img src="'+s.fotoAbastecimento+'" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;" alt="Foto do abastecimento"></a>';
+      html += '<img src="'+s.fotoAbastecimento+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;margin:6px 0;cursor:pointer;" alt="Foto do abastecimento">';
     }
     if(s.incluiTrocaRoupaCama){
       html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🧺 Também trocar roupa de cama (dia '+s.diaEstadiaRoupaCama+')</p>';
     }
     if(s.jacuzziConcluidaEm){
       html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🛁 Jacuzzi feita por '+escapeHtml(nomeStaff(s.jacuzziConcluidaPor))+'</p>';
-      if(s.jacuzziFoto) html += '<a href="'+s.jacuzziFoto+'" target="_blank" rel="noopener" style="display:block;margin:6px 0;"><img src="'+s.jacuzziFoto+'" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;" alt="Foto da jacuzzi"></a>';
+      if(s.jacuzziFoto) html += '<img src="'+s.jacuzziFoto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;margin:6px 0;cursor:pointer;" alt="Foto da jacuzzi">';
     }
     var mostrarInfoHospede = (s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1) ||
       (s.tipo === "limpeza" && s.contexto === "estadia") ||
