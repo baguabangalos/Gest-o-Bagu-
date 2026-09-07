@@ -3824,7 +3824,9 @@
         else if(s.tipo === "roupa_cama"){ acaoLabel = "✓ Trocou"; acaoAct = "finalizar"; }
         else if(s.tipo === "sauna"){ acaoLabel = "✓ Ligada"; acaoAct = "finalizar"; }
         else if(s.tipo === "lenha"){ acaoLabel = "✓ Reposta"; acaoAct = "finalizar"; }
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+lixoHtml+'</div>';
+        var editarItensHtml = (s.tipo === "frigobar" && podeEditar("estoque")) ?
+          '<button class="btn btn-out" data-act="editarItensPedido" data-id="'+s.id+'">✏️ Editar itens</button>' : '';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+editarItensHtml+lixoHtml+'</div>';
       } else if(s.status === "em_andamento"){
         html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button>'+lixoHtml+'</div>';
       } else if(lixoHtml){
@@ -3847,11 +3849,15 @@
         var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") ? "recepcao" : "limpeza";
         if(act === "excluir"){
           if(!podeExcluir(moduloExclusao)){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
+        } else if(act === "editarItensPedido"){
+          if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
         } else if(!podeAgirSolicitacao(s)){
           showToast("Você não tem permissão para essa ação"); return;
         }
         try{
-          if(act === "iniciar"){
+          if(act === "editarItensPedido"){
+            abrirEditarItensPedidoSheet(s);
+          } else if(act === "iniciar"){
             var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
             var idx1 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx1>-1) state.solicitacoes[idx1] = s1;
@@ -4273,6 +4279,92 @@
     };
     document.getElementById("importarExtratoInput").addEventListener("change", handleImportarExtrato);
     document.getElementById("novoAbastecimentoAvulsoBtn").onclick = abrirNovoAbastecimentoAvulsoSheet;
+  }
+
+  function abrirEditarItensPedidoSheet(s){
+    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+
+    function linha(nome, qty){
+      return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-nome-item="'+escapeHtml(nome)+'">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+          '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;flex:1;">'+escapeHtml(nome)+'</p>' +
+          '<button type="button" class="editItensRemover" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">✕</button>' +
+        '</div>' +
+        '<div class="qty-stepper" style="margin-bottom:0;">' +
+          '<button type="button" class="editItensMinus">−</button>' +
+          '<input type="number" class="editItensQty" step="1" min="1" value="'+qty+'">' +
+          '<button type="button" class="editItensPlus">+</button>' +
+        '</div>' +
+      '</div>';
+    }
+    function wireLinha(div){
+      div.querySelector(".editItensMinus").onclick = function(){ var i=div.querySelector(".editItensQty"); i.value = Math.max(1,(parseFloat(i.value)||1)-1); };
+      div.querySelector(".editItensPlus").onclick = function(){ var i=div.querySelector(".editItensQty"); i.value = (parseFloat(i.value)||1)+1; };
+      div.querySelector(".editItensRemover").onclick = function(){ div.remove(); };
+    }
+
+    var html =
+      '<div class="sheet-overlay open" id="editarItensPedidoOverlay">' +
+        '<div class="sheet">' +
+          '<h2>Editar itens do pedido</h2>' +
+          '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">'+escapeHtml(acomodacaoNome(s.acomodacaoId))+' — ajusta antes de alguém ir abastecer, pra não precisar fazer duas viagens.</p>' +
+          '<div id="editItensLista">' + (s.itens||[]).map(function(it){ return linha(it.nome, it.quantidade||1); }).join("") + '</div>' +
+          '<div style="display:flex;gap:8px;margin:4px 0 14px;">' +
+            '<select id="editItensExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);">' +
+            '<option value="">Selecionar item…</option>' +
+            itensFrigobar.map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("") +
+            '</select>' +
+            '<button type="button" id="editItensExtraAddBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>' +
+          '</div>' +
+          '<div class="sheet-actions">' +
+            '<button type="button" class="btn-secondary" id="editItensCancel">Cancelar</button>' +
+            '<button type="button" class="btn-primary" id="editItensSalvar">✓ Salvar alterações</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+
+    var overlay = document.getElementById("editarItensPedidoOverlay");
+    var lista = document.getElementById("editItensLista");
+    lista.querySelectorAll("[data-nome-item]").forEach(wireLinha);
+
+    document.getElementById("editItensExtraAddBtn").onclick = function(){
+      var sel = document.getElementById("editItensExtraSelect");
+      var nome = sel.value;
+      if(!nome){ showToast("Escolha um item"); return; }
+      if(lista.querySelector('[data-nome-item="'+CSS.escape(nome)+'"]')){ showToast("Esse item já está na lista"); return; }
+      var div = document.createElement("div");
+      div.innerHTML = linha(nome, 1);
+      var elemento = div.firstElementChild;
+      lista.appendChild(elemento);
+      wireLinha(elemento);
+      sel.value = "";
+    };
+
+    document.getElementById("editItensCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+
+    document.getElementById("editItensSalvar").onclick = async function(){
+      var itens = [];
+      lista.querySelectorAll("[data-nome-item]").forEach(function(div){
+        var nome = div.getAttribute("data-nome-item");
+        var qty = parseFloat(div.querySelector(".editItensQty").value) || 0;
+        if(qty > 0) itens.push({nome:nome, quantidade:qty});
+      });
+      if(itens.length === 0){ showToast("O pedido precisa ter pelo menos um item"); return; }
+      var btn = document.getElementById("editItensSalvar"); btn.disabled = true;
+      try{
+        var atualizado = await dbUpdate("solicitacoes_acomodacao", s.id, {itens:itens}, mapSolicitacaoFromRow);
+        var idx = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
+        if(idx>-1) state.solicitacoes[idx] = atualizado;
+        overlay.remove();
+        showToast("Itens atualizados");
+        renderApp();
+      }catch(err){
+        console.error(err); showToast("Erro ao salvar alterações");
+        btn.disabled = false;
+      }
+    };
   }
 
   function abrirNovoAbastecimentoAvulsoSheet(){
