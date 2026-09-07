@@ -4386,6 +4386,69 @@
     return texto;
   }
 
+  // Quantidade ideal de cada item de frigobar por grupo de acomodação —
+  // usada pra não deixar o abastecimento repor mais do que a acomodação
+  // deve ter, mesmo que o extrato mostre consumo maior (acumulado ao
+  // longo de vários dias de estadia).
+  var QUANTIDADE_IDEAL_FRIGOBAR = {
+    loft: {
+      "Água sem gás":12,"Água com gás":4,"Água saborizada de limão":1,"Água saborizada de maracujá":1,
+      "Heineken":6,"Corona":6,"Stella Pure Gold":6,
+      "Coca-Cola":2,"Coca-Cola zero":2,"Fanta Guaraná":1,"Fanta Guaraná zero":1,
+      "Halls":2,"Mentos":2,"Kit Kat":2,"Snickers":2,"Barra de cereal":2,
+      "Pringles":1,"Mix de castanhas":1,"Barukas":1,"Hershey's 60%":1,
+      "Cápsula cappuccino Classic":2,"Cápsula de café filtrado":2,"Cápsula expresso pleno":2
+    },
+    panorama: {
+      "Água sem gás":4,"Água com gás":4,"Água saborizada de limão":1,"Água saborizada de maracujá":1,
+      "Heineken":4,"Corona":4,"Stella Pure Gold":4,
+      "Coca-Cola":2,"Coca-Cola zero":2,"Fanta Guaraná":1,"Fanta Guaraná zero":1,
+      "Halls":2,"Mentos":2,"Kit Kat":2,"Snickers":2,"Barra de cereal":2,
+      "Pringles":1,"Mix de castanhas":1,"Barukas":1,"Hershey's 60%":1,
+      "Cápsula cappuccino Classic":2,"Cápsula de café filtrado":2,"Cápsula expresso pleno":2
+    },
+    bagua_safari: {
+      "Água sem gás":4,"Água com gás":4,"Água saborizada de limão":1,"Água saborizada de maracujá":1,
+      "Heineken":4,"Corona":4,"Stella Pure Gold":4,
+      "Coca-Cola":2,"Coca-Cola zero":2,"Fanta Guaraná":1,"Fanta Guaraná zero":1,
+      "Halls":2,"Mentos":2,"Kit Kat":2,"Snickers":2,"Barra de cereal":2,
+      "Pringles":1,"Mix de castanhas":1,"Barukas":1,"Hershey's 60%":1
+    },
+    padrao_sem_agua_saborizada: {
+      "Água sem gás":4,"Água com gás":4,
+      "Heineken":4,"Corona":4,"Stella Pure Gold":4,
+      "Coca-Cola":2,"Coca-Cola zero":2,"Fanta Guaraná":1,"Fanta Guaraná zero":1,
+      "Halls":2,"Mentos":2,"Kit Kat":2,"Snickers":2,"Barra de cereal":2,
+      "Pringles":1,"Mix de castanhas":1,"Barukas":1,"Hershey's 60%":1
+    },
+    casa_maria: {
+      "Água sem gás":4,"Água com gás":4,"Água saborizada de limão":1,"Água saborizada de maracujá":1,
+      "Heineken":4,"Corona":4,"Stella Pure Gold":4,
+      "Coca-Cola":2,"Coca-Cola zero":2,"Fanta Guaraná":1,"Fanta Guaraná zero":1,
+      "Halls":2,"Mentos":2,"Kit Kat":2,"Snickers":2,"Barra de cereal":2,
+      "Pringles":1,"Mix de castanhas":1,"Barukas":1,"Hershey's 60%":1,
+      "Cápsula cappuccino Classic":2,"Cápsula de café filtrado":2,"Cápsula expresso pleno":2
+    }
+  };
+  var GRUPO_POR_ACOMODACAO_NOME = {
+    "Bangalô Loft":"loft",
+    "Bangalô Panorama 01":"panorama","Bangalô Panorama 02":"panorama",
+    "Bangalô Baguá 01":"bagua_safari","Bangalô Baguá 02":"bagua_safari","Bangalô Baguá 03":"bagua_safari","Bangalô Baguá 04":"bagua_safari",
+    "Bangalô Safari 01":"bagua_safari","Bangalô Safari 02":"bagua_safari",
+    "Casa Maria":"casa_maria",
+    "Bangalô Preguiça":"padrao_sem_agua_saborizada","João de Barro":"padrao_sem_agua_saborizada",
+    "Suite Cerrado 01":"padrao_sem_agua_saborizada","Suite Cerrado 02":"padrao_sem_agua_saborizada",
+    "Bangalô Yaya 01":"padrao_sem_agua_saborizada","Bangalô Yaya 02":"padrao_sem_agua_saborizada","Bangalô Yaya 03":"padrao_sem_agua_saborizada",
+    "Cabana Zazu 01":"padrao_sem_agua_saborizada","Cabana Zazu 02":"padrao_sem_agua_saborizada","Cabana Zazu 03":"padrao_sem_agua_saborizada"
+  };
+  function quantidadeIdeal(acomodacaoId, nomeItem){
+    var nome = acomodacaoNome(acomodacaoId);
+    var grupo = GRUPO_POR_ACOMODACAO_NOME[nome];
+    if(!grupo) return null;
+    var tabela = QUANTIDADE_IDEAL_FRIGOBAR[grupo];
+    return (tabela && tabela[nomeItem] != null) ? tabela[nomeItem] : null;
+  }
+
   function parsearExtratoHospedin(texto){
     var mHeader = texto.match(/Itens consumidos\s+Nome\s+Ponto de venda\s+Data e hora\s+Custo/i);
     var textoItens = mHeader ? texto.slice(mHeader.index + mHeader[0].length) : "";
@@ -4455,19 +4518,26 @@
     var todasAtivas = state.acomodacoes.filter(function(a){ return a.ativo; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
 
-    var itensHtml = resultado.itens.map(function(it, i){
-      var matchEstoque = itemEstoquePorNome(it.nome);
-      return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+i+'">' +
-        '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(it.nome)+
-          (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque)</span>') +
-        '</p>' +
-        '<div class="qty-stepper" style="margin-bottom:0;">' +
-          '<button type="button" class="reExtratoMinus" data-idx="'+i+'">−</button>' +
-          '<input type="number" class="reExtratoQty" data-idx="'+i+'" step="1" min="0" value="'+it.qtd+'">' +
-          '<button type="button" class="reExtratoPlus" data-idx="'+i+'">+</button>' +
-        '</div>' +
-      '</div>';
-    }).join("");
+    function montarItensHtml(acomodacaoId){
+      return resultado.itens.map(function(it, i){
+        var matchEstoque = itemEstoquePorNome(it.nome);
+        var ideal = acomodacaoId ? quantidadeIdeal(acomodacaoId, it.nome) : null;
+        var qtyExibida = it.qtd;
+        var foiLimitado = false;
+        if(ideal != null && it.qtd > ideal){ qtyExibida = ideal; foiLimitado = true; }
+        return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+i+'">' +
+          '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(it.nome)+
+            (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque)</span>') +
+          '</p>' +
+          (foiLimitado ? '<p class="item-meta" style="color:var(--teal-700);font-weight:700;margin-bottom:8px;">Extrato mostra '+it.qtd+' consumido(s) — repondo só até a quantidade ideal ('+ideal+')</p>' : '') +
+          '<div class="qty-stepper" style="margin-bottom:0;">' +
+            '<button type="button" class="reExtratoMinus" data-idx="'+i+'">−</button>' +
+            '<input type="number" class="reExtratoQty" data-idx="'+i+'" step="1" min="0" value="'+qtyExibida+'">' +
+            '<button type="button" class="reExtratoPlus" data-idx="'+i+'">+</button>' +
+          '</div>' +
+        '</div>';
+      }).join("");
+    }
 
     var html =
       '<div class="sheet-overlay open" id="revisaoExtratoOverlay">' +
@@ -4481,7 +4551,7 @@
           todasAtivas.map(function(a){ return '<option value="'+a.id+'"'+(a.id===revisaoExtratoAcomodacaoId?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("") +
           '</select>' +
           '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Confira as quantidades. Isso cria um pedido pendente em "Abastecer" — o desconto do estoque acontece quando alguém marcar como abastecido, igual aos outros pedidos.</p>' +
-          '<div id="reExtratoItensLista">' + itensHtml + '</div>' +
+          '<div id="reExtratoItensLista">' + montarItensHtml(revisaoExtratoAcomodacaoId) + '</div>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="reExtratoCancel">Cancelar</button>' +
             '<button type="button" class="btn-primary" id="reExtratoConfirm">✓ Criar pedido de abastecimento</button>' +
@@ -4492,17 +4562,24 @@
 
     var overlay = document.getElementById("revisaoExtratoOverlay");
     var lista = document.getElementById("reExtratoItensLista");
-    lista.querySelectorAll(".reExtratoMinus").forEach(function(b){
-      b.onclick = function(){
-        var inp = lista.querySelector('.reExtratoQty[data-idx="'+b.getAttribute("data-idx")+'"]');
-        inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
-      };
-    });
-    lista.querySelectorAll(".reExtratoPlus").forEach(function(b){
-      b.onclick = function(){
-        var inp = lista.querySelector('.reExtratoQty[data-idx="'+b.getAttribute("data-idx")+'"]');
-        inp.value = (parseFloat(inp.value)||0) + 1;
-      };
+    function wireBotoesQty(){
+      lista.querySelectorAll(".reExtratoMinus").forEach(function(b){
+        b.onclick = function(){
+          var inp = lista.querySelector('.reExtratoQty[data-idx="'+b.getAttribute("data-idx")+'"]');
+          inp.value = Math.max(0, (parseFloat(inp.value)||0) - 1);
+        };
+      });
+      lista.querySelectorAll(".reExtratoPlus").forEach(function(b){
+        b.onclick = function(){
+          var inp = lista.querySelector('.reExtratoQty[data-idx="'+b.getAttribute("data-idx")+'"]');
+          inp.value = (parseFloat(inp.value)||0) + 1;
+        };
+      });
+    }
+    wireBotoesQty();
+    document.getElementById("reExtratoAcomodacao").addEventListener("change", function(e){
+      lista.innerHTML = montarItensHtml(e.target.value || null);
+      wireBotoesQty();
     });
     document.getElementById("reExtratoCancel").onclick = function(){ overlay.remove(); };
     overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
