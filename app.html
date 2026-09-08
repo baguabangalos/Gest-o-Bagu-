@@ -5032,9 +5032,15 @@
         var icon = TIPO_ICON[s.tipo] || "•";
         var label = TIPO_LABEL[s.tipo] || s.tipo;
         var dur = (s.criadoEm && s.concluidoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
+        var origemTxt = s.origem === "hospede" ? "📱 solicitado pelo hóspede (link)" :
+          (s.criadoPor ? "👤 solicitado por "+escapeHtml(nomeStaff(s.criadoPor)) :
+          (s.origem === "sistema" ? "🔧 gerado pelo sistema" : null));
         html += '<div class="move-row">' +
           '<div>'+icon+' <strong>'+escapeHtml(label)+'</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId)) +
           (dur!=null ? ('<br><span style="color:var(--ink-400);font-size:12px;">levou '+fmtDuration(dur)+'</span>') : '') +
+          (origemTxt ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+origemTxt+'</span>') : '') +
+          (s.liberadoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">🔓 liberado por '+escapeHtml(nomeStaff(s.liberadoPor))+'</span>') : '') +
+          (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">✓ concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '') +
           '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
       });
       html += '</div>';
