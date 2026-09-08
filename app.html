@@ -1308,6 +1308,18 @@
         // isso apagaria os números já digitados e ainda não salvos.
         if(!(appSection==="estoque" && activeView==="count")) renderApp();
       });
+      realtimeChannel.on("postgres_changes", {event:"UPDATE", schema:"public", table:"solicitacoes_acomodacao"}, function(payload){
+        var s = mapSolicitacaoFromRow(payload.new);
+        var idx = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
+        if(idx>-1) state.solicitacoes[idx] = s;
+        // Avisa quando uma acomodação acabou de ser liberada pra lavagem
+        // (transição de bloqueada -> pendente feita pela recepção)
+        if(payload.old && payload.old.status === "bloqueada" && payload.new.status === "pendente" && s.tipo === "lavagem"){
+          playNotifySound();
+          showToast("🔓 " + acomodacaoNome(s.acomodacaoId) + " foi liberada pra lavagem");
+        }
+        if(!(appSection==="estoque" && activeView==="count")) renderApp();
+      });
     }
     if(ouveManutencao){
       realtimeChannel.on("postgres_changes", {event:"INSERT", schema:"public", table:"manutencoes"}, function(payload){
