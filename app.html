@@ -4133,7 +4133,12 @@
       var placeholders = acomodacoesLimpezaBloqueadasHoje();
 
       function secao(titulo, chave){
-        var lista = grupos[chave];
+        var lista = grupos[chave].slice().sort(function(a,b){
+          var bloqueadaA = a.status === "bloqueada" ? 1 : 0;
+          var bloqueadaB = b.status === "bloqueada" ? 1 : 0;
+          if(bloqueadaA !== bloqueadaB) return bloqueadaA - bloqueadaB;
+          return acomodacaoNome(a.acomodacaoId).localeCompare(acomodacaoNome(b.acomodacaoId), "pt-BR");
+        });
         var temPlaceholders = chave === "manutencao" && placeholders.length > 0;
         if(lista.length === 0 && !temPlaceholders) return "";
         var h = '<div class="section-title">'+titulo+(lista.length?(' · '+lista.length):'')+'</div>';
