@@ -385,8 +385,8 @@
 <button class="fab" id="fab">+</button>
 
 <footer class="bottom-nav" style="display:none;">
-  <button class="nav-btn active" data-view="items"><span class="ic">📦</span>Estoque</button>
   <button class="nav-btn" data-view="abastecimento"><span class="ic">🥤</span>Abastecer</button>
+  <button class="nav-btn active" data-view="items"><span class="ic">📦</span>Estoque</button>
   <button class="nav-btn" data-view="count"><span class="ic">📋</span>Contagem</button>
   <button class="nav-btn" data-view="history"><span class="ic">🕓</span>Histórico</button>
   <button class="nav-btn" data-view="report"><span class="ic">📤</span>Relatório</button>
@@ -4266,7 +4266,7 @@
     var main = document.getElementById("abastecimentoView");
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var pend = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "pendente"; })
-      .sort(function(a,b){ return a.criadoEm - b.criadoEm; });
+      .sort(function(a,b){ return acomodacaoNome(a.acomodacaoId).localeCompare(acomodacaoNome(b.acomodacaoId), "pt-BR"); });
     var feitos = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
       .sort(function(a,b){ return b.concluidoEm - a.concluidoEm; });
     var html = '<div class="seg-toggle">' +
