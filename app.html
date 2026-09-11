@@ -522,10 +522,8 @@
       <select id="abastecerExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);"></select>
       <button type="button" id="abastecerExtraAddBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>
     </div>
-    <label style="margin-top:14px;">Foto do frigobar abastecido (opcional)</label>
-    <div id="abastecerFotoPreviewWrap" style="display:none;margin-bottom:8px;">
-      <img id="abastecerFotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;">
-    </div>
+    <label style="margin-top:14px;">Fotos do frigobar abastecido (opcional, pode tirar várias)</label>
+    <div id="abastecerFotosGrid" style="display:none;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;"></div>
     <button type="button" id="abastecerFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">📷 Tirar foto</button>
     <input type="file" id="abastecerFotoInput" accept="image/*" capture="environment" style="display:none;">
     <div class="sheet-actions">
@@ -803,7 +801,7 @@
       iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null, itensFaltando:r.itens_faltando||null,
       liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null),
       criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por,
-      searchableCode:r.searchable_code, fotoAbastecimento:r.foto_abastecimento,
+      searchableCode:r.searchable_code, fotosAbastecimento:r.fotos_abastecimento||null,
       incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama,
       jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por, jacuzziFoto:r.jacuzzi_foto};
   }
@@ -2797,7 +2795,27 @@
 
   // ---------- Abastecer frigobar (edita quantidade / marca item em falta) ----------
   var abastecerOverlay = document.getElementById("abastecerSheetOverlay");
-  var abastecerFotoPendente = null;
+  var abastecerFotosPendentes = [];
+  function renderAbastecerFotosGrid(){
+    var grid = document.getElementById("abastecerFotosGrid");
+    if(abastecerFotosPendentes.length === 0){
+      grid.style.display = "none"; grid.innerHTML = "";
+      return;
+    }
+    grid.style.display = "grid";
+    grid.innerHTML = abastecerFotosPendentes.map(function(foto, i){
+      return '<div style="position:relative;">' +
+        '<img src="'+foto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;display:block;">' +
+        '<button type="button" class="abastecerFotoRemover" data-idx="'+i+'" style="position:absolute;top:-6px;right:-6px;background:var(--red-600);color:#fff;border:none;border-radius:999px;width:22px;height:22px;font-size:13px;line-height:1;font-weight:700;">✕</button>' +
+      '</div>';
+    }).join("");
+    grid.querySelectorAll(".abastecerFotoRemover").forEach(function(btn){
+      btn.onclick = function(){
+        abastecerFotosPendentes.splice(parseInt(btn.getAttribute("data-idx"),10), 1);
+        renderAbastecerFotosGrid();
+      };
+    });
+  }
   document.getElementById("abastecerExtraAddBtn").onclick = function(){
     var sel = document.getElementById("abastecerExtraSelect");
     var nome = sel.value;
@@ -2823,9 +2841,8 @@
     if(!file) return;
     compressImage(file, 1000, 0.75, function(dataUrl){
       if(!dataUrl){ showToast("Não consegui processar a foto"); return; }
-      abastecerFotoPendente = dataUrl;
-      document.getElementById("abastecerFotoPreview").src = dataUrl;
-      document.getElementById("abastecerFotoPreviewWrap").style.display = "block";
+      abastecerFotosPendentes.push(dataUrl);
+      renderAbastecerFotosGrid();
     });
   });
   var abastecerSolicitacaoId = null;
@@ -2883,10 +2900,10 @@
 
   function abrirAbastecerSheet(s){
     abastecerSolicitacaoId = s.id;
-    abastecerFotoPendente = null;
+    abastecerFotosPendentes = [];
     abastecerItensExtras = [];
     abastecerIdsRemovidos = {};
-    document.getElementById("abastecerFotoPreviewWrap").style.display = "none";
+    document.getElementById("abastecerFotosGrid").style.display = "none";
     document.getElementById("abastecerAcomodacaoNome").textContent = acomodacaoNome(s.acomodacaoId);
     var lista = document.getElementById("abastecerItensLista");
     lista.innerHTML = (s.itens||[]).map(function(it, i){ return linhaItemAbastecer(it.nome, it.quantidade||1, i); }).join("");
@@ -2957,7 +2974,7 @@
         }
       }
       var payload = {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null),
-        itens_faltando: faltando.length ? faltando : null, foto_abastecimento: abastecerFotoPendente, itens: itensFinais};
+        itens_faltando: faltando.length ? faltando : null, fotos_abastecimento: abastecerFotosPendentes.length ? abastecerFotosPendentes : null, itens: itensFinais};
       var s2 = await dbUpdate("solicitacoes_acomodacao", s.id, payload, mapSolicitacaoFromRow);
       var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
       if(idx2>-1) state.solicitacoes[idx2] = s2;
@@ -3768,8 +3785,12 @@
       var itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
       html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
     }
-    if(s.fotoAbastecimento){
-      html += '<img src="'+s.fotoAbastecimento+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;margin:6px 0;cursor:pointer;" alt="Foto do abastecimento">';
+    if(s.fotosAbastecimento && s.fotosAbastecimento.length){
+      html += '<div style="display:grid;grid-template-columns:repeat('+Math.min(s.fotosAbastecimento.length,3)+',1fr);gap:5px;margin:6px 0;">' +
+        s.fotosAbastecimento.map(function(foto){
+          return '<img src="'+foto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;height:70px;object-fit:cover;border-radius:8px;cursor:pointer;display:block;" alt="Foto do abastecimento">';
+        }).join("") +
+      '</div>';
     }
     if(s.incluiTrocaRoupaCama){
       html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🧺 Também trocar roupa de cama (dia '+s.diaEstadiaRoupaCama+')</p>';
