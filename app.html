@@ -803,7 +803,8 @@
       criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por,
       searchableCode:r.searchable_code, fotosAbastecimento:r.fotos_abastecimento||null,
       incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama,
-      jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por, jacuzziFoto:r.jacuzzi_foto};
+      jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por, jacuzziFoto:r.jacuzzi_foto,
+      revisaoConcluidaEm:(r.revisao_concluida_em?new Date(r.revisao_concluida_em).getTime():null), revisaoConcluidaPor:r.revisao_concluida_por};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -4889,8 +4890,8 @@
         idsComAbastecimentoPendente[s.acomodacaoId] = true;
       }
     });
-    return checkinsConcluidos.filter(function(s){ return !idsComAbastecimentoPendente[s.acomodacaoId]; })
-      .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
+    return checkinsConcluidos.filter(function(s){ return !idsComAbastecimentoPendente[s.acomodacaoId] && s.revisaoConcluidaEm; })
+      .sort(function(a,b){ return (b.revisaoConcluidaEm||0)-(a.revisaoConcluidaEm||0); });
   }
 
   function computeAguardandoAbastecimento(){
@@ -4908,12 +4909,28 @@
     return checkinsConcluidos.filter(function(s){ return idsComAbastecimentoPendente[s.acomodacaoId]; });
   }
 
+  function computeAguardandoRevisao(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var checkinsConcluidos = state.solicitacoes.filter(function(s){
+      return s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1 &&
+        s.status === "concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime();
+    });
+    var idsComAbastecimentoPendente = {};
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo === "frigobar" && s.status !== "concluido" && s.criadoEm >= hojeInicio.getTime()){
+        idsComAbastecimentoPendente[s.acomodacaoId] = true;
+      }
+    });
+    return checkinsConcluidos.filter(function(s){ return !idsComAbastecimentoPendente[s.acomodacaoId] && !s.revisaoConcluidaEm; });
+  }
+
   function renderRecepcao(){
     var main = document.getElementById("recepcaoView");
     var prontas = computeAcomodacoesProntasParaEntrada();
     var aguardando = computeAguardandoAbastecimento();
+    var aguardandoRevisao = computeAguardandoRevisao();
     var html = '<div class="section-title" style="margin-top:0;">✅ Prontas para entrada</div>';
-    html += '<p class="count-intro">Check-ins de hoje com limpeza e abastecimento já concluídos — a acomodação pode receber o hóspede.</p>';
+    html += '<p class="count-intro">Check-ins de hoje com limpeza, abastecimento e revisão já concluídos — a acomodação pode receber o hóspede.</p>';
     if(prontas.length === 0){
       html += '<div class="empty">Nenhuma pronta ainda.</div>';
     } else {
@@ -4922,6 +4939,7 @@
         html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
           '<p style="margin:0 0 3px;font-size:14.5px;font-weight:700;">🏡 '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
           '<p class="item-meta">limpa por '+escapeHtml(nomeStaff(s.concluidoPor))+' às '+fmtDate(s.concluidoEm)+'</p>' +
+          '<p class="item-meta">revisada por '+escapeHtml(nomeStaff(s.revisaoConcluidaPor))+' às '+fmtDate(s.revisaoConcluidaEm)+'</p>' +
         '</div>';
       });
       html += '</div>';
@@ -4933,6 +4951,19 @@
       aguardando.forEach(function(s, i){
         html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
           '<p style="margin:0;font-size:14.5px;font-weight:700;">🏡 '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+
+    if(aguardandoRevisao.length > 0){
+      html += '<div class="section-title" style="margin-top:18px;color:var(--teal-700);">🔍 Aguardando revisão</div>';
+      html += '<p class="count-intro">Já limpa e abastecida — falta alguém da equipe conferir pessoalmente antes de liberar.</p>';
+      html += '<div class="card">';
+      aguardandoRevisao.forEach(function(s, i){
+        html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">🏡 '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
+          '<button type="button" class="marcarRevisaoBtn" data-id="'+s.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">✓ Revisão feita — está tudo ok</button>' +
         '</div>';
       });
       html += '</div>';
@@ -5013,6 +5044,23 @@
       };
     }
 
+    main.querySelectorAll(".marcarRevisaoBtn").forEach(function(btn){
+      btn.onclick = async function(){
+        var id = btn.getAttribute("data-id");
+        if(!podeEditar("recepcao")){ showToast("Você não tem permissão para essa ação"); return; }
+        btn.disabled = true;
+        try{
+          var atualizado = await dbUpdate("solicitacoes_acomodacao", id, {revisao_concluida_em:new Date().toISOString(), revisao_concluida_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+          var idx = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+          if(idx>-1) state.solicitacoes[idx] = atualizado;
+          showToast("Revisão marcada — acomodação liberada pra entrada!");
+          renderApp();
+        }catch(err){
+          console.error(err); showToast("Erro ao marcar revisão");
+          btn.disabled = false;
+        }
+      };
+    });
     var solicitarLimpezaBtn = document.getElementById("solicitarLimpezaRecepcaoBtn");
     if(solicitarLimpezaBtn){
       solicitarLimpezaBtn.onclick = async function(){
