@@ -889,6 +889,7 @@
       manutencoes: (manRes.data||[]).map(mapManutencaoFromRow),
       acomodacoes: (acoRes.data||[]).map(mapAcomodacaoFromRow),
       solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !s.excluidoEm; }),
+      solicitacoesExcluidas: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !!s.excluidoEm; }),
       staffNames: staffNames
     };
   }
@@ -5141,6 +5142,30 @@
           (s.liberadoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">🔓 liberado por '+escapeHtml(nomeStaff(s.liberadoPor))+'</span>') : '') +
           (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">✓ concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '') +
           '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
+      });
+      html += '</div>';
+    }
+
+    var sinceExcl = parseInt(supervisaoPeriod,10) ? (Date.now() - parseInt(supervisaoPeriod,10)*24*3600*1000) : 0;
+    var excluidos = (state.solicitacoesExcluidas||[]).filter(function(s){ return s.excluidoEm && s.excluidoEm >= sinceExcl; })
+      .sort(function(a,b){ return (b.excluidoEm||0)-(a.excluidoEm||0); });
+    html += '<div class="section-title" style="margin-top:22px;color:var(--red-600);">🗑️ Excluídos</div>';
+    if(excluidos.length === 0){
+      html += '<div class="empty">Nenhum pedido excluído neste período.</div>';
+    } else {
+      html += '<div class="card">';
+      excluidos.forEach(function(s, i){
+        var icon = TIPO_ICON[s.tipo] || "•";
+        var label = TIPO_LABEL[s.tipo] || s.tipo;
+        var origemTxt = s.origem === "hospede" ? "📱 solicitado pelo hóspede (link)" :
+          (s.criadoPor ? "👤 solicitado por "+escapeHtml(nomeStaff(s.criadoPor)) :
+          (s.origem === "sistema" ? "🔧 gerado pelo sistema" : null));
+        html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<div>'+icon+' <strong>'+escapeHtml(label)+'</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId)) +
+          '<br><span style="color:var(--ink-400);font-size:12px;">pedido em '+fmtDate(s.criadoEm)+'</span>' +
+          (origemTxt ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+origemTxt+'</span>') : '') +
+          '<br><span style="color:var(--red-600);font-size:12px;font-weight:700;">🗑️ excluído por '+escapeHtml(nomeStaff(s.excluidoPor))+' em '+fmtDate(s.excluidoEm)+'</span>' +
+          '</div></div>';
       });
       html += '</div>';
     }
