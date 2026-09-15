@@ -388,8 +388,6 @@
   <button class="nav-btn" data-view="abastecimento"><span class="ic">🥤</span>Abastecer</button>
   <button class="nav-btn active" data-view="items"><span class="ic">📦</span>Estoque</button>
   <button class="nav-btn" data-view="count"><span class="ic">📋</span>Contagem</button>
-  <button class="nav-btn" data-view="history"><span class="ic">🕓</span>Histórico</button>
-  <button class="nav-btn" data-view="report"><span class="ic">📤</span>Relatório</button>
 </footer>
 
 <!-- Sheet: add/edit item -->
@@ -1426,8 +1424,6 @@
     renderHeader();
     document.getElementById("homeView").style.display = appSection==="home" ? "block":"none";
     document.getElementById("itemsView").style.display = (appSection==="estoque" && activeView==="items") ? "block":"none";
-    document.getElementById("historyView").style.display = (appSection==="estoque" && activeView==="history") ? "block":"none";
-    document.getElementById("reportView").style.display = (appSection==="estoque" && activeView==="report") ? "block":"none";
     document.getElementById("countView").style.display = (appSection==="estoque" && activeView==="count") ? "block":"none";
     document.getElementById("abastecimentoView").style.display = (appSection==="estoque" && activeView==="abastecimento") ? "block":"none";
     document.getElementById("procedimentosView").style.display = appSection==="procedimentos" ? "block":"none";
@@ -1463,8 +1459,6 @@
       renderTabs();
       renderAlert();
       if(activeView==="items") renderItems();
-      if(activeView==="history") renderHistory();
-      if(activeView==="report") renderReport();
       if(activeView==="count") renderCount();
       if(activeView==="abastecimento") renderAbastecimento();
     }
@@ -5144,10 +5138,11 @@
 
   var supervisaoPeriod = "7"; // '1' | '7' | '30'
 
-  function computeHistoricoSolicitacoes(days){
+  function computeHistoricoSolicitacoes(days, tipos){
     var since = Date.now() - days*24*3600*1000;
-    var items = state.solicitacoes.filter(function(s){ return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= since; })
-      .sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
+    var items = state.solicitacoes.filter(function(s){
+      return s.status==="concluido" && s.concluidoEm && s.concluidoEm >= since && (!tipos || tipos.indexOf(s.tipo) > -1);
+    }).sort(function(a,b){ return (b.concluidoEm||0)-(a.concluidoEm||0); });
     var durations = items.filter(function(s){ return s.criadoEm && s.concluidoEm; }).map(function(s){ return (s.concluidoEm-s.criadoEm)/60000; });
     var avg = durations.length ? Math.round(durations.reduce(function(a,b){ return a+b; },0)/durations.length) : null;
     return {items:items, avg:avg};
@@ -5197,15 +5192,57 @@
       .sort(function(a,b){ return a.nome.localeCompare(b.nome, "pt-BR"); });
   }
 
+  // Tempo médio de execução das manutenções prediais (conserto/reparo) —
+  // do "Iniciar" até "Concluir", dentro do período selecionado.
+  function computeTempoMedioManutencaoPredial(periodDays){
+    var since = periodDays ? (Date.now() - periodDays*24*3600*1000) : 0;
+    var durs = [];
+    state.manutencoes.forEach(function(m){
+      if(m.status !== "concluida" || !m.iniciadoEm || !m.resolvedAt) return;
+      if(m.resolvedAt < since) return;
+      var dur = Math.floor((m.resolvedAt - m.iniciadoEm)/60000);
+      if(dur >= 0) durs.push(dur);
+    });
+    var avg = durs.length ? Math.round(durs.reduce(function(a,b){ return a+b; },0)/durs.length) : null;
+    return {avg:avg, n:durs.length};
+  }
+
+  function computeManutencoesConcluidas(periodDays){
+    var since = periodDays ? (Date.now() - periodDays*24*3600*1000) : 0;
+    return state.manutencoes.filter(function(m){ return m.status === "concluida" && m.resolvedAt && m.resolvedAt >= since; })
+      .sort(function(a,b){ return (b.resolvedAt||0)-(a.resolvedAt||0); });
+  }
+
+  var supervisaoTopo = "limpeza";
+
   function renderSupervisao(){
     var main = document.getElementById("supervisaoView");
     var html = buildPainelHtml();
-    html += '<div class="section-title" style="margin-top:22px;">Histórico</div>';
-    html += '<div class="period-chips">' + ["1","7","30"].map(function(p){
+    html += '<div class="seg-toggle" style="margin-top:18px;">' +
+      '<button data-stopo="limpeza" class="'+(supervisaoTopo==="limpeza"?"active":"")+'">🧹 Limpeza</button>' +
+      '<button data-stopo="estoque" class="'+(supervisaoTopo==="estoque"?"active":"")+'">📦 Estoque</button>' +
+      '<button data-stopo="manutencao" class="'+(supervisaoTopo==="manutencao"?"active":"")+'">🔧 Manutenção</button>' +
+    '</div>';
+    html += '<div id="supervisaoTopoContent"></div>';
+    main.innerHTML = html;
+    main.querySelectorAll("[data-stopo]").forEach(function(b){
+      b.onclick = function(){ supervisaoTopo = b.getAttribute("data-stopo"); renderSupervisao(); };
+    });
+    var content = document.getElementById("supervisaoTopoContent");
+    if(supervisaoTopo === "limpeza") renderSupervisaoLimpeza(content);
+    else if(supervisaoTopo === "estoque") renderSupervisaoEstoqueTopico(content);
+    else renderSupervisaoManutencaoTopico(content);
+  }
+
+  function renderSupervisaoLimpeza(content){
+    var html = '<div class="period-chips" style="margin-top:14px;">' + ["1","7","30"].map(function(p){
       var label = p==="1" ? "Hoje" : (p==="7" ? "7 dias" : "30 dias");
       return '<button data-hperiod="'+p+'" class="'+(supervisaoPeriod===p?"active":"")+'">'+label+'</button>';
     }).join("") + '</div>';
-    var hist = computeHistoricoSolicitacoes(parseInt(supervisaoPeriod,10));
+
+    var tiposLimpeza = ["lavagem","limpeza","roupa_cama","ventilacao"];
+    var hist = computeHistoricoSolicitacoes(parseInt(supervisaoPeriod,10), tiposLimpeza);
+    html += '<div class="section-title" style="margin-top:14px;">Histórico</div>';
     if(hist.avg != null){
       html += '<p class="count-intro">Tempo médio do pedido até concluído: <b>'+fmtDuration(hist.avg)+'</b> · '+hist.items.length+' concluído(s) no período</p>';
     }
@@ -5232,7 +5269,7 @@
     }
 
     var sinceExcl = parseInt(supervisaoPeriod,10) ? (Date.now() - parseInt(supervisaoPeriod,10)*24*3600*1000) : 0;
-    var excluidos = (state.solicitacoesExcluidas||[]).filter(function(s){ return s.excluidoEm && s.excluidoEm >= sinceExcl; })
+    var excluidos = (state.solicitacoesExcluidas||[]).filter(function(s){ return s.excluidoEm && s.excluidoEm >= sinceExcl && tiposLimpeza.indexOf(s.tipo) > -1; })
       .sort(function(a,b){ return (b.excluidoEm||0)-(a.excluidoEm||0); });
     html += '<div class="section-title" style="margin-top:22px;color:var(--red-600);">🗑️ Excluídos</div>';
     if(excluidos.length === 0){
@@ -5266,17 +5303,134 @@
           '<p style="margin:0 0 4px;font-size:14px;font-weight:700;">'+escapeHtml(r.nome)+'</p>' +
           '<p class="item-meta">🧺 Lavagem: '+(r.lavagemMedia!=null ? ('<b>'+fmtDuration(r.lavagemMedia)+'</b> · '+r.lavagemN+' concluída(s)') : 'sem dados')+'</p>' +
           '<p class="item-meta">🔧 Manutenção: '+(r.manutencaoMedia!=null ? ('<b>'+fmtDuration(r.manutencaoMedia)+'</b> · '+r.manutencaoN+' concluída(s)') : 'sem dados')+'</p>' +
-          '<p class="item-meta">🥤 Abastecimento: '+(r.abastecimentoMedia!=null ? ('<b>'+fmtDuration(r.abastecimentoMedia)+'</b> · '+r.abastecimentoN+' concluído(s)') : 'sem dados')+'</p>' +
         '</div>';
       });
       html += '</div>';
     }
 
-    main.innerHTML = html;
-    main.querySelectorAll("[data-hperiod]").forEach(function(b){
+    content.innerHTML = html;
+    content.querySelectorAll("[data-hperiod]").forEach(function(b){
       b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); renderSupervisao(); };
     });
-    wireSolicitacaoActions(main);
+    wireSolicitacaoActions(content);
+  }
+
+  function renderSupervisaoEstoqueTopico(content){
+    content.innerHTML =
+      '<div class="period-chips" style="margin-top:14px;">' + ["1","7","30"].map(function(p){
+        var label = p==="1" ? "Hoje" : (p==="7" ? "7 dias" : "30 dias");
+        return '<button data-hperiod="'+p+'" class="'+(supervisaoPeriod===p?"active":"")+'">'+label+'</button>';
+      }).join("") + '</div>' +
+      '<div id="supEstoqueHistoricoSolic"></div>' +
+      '<div class="section-title" style="margin-top:22px;">⏱️ Tempo médio de abastecimento</div>' +
+      '<div id="supEstoqueTempoAbastecimento"></div>' +
+      '<div class="section-title" style="margin-top:22px;">Movimentações de estoque</div>' +
+      '<div id="supEstoqueMovimentacoes"></div>' +
+      '<div class="section-title" style="margin-top:22px;">Relatório e sugestão de compra</div>' +
+      '<div id="reportText" class="report-box"></div>' +
+      '<div class="share-row">' +
+        '<button class="share-btn wa" id="sendWa">Enviar por WhatsApp</button>' +
+        '<button class="share-btn mail" id="sendMail">Enviar por Email</button>' +
+      '</div>' +
+      '<button type="button" class="link-btn" id="reportSupplierManager">🚚 Gerenciar fornecedores</button>' +
+      '<button type="button" class="link-btn" id="reportHospedinSync">🔗 Sincronizar com Hospedin</button>' +
+      '<div id="purchaseSuggestSection"></div>' +
+      '<div id="pedidosCompraSection" style="margin-top:22px;"></div>';
+
+    content.querySelectorAll("[data-hperiod]").forEach(function(b){
+      b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); renderSupervisao(); };
+    });
+
+    var histSolic = computeHistoricoSolicitacoes(parseInt(supervisaoPeriod,10), ["frigobar"]);
+    var histEl = document.getElementById("supEstoqueHistoricoSolic");
+    if(histSolic.items.length === 0){
+      histEl.innerHTML = '<div class="empty">Nenhum abastecimento concluído neste período.</div>';
+    } else {
+      var hh = '<div class="card">';
+      histSolic.items.forEach(function(s){
+        var dur = (s.criadoEm && s.concluidoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
+        hh += '<div class="move-row"><div>🥤 <strong>Abastecimento</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId))+
+          (dur!=null ? ('<br><span style="color:var(--ink-400);font-size:12px;">levou '+fmtDuration(dur)+'</span>') : '')+
+          (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">✓ concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '')+
+          '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
+      });
+      hh += '</div>';
+      histEl.innerHTML = hh;
+    }
+    wireSolicitacaoActions(histEl);
+
+    var tempos = computeTempoMedioPorAcomodacao(parseInt(supervisaoPeriod,10)).filter(function(r){ return r.abastecimentoN > 0; });
+    var tempoEl = document.getElementById("supEstoqueTempoAbastecimento");
+    if(tempos.length === 0){
+      tempoEl.innerHTML = '<div class="empty">Ainda não há dados suficientes no período.</div>';
+    } else {
+      var th = '<div class="card">';
+      tempos.forEach(function(r, i){
+        th += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<p style="margin:0;font-size:14px;font-weight:700;">'+escapeHtml(r.nome)+'</p>' +
+          '<p class="item-meta"><b>'+fmtDuration(r.abastecimentoMedia)+'</b> · '+r.abastecimentoN+' concluído(s)</p>' +
+        '</div>';
+      });
+      th += '</div>';
+      tempoEl.innerHTML = th;
+    }
+
+    renderMovesInto(document.getElementById("supEstoqueMovimentacoes"));
+
+    var text = buildReportText();
+    document.getElementById("reportText").textContent = text;
+    document.getElementById("sendWa").onclick = function(){
+      var url = "https://wa.me/?text=" + encodeURIComponent(text);
+      window.open(url, "_blank");
+    };
+    document.getElementById("sendMail").onclick = function(){
+      var subject = "Relatório de estoque - Bagua Bangalôs - " + new Date().toLocaleDateString("pt-BR");
+      var url = "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(text);
+      window.location.href = url;
+    };
+    document.getElementById("reportSupplierManager").onclick = function(){ openSupplierList(); };
+    document.getElementById("reportHospedinSync").onclick = function(){ openHospedinSync(); };
+    renderPurchaseSuggestSection();
+    renderPedidosCompraSection();
+  }
+
+  function renderSupervisaoManutencaoTopico(content){
+    var html = '<div class="period-chips" style="margin-top:14px;">' + ["1","7","30"].map(function(p){
+      var label = p==="1" ? "Hoje" : (p==="7" ? "7 dias" : "30 dias");
+      return '<button data-hperiod="'+p+'" class="'+(supervisaoPeriod===p?"active":"")+'">'+label+'</button>';
+    }).join("") + '</div>';
+
+    var periodDays = parseInt(supervisaoPeriod,10);
+    var tempoManut = computeTempoMedioManutencaoPredial(periodDays);
+    html += '<div class="section-title" style="margin-top:14px;">⏱️ Tempo médio de execução</div>';
+    if(tempoManut.avg == null){
+      html += '<div class="empty">Ainda não há manutenções concluídas com "Iniciar" registrado neste período.</div>';
+    } else {
+      html += '<p class="count-intro">Do "Iniciar" ao "Concluir": <b>'+fmtDuration(tempoManut.avg)+'</b> · '+tempoManut.n+' concluída(s) no período</p>';
+    }
+
+    var concluidas = computeManutencoesConcluidas(periodDays);
+    html += '<div class="section-title" style="margin-top:22px;">Histórico</div>';
+    if(concluidas.length === 0){
+      html += '<div class="empty">Nenhuma manutenção concluída neste período.</div>';
+    } else {
+      html += '<div class="card">';
+      concluidas.forEach(function(m, i){
+        var dur = (m.iniciadoEm && m.resolvedAt) ? Math.floor((m.resolvedAt-m.iniciadoEm)/60000) : null;
+        html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<p style="margin:0 0 3px;font-size:14px;font-weight:700;">🔧 '+escapeHtml(m.title)+(m.local?(' — '+escapeHtml(m.local)):'')+'</p>' +
+          (m.responsavel ? '<p class="item-meta">👤 '+escapeHtml(m.responsavel)+'</p>' : '') +
+          (dur!=null ? '<p class="item-meta">levou '+fmtDuration(dur)+'</p>' : '') +
+          '<p class="item-meta">concluída em '+fmtDate(m.resolvedAt)+'</p>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+
+    content.innerHTML = html;
+    content.querySelectorAll("[data-hperiod]").forEach(function(b){
+      b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); renderSupervisao(); };
+    });
   }
 
   // ---------- Administração (usuários e permissões) ----------
