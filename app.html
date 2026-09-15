@@ -869,10 +869,11 @@
       sb.from("acomodacoes").select("*").order("ordem"),
       sb.from("solicitacoes_acomodacao").select("*").order("criado_em", {ascending:false}).limit(5000),
       sb.from("staff_names").select("*"),
-      sb.from("pedidos_compra").select("*").order("criado_em", {ascending:false}).limit(500)
+      sb.from("pedidos_compra").select("*").order("criado_em", {ascending:false}).limit(500),
+      sb.from("app_settings").select("*").eq("key", "hospedin_ultima_sincronizacao").maybeSingle()
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
-    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10];
+    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10], syncSettingRes=results[11];
     var hospedinOcupacao = hospedinRes.data || [];
     var staffNames = {};
     (staffRes.data||[]).forEach(function(p){ staffNames[p.id] = p.nome; });
@@ -883,8 +884,9 @@
         suppliers: (supRes.data||[]).map(mapSupplierFromRow),
         countSessions: (csRes.data||[]).map(mapCountSessionFromRow),
         hospedinOcupacao: hospedinOcupacao,
-        hospedinData: computeHospedinSummary(hospedinOcupacao, 7, 7),
-        pedidosCompra: (pedRes.data||[]).map(mapPedidoCompraFromRow)
+        hospedinData: computeHospedinSummary(hospedinOcupacao, 15, 15),
+        pedidosCompra: (pedRes.data||[]).map(mapPedidoCompraFromRow),
+        ultimaSincronizacaoServidor: (syncSettingRes.data && syncSettingRes.data.value) ? syncSettingRes.data.value : null
       },
       procedimentos: (procRes.data||[]).map(mapProcedimentoFromRow),
       manutencoes: (manRes.data||[]).map(mapManutencaoFromRow),
@@ -2300,7 +2302,16 @@
     var el = document.getElementById("purchaseSuggestSection");
     if(!el) return;
     var suggestions = computePurchaseSuggestions();
-    var html = '<div class="section-title">Sugestão de compra (ocupação Hospedin)</div>';
+    var servidor = state.estoque.ultimaSincronizacaoServidor;
+    var syncBadge = "";
+    if(servidor && servidor.quando && servidor.ok){
+      syncBadge = '<p style="font-size:12px;color:var(--teal-700);font-weight:700;margin:-4px 0 10px;">🤖 Sincronizado automaticamente às '+fmtSyncTime(new Date(servidor.quando).getTime())+'</p>';
+    } else if(servidor && servidor.quando && !servidor.ok){
+      syncBadge = '<p style="font-size:12px;color:var(--red-600);font-weight:700;margin:-4px 0 10px;">⚠️ A sincronização automática falhou às '+fmtSyncTime(new Date(servidor.quando).getTime())+'</p>';
+    } else {
+      syncBadge = '<p style="font-size:12px;color:var(--amber-600);font-weight:700;margin:-4px 0 10px;">⚠️ Sincronização automática ainda não rodou</p>';
+    }
+    var html = '<div class="section-title">Sugestão de compra (ocupação Hospedin)</div>' + syncBadge;
 
     if(!state.estoque.hospedinData){
       html += '<div class="empty">Ainda não sincronizado. Toque em "Sincronizar com Hospedin" acima para calcular sugestões com base nas próximas reservas.</div>';
@@ -3218,16 +3229,28 @@
   function renderHospedinSyncStatus(){
     var el = document.getElementById("hospedinSyncStatus");
     var hd = state.estoque.hospedinData;
+    var servidor = state.estoque.ultimaSincronizacaoServidor;
+    var servidorHtml = "";
+    if(servidor && servidor.quando){
+      if(servidor.ok){
+        servidorHtml = '<div class="sync-status-line"><span>🤖 Última sincronização automática (servidor)</span><b>'+fmtSyncTime(new Date(servidor.quando).getTime())+'</b></div>';
+      } else {
+        servidorHtml = '<div class="sync-status-line"><span style="color:var(--red-600);">🤖 Última tentativa automática falhou</span><b style="color:var(--red-600);">'+fmtSyncTime(new Date(servidor.quando).getTime())+'</b></div>' +
+          '<p style="font-size:12px;color:var(--red-600);margin:2px 0 0;">'+escapeHtml(servidor.error||"erro desconhecido")+'</p>';
+      }
+    } else {
+      servidorHtml = '<div class="sync-status-line"><span>🤖 Sincronização automática</span><b style="color:var(--amber-600);">nunca rodou ainda</b></div>';
+    }
     if(!hd){
-      el.innerHTML = "Ainda não sincronizado.";
+      el.innerHTML = servidorHtml + "Ainda não sincronizado neste dispositivo.";
       return;
     }
     if(!hd.ok){
-      el.innerHTML = '<span style="color:var(--red-600);font-weight:600;">Última tentativa falhou: '+escapeHtml(hd.error||"erro desconhecido")+'</span>';
+      el.innerHTML = servidorHtml + '<span style="color:var(--red-600);font-weight:600;">Última tentativa falhou: '+escapeHtml(hd.error||"erro desconhecido")+'</span>';
       return;
     }
-    el.innerHTML =
-      '<div class="sync-status-line"><span>Sincronizado em</span><b>'+fmtSyncTime(hd.fetched_at)+'</b></div>' +
+    el.innerHTML = servidorHtml +
+      '<div class="sync-status-line"><span>Calculado neste dispositivo em</span><b>'+fmtSyncTime(hd.fetched_at)+'</b></div>' +
       '<div class="sync-status-line"><span>Ocupação últimos '+hd.past_period.days+'d</span><b>'+hd.past_period.occupied_accommodations+' acomodações</b></div>' +
       '<div class="sync-status-line"><span>Ocupação próximos '+hd.future_period.days+'d</span><b>'+hd.future_period.occupied_accommodations+' acomodações</b></div>';
   }
@@ -3306,7 +3329,7 @@
       var occRes = await sb.from("hospedin_ocupacao").select("*").gte("checkout", hospedinCutoffDate()).order("checkin", {ascending:false}).limit(5000);
       if(occRes.error) throw occRes.error;
       state.estoque.hospedinOcupacao = occRes.data || [];
-      hospedinRecomputeFromLocal(7, 7);
+      hospedinRecomputeFromLocal(15, 15);
 
       renderHospedinSyncStatus();
       showToast("Sincronizado: " + (data.sincronizadas||0) + " reservas");
@@ -3833,7 +3856,7 @@
     if(s.status === "bloqueada"){
       html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">🔒 Aguardando recepção liberar</p>';
     } else if(s.status === "pendente"){
-      var m = minutesAgo(s.criadoEm);
+      var m = minutesAgo(inicioEfetivoEspera(s));
       if(s.tipo === "ventilacao"){
         html += '<p class="item-meta">aberta por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(m)+'</p>';
       } else {
@@ -3893,11 +3916,13 @@
           if(act === "editarItensPedido"){
             abrirEditarItensPedidoSheet(s);
           } else if(act === "iniciar"){
+            if((s.tipo === "lavagem" || s.tipo === "limpeza") && !confirm('Confirma que vai iniciar a limpeza de "'+acomodacaoNome(s.acomodacaoId)+'"?')) return;
             var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
             var idx1 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx1>-1) state.solicitacoes[idx1] = s1;
             showToast("Iniciado"); renderApp();
           } else if(act === "liberar"){
+            if(!confirm('Confirma que quer liberar "'+acomodacaoNome(s.acomodacaoId)+'" pra limpeza?')) return;
             var s0 = await dbUpdate("solicitacoes_acomodacao", id, {status:"pendente", liberado_em:new Date().toISOString(), liberado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
             var idx0 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx0>-1) state.solicitacoes[idx0] = s0;
@@ -3905,6 +3930,7 @@
           } else if(act === "finalizar" && s.tipo === "frigobar"){
             abrirAbastecerSheet(s);
           } else if(act === "finalizar"){
+            if((s.tipo === "lavagem" || s.tipo === "limpeza") && !confirm('Confirma que a limpeza de "'+acomodacaoNome(s.acomodacaoId)+'" foi finalizada?')) return;
             var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
             var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx2>-1) state.solicitacoes[idx2] = s2;
@@ -4233,6 +4259,17 @@
 
   // ---------- Recepção / Supervisão (painel de acompanhamento) ----------
   function minutesAgo(ts){ return Math.max(0, Math.floor((Date.now()-ts)/60000)); }
+
+  // Pro check-in do dia, o "esperando há" só deve contar a partir das 9h da
+  // manhã (horário que a equipe começa o expediente) — antes disso, mesmo
+  // que a tarefa já tenha sido criada de madrugada, não conta como atraso.
+  function inicioEfetivoEspera(s){
+    if(s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1){
+      var hoje9h = new Date(); hoje9h.setHours(9,0,0,0);
+      return Math.max(s.criadoEm, hoje9h.getTime());
+    }
+    return s.criadoEm;
+  }
   function fmtDuration(mins){
     if(mins < 60) return mins + "min";
     var h = Math.floor(mins/60), m = mins%60;
