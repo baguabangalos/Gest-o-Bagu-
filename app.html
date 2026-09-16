@@ -698,6 +698,12 @@
     <form id="manutencaoForm">
       <label>Título</label>
       <input type="text" id="mn_title" required placeholder="Ex: Torneira vazando">
+      <label>Prioridade</label>
+      <select id="mn_prioridade">
+        <option value="alta">🔴 Alta</option>
+        <option value="media" selected>🟡 Média</option>
+        <option value="baixa">🟢 Baixa</option>
+      </select>
       <label>Local (opcional)</label>
       <input type="text" id="mn_local" placeholder="Ex: Bangalô 3">
       <label>Responsável (opcional)</label>
@@ -787,7 +793,7 @@
     return {id:r.id, title:r.title, local:r.local, description:r.description, status:r.status,
       createdAt:new Date(r.created_at).getTime(), resolvedAt:(r.resolved_at?new Date(r.resolved_at).getTime():null),
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
-      resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id, responsavel:r.responsavel};
+      resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id, responsavel:r.responsavel, prioridade:r.prioridade||"media"};
   }
   function mapAcomodacaoFromRow(r){
     return {id:r.id, nome:r.nome, ativo:r.ativo, ordem:r.ordem, codigoHospedin:r.codigo_hospedin};
@@ -3667,9 +3673,17 @@
     return html;
   }
 
+  var PRIORIDADE_INFO = {alta:{cor:"var(--red-600)", label:"🔴 Alta"}, media:{cor:"var(--amber-600)", label:"🟡 Média"}, baixa:{cor:"var(--teal-700)", label:"🟢 Baixa"}};
+  var PRIORIDADE_ORDEM = {alta:0, media:1, baixa:2};
+
   function renderManutencoes(){
     var main = document.getElementById("manutencoesView");
-    var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; }).sort(function(a,b){ return b.createdAt-a.createdAt; });
+    var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; }).sort(function(a,b){
+      var pa = PRIORIDADE_ORDEM[a.prioridade]!=null ? PRIORIDADE_ORDEM[a.prioridade] : 1;
+      var pb = PRIORIDADE_ORDEM[b.prioridade]!=null ? PRIORIDADE_ORDEM[b.prioridade] : 1;
+      if(pa !== pb) return pa - pb;
+      return b.createdAt-a.createdAt;
+    });
     var done = state.manutencoes.filter(function(m){ return m.status==="concluida"; }).sort(function(a,b){ return (b.resolvedAt||0)-(a.resolvedAt||0); });
     var html = renderOndePossoIrHtml();
     html += '<div class="seg-toggle">' +
@@ -3682,7 +3696,9 @@
     } else {
       var lixoManut = podeExcluir("manutencao") ? '<button class="btn-edit" data-act="excluir" data-id="{ID}" title="Excluir">🗑️</button>' : '';
       list.forEach(function(m){
-        html += '<div class="card manut-card" data-id="'+m.id+'">' +
+        var pInfo = PRIORIDADE_INFO[m.prioridade] || PRIORIDADE_INFO.media;
+        html += '<div class="card manut-card" data-id="'+m.id+'" style="border-left:4px solid '+pInfo.cor+';">' +
+          '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+pInfo.cor+';margin-bottom:4px;">'+pInfo.label+'</span>' +
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
         if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">👤 '+escapeHtml(m.responsavel)+'</p>';
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
@@ -4918,13 +4934,18 @@
       html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">🔒 NÃO PODE</p>';
       html += jac.naoPode.length ? jac.naoPode.map(function(it){ return cardItem(it, false, false); }).join("") : '<div class="empty">Nenhuma pendência de liberação.</div>';
     } else {
-      var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; });
+      var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; }).sort(function(a,b){
+        var pa = PRIORIDADE_ORDEM[a.prioridade]!=null ? PRIORIDADE_ORDEM[a.prioridade] : 1;
+        var pb = PRIORIDADE_ORDEM[b.prioridade]!=null ? PRIORIDADE_ORDEM[b.prioridade] : 1;
+        return pa - pb;
+      });
       html += '<p class="section-title" style="color:var(--teal-700);">✅ PODE</p>';
       if(pend.length === 0){
         html += '<div class="empty">Nenhuma manutenção pendente agora.</div>';
       } else {
         pend.forEach(function(m){
-          html += cardItem({id:m.id, nome:m.title+(m.local?(" — "+m.local):""), tag:"🔧 CONSERTO", cor:"var(--ink-600)", motivo:m.description||null}, true, false);
+          var pInfo = PRIORIDADE_INFO[m.prioridade] || PRIORIDADE_INFO.media;
+          html += cardItem({id:m.id, nome:m.title+(m.local?(" — "+m.local):""), tag:pInfo.label+" · CONSERTO", cor:pInfo.cor, motivo:m.description||null}, true, false);
         });
       }
       html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">🔒 NÃO PODE</p>';
@@ -5966,6 +5987,7 @@
     document.getElementById("mn_local").value = m ? (m.local||"") : "";
     document.getElementById("mn_responsavel").value = m ? (m.responsavel||"") : "";
     document.getElementById("mn_desc").value = m ? (m.description||"") : "";
+    document.getElementById("mn_prioridade").value = m ? (m.prioridade||"media") : "media";
     document.getElementById("mn_resolutionNote").value = m ? (m.resolutionNote||"") : "";
     document.getElementById("mn_resolveWrap").style.display = (m && m.status==="concluida") ? "block" : "none";
     document.getElementById("manutencaoIniciarBtn").style.display = (m && m.status==="pendente") ? "block" : "none";
@@ -5988,17 +6010,18 @@
     var responsavel = document.getElementById("mn_responsavel").value.trim();
     var description = document.getElementById("mn_desc").value.trim();
     var resolutionNote = document.getElementById("mn_resolutionNote").value.trim();
+    var prioridade = document.getElementById("mn_prioridade").value;
     try{
       if(editingManutencaoId){
         var mCur = state.manutencoes.find(function(x){ return x.id===editingManutencaoId; });
-        var payload = {title:title, local:local, responsavel:responsavel, description:description};
+        var payload = {title:title, local:local, responsavel:responsavel, description:description, prioridade:prioridade};
         if(mCur && mCur.status === "concluida") payload.resolution_note = resolutionNote;
         var m1 = await dbUpdate("manutencoes", editingManutencaoId, payload, mapManutencaoFromRow);
         var idx1 = state.manutencoes.findIndex(function(x){ return x.id===editingManutencaoId; });
         if(idx1>-1) state.manutencoes[idx1] = m1;
         showToast("Manutenção atualizada");
       } else {
-        var m2 = await dbInsert("manutencoes", {id:uid(), title:title, local:local, responsavel:responsavel, description:description, status:"pendente", origem:"manual"}, mapManutencaoFromRow);
+        var m2 = await dbInsert("manutencoes", {id:uid(), title:title, local:local, responsavel:responsavel, description:description, status:"pendente", origem:"manual", prioridade:prioridade}, mapManutencaoFromRow);
         state.manutencoes.push(m2);
         showToast("Manutenção registrada");
       }
