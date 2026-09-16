@@ -360,7 +360,6 @@
   </div>
   <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:6px;">
     <span id="userBadge" style="font-size:12px;color:var(--ink-400,#888);"></span>
-    <button type="button" id="enableNotifBtn" class="link-btn" style="font-size:12px;width:auto;display:none;margin-top:0;padding:2px 0;white-space:nowrap;">🔔 Ativar notificações</button>
   </div>
 </header>
 
@@ -441,6 +440,7 @@
         <button type="button" class="btn-secondary" id="itemCancel">Cancelar</button>
         <button type="submit" class="btn-primary">Salvar</button>
       </div>
+      <p id="itemAuditInfo" style="display:none;font-size:12px;color:var(--ink-400);margin:10px 0 0;"></p>
       <button type="button" class="btn-danger-text" id="itemDelete" style="display:none;">Excluir item</button>
     </form>
   </div>
@@ -760,7 +760,8 @@
   function mapItemFromRow(r){
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
-      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras};
+      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras,
+      criadoPor:r.criado_por, editadoPor:r.editado_por, editadoEm:(r.editado_em?new Date(r.editado_em).getTime():null)};
   }
   function mapMovementFromRow(r){
     return {id:r.id, itemId:r.item_id, type:r.type, qty:Number(r.qty), delta:(r.delta!=null?Number(r.delta):undefined),
@@ -1117,10 +1118,6 @@
     }
     renderApp();
     setupRealtimeNotifications();
-    if(("serviceWorker" in navigator) && ("PushManager" in window) &&
-       (podeVer("limpeza") || podeVer("recepcao") || podeVer("manutencao"))){
-      document.getElementById("enableNotifBtn").style.display = "inline-flex";
-    }
   }
 
   document.addEventListener("visibilitychange", function(){
@@ -1284,7 +1281,36 @@
     }
   }
 
-  document.getElementById("enableNotifBtn").onclick = ativarNotificacoesPush;
+  async function desativarNotificacoesPush(){
+    try{
+      if(!("serviceWorker" in navigator)) return;
+      var reg = await navigator.serviceWorker.getRegistration();
+      if(!reg) return;
+      var sub = await reg.pushManager.getSubscription();
+      if(sub){
+        var endpoint = sub.endpoint;
+        await sub.unsubscribe();
+        await sb.from("push_subscriptions").delete().eq("endpoint", endpoint);
+      }
+      showToast("Notificações desativadas neste aparelho");
+    }catch(err){
+      console.error(err);
+      showToast("Não consegui desativar — tente de novo");
+    }
+  }
+
+  async function statusNotificacoesPush(){
+    if(!("serviceWorker" in navigator) || !("PushManager" in window)) return "sem-suporte";
+    if(Notification.permission === "denied") return "bloqueada";
+    try{
+      var reg = await navigator.serviceWorker.getRegistration();
+      if(!reg) return "desligada";
+      var sub = await reg.pushManager.getSubscription();
+      return sub ? "ligada" : "desligada";
+    }catch(err){
+      return "desligada";
+    }
+  }
 
   var realtimeChannel = null;
   function setupRealtimeNotifications(){
@@ -1578,9 +1604,48 @@
         '<p style="margin:0;font-size:13px;color:var(--ink-600);">'+escapeHtml((currentUser&&currentUser.email)||"")+(currentUser&&currentUser.role==="admin"?" · admin":"")+'</p>' +
       '</div>' +
       '<button type="button" id="cfgMinhaContaBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">🔑 Minha conta<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Trocar e-mail e senha</span></button>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;">' +
+        '<div><p style="margin:0;font-size:14.5px;font-weight:700;color:var(--ink-900);">🔔 Notificações</p><p id="cfgNotifStatusTxt" style="margin:2px 0 0;font-size:12.5px;color:var(--ink-600);">Verificando…</p></div>' +
+        '<button type="button" id="cfgNotifToggle" style="background:var(--sand-200);border:none;border-radius:999px;width:52px;height:30px;position:relative;flex-shrink:0;"><span id="cfgNotifKnob" style="position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s;"></span></button>' +
+      '</div>' +
+      '<button type="button" id="cfgSyncHospedinBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">🔗 Sincronizar com Hospedin<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Atualiza as reservas na hora, sem esperar o ciclo automático</span></button>' +
       '<button type="button" id="cfgSairBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">🚪 Sair da conta</button>';
     document.getElementById("cfgMinhaContaBtn").onclick = abrirMinhaConta;
     document.getElementById("cfgSairBtn").onclick = fazerLogout;
+    document.getElementById("cfgSyncHospedinBtn").onclick = function(){ openHospedinSync(); };
+
+    function atualizarVisualNotif(status){
+      var knob = document.getElementById("cfgNotifKnob");
+      var toggle = document.getElementById("cfgNotifToggle");
+      var txt = document.getElementById("cfgNotifStatusTxt");
+      if(!knob) return;
+      if(status === "ligada"){
+        toggle.style.background = "var(--teal-700)"; knob.style.left = "25px";
+        txt.textContent = "Ativadas neste aparelho";
+      } else if(status === "bloqueada"){
+        toggle.style.background = "var(--sand-200)"; knob.style.left = "3px";
+        txt.textContent = "Bloqueadas nas configurações do navegador/celular";
+      } else if(status === "sem-suporte"){
+        toggle.style.background = "var(--sand-200)"; knob.style.left = "3px";
+        txt.textContent = "Não suportado neste navegador";
+      } else {
+        toggle.style.background = "var(--sand-200)"; knob.style.left = "3px";
+        txt.textContent = "Desativadas neste aparelho";
+      }
+    }
+
+    statusNotificacoesPush().then(atualizarVisualNotif);
+    document.getElementById("cfgNotifToggle").onclick = async function(){
+      var statusAtual = await statusNotificacoesPush();
+      if(statusAtual === "sem-suporte"){ showToast("Esse navegador não suporta notificações push"); return; }
+      if(statusAtual === "bloqueada"){ showToast("Precisa liberar notificações nas configurações do navegador/celular primeiro"); return; }
+      if(statusAtual === "ligada"){
+        await desativarNotificacoesPush();
+      } else {
+        await ativarNotificacoesPush();
+      }
+      atualizarVisualNotif(await statusNotificacoesPush());
+    };
   }
 
   // ---------- Tabs ----------
@@ -2470,6 +2535,16 @@
     document.getElementById("f_emUsoWrap").style.display = trackUsage ? "block" : "none";
     populateSupplierSelect(item ? item.supplierId : "");
     document.getElementById("itemDelete").style.display = item ? "block" : "none";
+    var auditEl = document.getElementById("itemAuditInfo");
+    if(item && (item.criadoPor || item.editadoPor)){
+      var partes = [];
+      if(item.criadoPor) partes.push("criado por "+nomeStaff(item.criadoPor));
+      if(item.editadoPor) partes.push("última edição por "+nomeStaff(item.editadoPor)+(item.editadoEm?(" em "+fmtDate(item.editadoEm)):""));
+      auditEl.textContent = partes.join(" · ");
+      auditEl.style.display = "block";
+    } else {
+      auditEl.style.display = "none";
+    }
     document.getElementById("f_photo").value = "";
     setPhotoUI(item ? item.photo : null);
     itemOverlay.classList.add("open");
@@ -2522,12 +2597,15 @@
     var submitBtn = e.target.querySelector('button[type="submit"]'); if(submitBtn) submitBtn.disabled = true;
     try{
       if(editingItemId){
+        payload.editado_por = currentUser ? currentUser.id : null;
+        payload.editado_em = new Date().toISOString();
         var it1 = await dbUpdate("items", editingItemId, payload, mapItemFromRow);
         var idx1 = state.estoque.items.findIndex(function(i){ return i.id===editingItemId; });
         if(idx1>-1) state.estoque.items[idx1] = it1;
         showToast("Item atualizado");
       } else {
         payload.id = uid();
+        payload.criado_por = currentUser ? currentUser.id : null;
         var it2 = await dbInsert("items", payload, mapItemFromRow);
         state.estoque.items.push(it2);
         showToast("Item adicionado");
