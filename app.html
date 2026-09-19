@@ -809,7 +809,8 @@
       searchableCode:r.searchable_code, fotosAbastecimento:r.fotos_abastecimento||null,
       incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama,
       jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por, jacuzziFoto:r.jacuzzi_foto,
-      revisaoConcluidaEm:(r.revisao_concluida_em?new Date(r.revisao_concluida_em).getTime():null), revisaoConcluidaPor:r.revisao_concluida_por};
+      revisaoConcluidaEm:(r.revisao_concluida_em?new Date(r.revisao_concluida_em).getTime():null), revisaoConcluidaPor:r.revisao_concluida_por,
+      transferenciaDe:r.transferencia_de||null};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -3434,6 +3435,10 @@
     return (s||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
   }
 
+  function normalizarDocumento(s){
+    return (s||"").toString().replace(/[^a-zA-Z0-9]/g,"").toUpperCase();
+  }
+
   function renderProcedimentos(){
     var main = document.getElementById("procedimentosView");
     main.innerHTML =
@@ -3867,6 +3872,7 @@
   }
 
   function tipoLabelCompleto(s){
+    if(s.tipo === "lavagem" && s.transferenciaDe) return "Transferência do " + s.transferenciaDe;
     var base = TIPO_LABEL[s.tipo] || s.tipo;
     if(s.tipo === "lavagem"){
       if(s.contexto === "checkin_checkout") return base + " · Check-in e Checkout";
@@ -4065,17 +4071,63 @@
     return acomodacoesHoje;
   }
 
+  // Cruza os checkouts e checkins de hoje pelo CPF/passaporte do hóspede,
+  // pra detectar renovação de diária (mesmo quarto) e transferência/upgrade
+  // (quarto diferente) entre duas reservas separadas da mesma pessoa.
+  function computeTransferenciasHoje(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var hojeFim = new Date(hojeInicio.getTime() + 24*3600*1000);
+    var codigoToId = {};
+    state.acomodacoes.forEach(function(a){ if(a.codigoHospedin) codigoToId[a.codigoHospedin] = a.id; });
+
+    function docDe(r){
+      var d = normalizarDocumento(r.guest_ssn || r.guest_passport || "");
+      return d || null;
+    }
+
+    var checkoutsHoje = [], checkinsHoje = [];
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      var id = codigoToId[r.acomodacao];
+      if(!id) return;
+      var ci = parseDataLocal(r.checkin).getTime();
+      var co = parseDataLocal(r.checkout).getTime();
+      var doc = docDe(r);
+      if(co >= hojeInicio.getTime() && co < hojeFim.getTime()) checkoutsHoje.push({acomodacaoId:id, doc:doc});
+      if(ci >= hojeInicio.getTime() && ci < hojeFim.getTime()) checkinsHoje.push({acomodacaoId:id, doc:doc});
+    });
+
+    var mesmoQuartoIds = {};
+    var transferenciasPorAcomodacaoCheckin = {};
+    checkinsHoje.forEach(function(entrada){
+      if(!entrada.doc) return;
+      var match = checkoutsHoje.find(function(s){ return s.doc && s.doc === entrada.doc; });
+      if(!match) return;
+      if(match.acomodacaoId === entrada.acomodacaoId){
+        mesmoQuartoIds[entrada.acomodacaoId] = true;
+      } else {
+        transferenciasPorAcomodacaoCheckin[entrada.acomodacaoId] = acomodacaoNome(match.acomodacaoId);
+      }
+    });
+    return {mesmoQuartoIds:mesmoQuartoIds, transferenciasPorAcomodacaoCheckin:transferenciasPorAcomodacaoCheckin};
+  }
+
   async function garantirTarefasLavagemHoje(){
     if(!state.estoque.hospedinOcupacao || state.estoque.hospedinOcupacao.length === 0) return;
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var acomodacoesHoje = classificarOcupacaoHoje();
+    var transf = computeTransferenciasHoje();
 
     var idsComTarefa = {};
     var codigoParaTarefa = {}; // searchable_code da reserva -> solicitação já existente hoje
+    var idsComLimpezaRenovacaoHoje = {};
     state.solicitacoes.forEach(function(s){
       if(s.tipo === "lavagem" && s.criadoEm >= hojeInicio.getTime()){
         idsComTarefa[s.acomodacaoId] = true;
         if(s.searchableCode) codigoParaTarefa[s.searchableCode] = s;
+      }
+      if(s.tipo === "limpeza" && s.contexto === "estadia" && s.origem === "sistema" && s.criadoEm >= hojeInicio.getTime()){
+        idsComLimpezaRenovacaoHoje[s.acomodacaoId] = true;
       }
     });
 
@@ -4083,6 +4135,21 @@
     for(var i=0;i<idsNovos.length;i++){
       var id = idsNovos[i];
       var info = acomodacoesHoje[id];
+
+      // Renovação de diária no mesmo quarto (mesmo CPF/passaporte no
+      // checkout e no checkin de hoje) — vira limpeza de manutenção,
+      // não a lavagem completa de virada de quarto.
+      if(transf.mesmoQuartoIds[id]){
+        if(!idsComLimpezaRenovacaoHoje[id]){
+          try{
+            var payloadManut = {id:uid(), acomodacao_id:id, tipo:"limpeza", contexto:"estadia", origem:"sistema", status:"pendente"};
+            var sManut = await dbInsert("solicitacoes_acomodacao", payloadManut, mapSolicitacaoFromRow);
+            state.solicitacoes.unshift(sManut);
+          }catch(err){ console.error("Erro ao criar limpeza de renovação (mesmo quarto):", err); }
+        }
+        continue;
+      }
+
       var contexto = (info.checkin && info.checkout) ? "checkin_checkout" : (info.checkin ? "checkin" : "checkout");
 
       // Se já existe uma tarefa de hoje pra essa MESMA reserva (mesmo
@@ -4102,9 +4169,15 @@
         continue;
       }
 
+      // Transferência de outra acomodação (upgrade/troca de quarto,
+      // mesmo CPF/passaporte, mas reservas separadas)
+      var transferenciaDeNome = (contexto === "checkin" && transf.transferenciasPorAcomodacaoCheckin[id])
+        ? transf.transferenciasPorAcomodacaoCheckin[id] : null;
+
       try{
         var statusInicial = (contexto === "checkin") ? "pendente" : "bloqueada";
-        var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:statusInicial, searchable_code:info.searchableCode||null};
+        var payload = {id:uid(), acomodacao_id:id, tipo:"lavagem", contexto:contexto, origem:"sistema", status:statusInicial,
+          searchable_code:info.searchableCode||null, transferencia_de:transferenciaDeNome};
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
       }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
