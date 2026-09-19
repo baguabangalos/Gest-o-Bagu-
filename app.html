@@ -1777,7 +1777,10 @@
           '<button class="btn btn-in" data-act="in" data-id="'+it.id+'">↑ Entrada</button>' +
           '<button class="btn btn-out" data-act="out" data-id="'+it.id+'">↓ Saída</button>' +
           '<button class="btn btn-edit" data-act="edit" data-id="'+it.id+'">✎</button>' +
-        '</div>' + usageActions;
+        '</div>' + usageActions +
+        '<div class="item-actions">' +
+          '<button class="btn btn-in" data-act="retorno_emprestimo" data-id="'+it.id+'">↩ Devolveu empréstimo (restaurante)</button>' +
+        '</div>';
       main.appendChild(card);
     });
   }
@@ -1813,7 +1816,8 @@
     var tagMap = {
       entrada:{cls:'entrada',label:'ENTRADA'}, saida:{cls:'saida',label:'SAÍDA'},
       ajuste:{cls:'ajuste',label:'AJUSTE'}, uso:{cls:'uso',label:'EM USO'}, retorno:{cls:'retorno',label:'RETORNOU'},
-      retorno_usado:{cls:'retorno',label:'RETORNOU (USADO)'}
+      retorno_usado:{cls:'retorno',label:'RETORNOU (USADO)'},
+      retorno_emprestimo:{cls:'entrada',label:'DEVOLUÇÃO (EMPRÉSTIMO)'}
     };
     var tagInfo = tagMap[m.type] || tagMap.saida;
     var tagClass = tagInfo.cls;
@@ -1849,7 +1853,7 @@
   // Se uma movimentação soma ou tira do estoque disponível — usado pra
   // separar a lista de Entradas da lista de Saídas na Supervisão.
   function moveDirecao(m){
-    if(m.type === "entrada" || m.type === "retorno" || m.type === "retorno_usado") return "entrada";
+    if(m.type === "entrada" || m.type === "retorno" || m.type === "retorno_usado" || m.type === "retorno_emprestimo") return "entrada";
     if(m.type === "ajuste") return (m.delta>=0) ? "entrada" : "saida";
     return "saida"; // saida, uso
   }
@@ -2704,11 +2708,11 @@
     var item = state.estoque.items.find(function(i){ return i.id===id; });
     if(!item) return;
     if(act === "edit"){ openItemSheet(item); }
-    else if(act === "uso" || act === "retorno" || act === "retorno_usado"){ openMoveSheet(item, act); }
+    else if(act === "uso" || act === "retorno" || act === "retorno_usado" || act === "retorno_emprestimo"){ openMoveSheet(item, act); }
     else { openMoveSheet(item, act === "in" ? "entrada" : "saida"); }
   });
 
-  var DESTINOS_FIXOS = ["Recepção", "Welcome drink", "Venda avulsa", "Empréstimo restaurante", "Guilherme"];
+  var DESTINOS_FIXOS = ["Recepção", "Welcome drink", "Venda avulsa", "Empréstimo restaurante", "Guilherme", "Funcionário", "Prestadores de serviço", "Marcella", "Vencidos"];
   // Nomes sugeridos ao registrar quem recebeu um uniforme — ainda dá pra
   // digitar qualquer outro nome que não esteja nessa lista.
   var FUNCIONARIOS_CONHECIDOS = ["Guilherme"];
@@ -2785,7 +2789,8 @@
     var titleMap = {
       entrada: "Registrar entrada — ", saida: "Registrar saída — ",
       uso: "Marcar como em uso — ", retorno: "Registrar retorno (novo) — ",
-      retorno_usado: "Registrar retorno (usado) — "
+      retorno_usado: "Registrar retorno (usado) — ",
+      retorno_emprestimo: "Devolução do empréstimo (restaurante) — "
     };
     document.getElementById("moveSheetTitle").textContent = (titleMap[type] || "Registrar — ") + item.name;
     document.getElementById("moveQtyLabel").textContent = "Quantidade ("+item.unit+")";
@@ -3201,6 +3206,11 @@
       loggedQty = Math.min(qty, item.qtyEmUso||0);
       newQtyEmUso = Math.max(0, (item.qtyEmUso||0) - loggedQty);
       newQtyUsado = (item.qtyUsado||0) + loggedQty;
+    } else if(moveType === "retorno_emprestimo"){
+      // A equipe do restaurante devolveu um item que tinha saído como
+      // "Empréstimo restaurante" — volta pro estoque, registrado com um
+      // rótulo próprio (não é uma entrada de compra normal).
+      newQty = item.qty + qty;
     }
     var btn = document.getElementById("moveConfirm"); btn.disabled = true;
     try{
@@ -3213,7 +3223,8 @@
       var toastMap = {
         entrada:"Entrada registrada", saida:"Saída registrada",
         uso:"Marcado como em uso", retorno:"Retorno registrado (novo)",
-        retorno_usado:"Retorno registrado — no estoque (usado)"
+        retorno_usado:"Retorno registrado — no estoque (usado)",
+        retorno_emprestimo:"Devolução do empréstimo registrada"
       };
       var msgToast = toastMap[typeForToast] || "Registrado";
       if(typeForToast === "saida" && destino === "Recepção") msgToast = "Movido pra recepção — ainda não descontado do estoque";
