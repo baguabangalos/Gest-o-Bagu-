@@ -430,6 +430,8 @@
       <div id="f_emUsoWrap" style="display:none;">
         <label>Quantidade em uso</label>
         <input type="number" id="f_qtyEmUso" step="0.01" value="0">
+        <label>Quantidade no estoque (usado)</label>
+        <input type="number" id="f_qtyUsado" step="0.01" value="0">
       </div>
       <label>Fornecedor (opcional)</label>
       <select id="f_supplier">
@@ -766,6 +768,7 @@
   function mapItemFromRow(r){
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
+      qtyUsado:Number(r.qty_usado||0),
       localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras,
       criadoPor:r.criado_por, editadoPor:r.editado_por, editadoEm:(r.editado_em?new Date(r.editado_em).getTime():null)};
   }
@@ -1746,14 +1749,18 @@
       var metaText;
       if(it.trackUsage){
         metaText = "guardado (mín. "+fmtQty(it.min)+") · em uso: "+fmtQty(it.qtyEmUso)+" "+escapeHtml(it.unit);
+        if(it.category === "Uniformes") metaText += " · usado (no estoque): "+fmtQty(it.qtyUsado)+" "+escapeHtml(it.unit);
       } else {
         metaText = "mínimo: "+fmtQty(it.min)+" "+escapeHtml(it.unit);
       }
       if(supplier) metaText += " · "+escapeHtml(supplier.name);
       if(it.numeroSerie) metaText += " · nº série "+escapeHtml(it.numeroSerie);
+      var retornoUsadoBtn = (it.trackUsage && it.category === "Uniformes") ?
+        '<button class="btn btn-in" data-act="retorno_usado" data-id="'+it.id+'">♻ Retornou usado</button>' : '';
       var usageActions = it.trackUsage ?
         '<div class="item-actions">' +
-          '<button class="btn btn-in" data-act="retorno" data-id="'+it.id+'">← Retornou</button>' +
+          '<button class="btn btn-in" data-act="retorno" data-id="'+it.id+'">← Retornou novo</button>' +
+          retornoUsadoBtn +
           '<button class="btn btn-out" data-act="uso" data-id="'+it.id+'">→ Em uso</button>' +
         '</div>' : '';
       card.innerHTML =
@@ -1796,41 +1803,83 @@
     else renderContagensInto(sub);
   }
 
+  // Monta o HTML de uma única linha de movimentação — usado tanto no
+  // histórico geral (Estoque > Movimentações) quanto no histórico por
+  // categoria/entrada-saída da Supervisão, pra não duplicar o mesmo layout.
+  function moveRowHtml(m){
+    var it = state.estoque.items.find(function(i){ return i.id === m.itemId; });
+    var name = it ? it.name : "(item removido)";
+    var tagMap = {
+      entrada:{cls:'entrada',label:'ENTRADA'}, saida:{cls:'saida',label:'SAÍDA'},
+      ajuste:{cls:'ajuste',label:'AJUSTE'}, uso:{cls:'uso',label:'EM USO'}, retorno:{cls:'retorno',label:'RETORNOU'},
+      retorno_usado:{cls:'retorno',label:'RETORNOU (USADO)'}
+    };
+    var tagInfo = tagMap[m.type] || tagMap.saida;
+    var tagClass = tagInfo.cls;
+    var tagText = tagInfo.label;
+    var qtyText = m.type==='ajuste' ? ((m.delta>=0?'+':'')+fmtQty(m.delta)) : fmtQty(m.qty);
+    var podeMexer = (m.type === "entrada" || m.type === "saida") && (podeEditar("estoque") || podeExcluir("estoque"));
+    return '<div class="move-row" style="flex-wrap:wrap;">' +
+      '<div><span class="move-tag '+tagClass+'">'+tagText+'</span> ' +
+      '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
+      (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
+      (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
+      (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">👤 Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
+        (m.comprovanteUniforme ? '<br><img src="'+m.comprovanteUniforme+'" onclick="abrirFotoViewer(this.src)" style="max-width:90px;max-height:60px;border-radius:6px;border:1px solid var(--line);cursor:pointer;margin-top:4px;" alt="comprovante">' : '') : '') +
+      '</div><div style="display:flex;align-items:center;gap:8px;">' +
+      '<div class="move-date">'+fmtDate(m.date)+'</div>' +
+      (podeMexer ? (
+        (podeEditar("estoque") ? '<button type="button" class="move-edit-btn" data-id="'+m.id+'" title="Editar" style="background:none;border:none;font-size:15px;padding:2px;">✏️</button>' : '') +
+        (podeExcluir("estoque") ? '<button type="button" class="move-del-btn" data-id="'+m.id+'" title="Excluir" style="background:none;border:none;font-size:15px;padding:2px;">🗑️</button>' : '')
+      ) : '') +
+      '</div></div>';
+  }
+
   function renderMovesInto(container){
     var moves = state.estoque.movements.slice().sort(function(a,b){ return b.date - a.date; }).slice(0,60);
     if(moves.length === 0){
       container.innerHTML = '<div class="empty">Nenhuma movimentação registrada ainda.</div>';
       return;
     }
-    var html = '<div class="card">';
-    moves.forEach(function(m){
+    container.innerHTML = '<div class="card">' + moves.map(moveRowHtml).join("") + '</div>';
+    wireMoveEditDelete(container);
+  }
+
+  // Se uma movimentação soma ou tira do estoque disponível — usado pra
+  // separar a lista de Entradas da lista de Saídas na Supervisão.
+  function moveDirecao(m){
+    if(m.type === "entrada" || m.type === "retorno" || m.type === "retorno_usado") return "entrada";
+    if(m.type === "ajuste") return (m.delta>=0) ? "entrada" : "saida";
+    return "saida"; // saida, uso
+  }
+
+  // Histórico de movimentações de UMA categoria (Frigobar, Limpeza,
+  // Enxoval, Manutenção ou Uniformes), já separado em Entradas e Saídas —
+  // usado na Supervisão > Estoque.
+  function renderSupervisaoMovesPorCategoria(container, categoria){
+    var todas = state.estoque.movements.filter(function(m){
       var it = state.estoque.items.find(function(i){ return i.id === m.itemId; });
-      var name = it ? it.name : "(item removido)";
-      var tagMap = {
-        entrada:{cls:'entrada',label:'ENTRADA'}, saida:{cls:'saida',label:'SAÍDA'},
-        ajuste:{cls:'ajuste',label:'AJUSTE'}, uso:{cls:'uso',label:'EM USO'}, retorno:{cls:'retorno',label:'RETORNOU'}
-      };
-      var tagInfo = tagMap[m.type] || tagMap.saida;
-      var tagClass = tagInfo.cls;
-      var tagText = tagInfo.label;
-      var qtyText = m.type==='ajuste' ? ((m.delta>=0?'+':'')+fmtQty(m.delta)) : fmtQty(m.qty);
-      var podeMexer = (m.type === "entrada" || m.type === "saida") && (podeEditar("estoque") || podeExcluir("estoque"));
-      html += '<div class="move-row" style="flex-wrap:wrap;">' +
-        '<div><span class="move-tag '+tagClass+'">'+tagText+'</span> ' +
-        '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
-        (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
-        (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
-        (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">👤 Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
-          (m.comprovanteUniforme ? '<br><img src="'+m.comprovanteUniforme+'" onclick="abrirFotoViewer(this.src)" style="max-width:90px;max-height:60px;border-radius:6px;border:1px solid var(--line);cursor:pointer;margin-top:4px;" alt="comprovante">' : '') : '') +
-        '</div><div style="display:flex;align-items:center;gap:8px;">' +
-        '<div class="move-date">'+fmtDate(m.date)+'</div>' +
-        (podeMexer ? (
-          (podeEditar("estoque") ? '<button type="button" class="move-edit-btn" data-id="'+m.id+'" title="Editar" style="background:none;border:none;font-size:15px;padding:2px;">✏️</button>' : '') +
-          (podeExcluir("estoque") ? '<button type="button" class="move-del-btn" data-id="'+m.id+'" title="Excluir" style="background:none;border:none;font-size:15px;padding:2px;">🗑️</button>' : '')
-        ) : '') +
-        '</div></div>';
-    });
-    html += '</div>';
+      return it && it.category === categoria;
+    }).sort(function(a,b){ return b.date - a.date; });
+
+    var entradas = todas.filter(function(m){ return moveDirecao(m) === "entrada"; }).slice(0,40);
+    var saidas = todas.filter(function(m){ return moveDirecao(m) === "saida"; }).slice(0,40);
+
+    var html = '';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin:4px 0 8px;">' +
+      '<span style="color:var(--teal-700);font-size:14px;font-weight:800;">↓ Entradas</span>' +
+      '<span style="background:var(--teal-100);color:var(--teal-900);font-size:11px;font-weight:800;border-radius:10px;padding:2px 8px;">'+entradas.length+'</span></div>';
+    html += entradas.length ?
+      ('<div class="card">' + entradas.map(moveRowHtml).join("") + '</div>') :
+      '<div class="empty">Nenhuma entrada registrada neste período.</div>';
+
+    html += '<div style="display:flex;align-items:center;gap:6px;margin:18px 0 8px;">' +
+      '<span style="color:var(--ink-900);font-size:14px;font-weight:800;">↑ Saídas</span>' +
+      '<span style="background:var(--sand-200);color:var(--ink-900);font-size:11px;font-weight:800;border-radius:10px;padding:2px 8px;">'+saidas.length+'</span></div>';
+    html += saidas.length ?
+      ('<div class="card">' + saidas.map(moveRowHtml).join("") + '</div>') :
+      '<div class="empty">Nenhuma saída registrada neste período.</div>';
+
     container.innerHTML = html;
     wireMoveEditDelete(container);
   }
@@ -2063,7 +2112,8 @@
       list.forEach(function(it){
         var mark = isLow(it) ? " ⚠️" : "";
         if(it.trackUsage){
-          lines.push("  "+it.name+": guardado "+fmtQty(it.qty)+" "+it.unit+" · em uso "+fmtQty(it.qtyEmUso)+" "+it.unit+mark);
+          var linhaUsado = (it.category === "Uniformes") ? (" · usado "+fmtQty(it.qtyUsado)+" "+it.unit) : "";
+          lines.push("  "+it.name+": guardado "+fmtQty(it.qty)+" "+it.unit+" · em uso "+fmtQty(it.qtyEmUso)+" "+it.unit+linhaUsado+mark);
         } else {
           lines.push("  "+it.name+": "+fmtQty(it.qty)+" "+it.unit+mark);
         }
@@ -2434,7 +2484,7 @@
       html += '<div class="section-title" style="margin-top:0;">'+escapeHtml(CATEGORY_LABEL[cat])+'</div>';
       list.forEach(function(it){
         var sysLabel = it.trackUsage ?
-          ("guardado: "+fmtQty(it.qty)+" "+escapeHtml(it.unit)+" · em uso: "+fmtQty(it.qtyEmUso)+" "+escapeHtml(it.unit)) :
+          ("guardado: "+fmtQty(it.qty)+" "+escapeHtml(it.unit)+" · em uso: "+fmtQty(it.qtyEmUso)+" "+escapeHtml(it.unit)+(it.category==="Uniformes"?(" · usado: "+fmtQty(it.qtyUsado)+" "+escapeHtml(it.unit)):"")) :
           ("sistema: "+fmtQty(it.qty)+" "+escapeHtml(it.unit));
         if(it.numeroSerie) sysLabel += " · nº série "+escapeHtml(it.numeroSerie);
         html += '<div class="count-row">' +
@@ -2539,6 +2589,7 @@
     var trackUsage = item ? !!item.trackUsage : (activeCategory === "Enxoval");
     document.getElementById("f_trackUsage").checked = trackUsage;
     document.getElementById("f_qtyEmUso").value = item ? (item.qtyEmUso||0) : 0;
+    document.getElementById("f_qtyUsado").value = item ? (item.qtyUsado||0) : 0;
     document.getElementById("f_emUsoWrap").style.display = trackUsage ? "block" : "none";
     populateSupplierSelect(item ? item.supplierId : "");
     document.getElementById("itemDelete").style.display = item ? "block" : "none";
@@ -2597,10 +2648,11 @@
     var supplierId = document.getElementById("f_supplier").value || null;
     var trackUsage = document.getElementById("f_trackUsage").checked;
     var qtyEmUso = trackUsage ? (parseFloat(document.getElementById("f_qtyEmUso").value) || 0) : 0;
+    var qtyUsado = trackUsage ? (parseFloat(document.getElementById("f_qtyUsado").value) || 0) : 0;
     if(!name || isNaN(qty) || isNaN(min)) return;
 
     var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:pendingPhoto,
-      supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null};
+      supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null};
     var submitBtn = e.target.querySelector('button[type="submit"]'); if(submitBtn) submitBtn.disabled = true;
     try{
       if(editingItemId){
@@ -2651,7 +2703,7 @@
     var item = state.estoque.items.find(function(i){ return i.id===id; });
     if(!item) return;
     if(act === "edit"){ openItemSheet(item); }
-    else if(act === "uso" || act === "retorno"){ openMoveSheet(item, act); }
+    else if(act === "uso" || act === "retorno" || act === "retorno_usado"){ openMoveSheet(item, act); }
     else { openMoveSheet(item, act === "in" ? "entrada" : "saida"); }
   });
 
@@ -2731,7 +2783,8 @@
     moveType = type;
     var titleMap = {
       entrada: "Registrar entrada — ", saida: "Registrar saída — ",
-      uso: "Marcar como em uso — ", retorno: "Registrar retorno — "
+      uso: "Marcar como em uso — ", retorno: "Registrar retorno (novo) — ",
+      retorno_usado: "Registrar retorno (usado) — "
     };
     document.getElementById("moveSheetTitle").textContent = (titleMap[type] || "Registrar — ") + item.name;
     document.getElementById("moveQtyLabel").textContent = "Quantidade ("+item.unit+")";
@@ -3117,7 +3170,7 @@
       }
     }
     var typeForToast = moveType;
-    var loggedQty = qty, newQty = item.qty, newQtyEmUso = item.qtyEmUso||0;
+    var loggedQty = qty, newQty = item.qty, newQtyEmUso = item.qtyEmUso||0, newQtyUsado = item.qtyUsado||0;
     if(moveType === "entrada"){
       newQty = item.qty + qty;
     } else if(moveType === "saida"){
@@ -3127,17 +3180,30 @@
       // final (Welcome drink, uma acomodação, venda avulsa, etc.).
       newQty = (destino === "Recepção") ? item.qty : Math.max(0, item.qty - qty);
     } else if(moveType === "uso"){
-      loggedQty = Math.min(qty, item.qty);
-      newQty = Math.max(0, item.qty - loggedQty);
+      // O que está "usado mas no estoque" também pode ser colocado em uso —
+      // desconta primeiro do estoque novo, depois do estoque usado.
+      var disponivelTotal = (item.qty||0) + (item.qtyUsado||0);
+      loggedQty = Math.min(qty, disponivelTotal);
+      var doNovo = Math.min(loggedQty, item.qty||0);
+      var doUsado = loggedQty - doNovo;
+      newQty = Math.max(0, (item.qty||0) - doNovo);
+      newQtyUsado = Math.max(0, (item.qtyUsado||0) - doUsado);
       newQtyEmUso = (item.qtyEmUso||0) + loggedQty;
     } else if(moveType === "retorno"){
+      // Retorno normal: volta pro estoque como novo.
       loggedQty = Math.min(qty, item.qtyEmUso||0);
       newQtyEmUso = Math.max(0, (item.qtyEmUso||0) - loggedQty);
       newQty = item.qty + loggedQty;
+    } else if(moveType === "retorno_usado"){
+      // Retorno de uniforme já usado: volta pro estoque, mas cadastrado
+      // separadamente como "no estoque (usado)", não junto do estoque novo.
+      loggedQty = Math.min(qty, item.qtyEmUso||0);
+      newQtyEmUso = Math.max(0, (item.qtyEmUso||0) - loggedQty);
+      newQtyUsado = (item.qtyUsado||0) + loggedQty;
     }
     var btn = document.getElementById("moveConfirm"); btn.disabled = true;
     try{
-      var updatedItem = await dbUpdate("items", item.id, {qty:newQty, qty_em_uso:newQtyEmUso}, mapItemFromRow);
+      var updatedItem = await dbUpdate("items", item.id, {qty:newQty, qty_em_uso:newQtyEmUso, qty_usado:newQtyUsado}, mapItemFromRow);
       var mov = await dbInsert("movements", {id:uid(), item_id:item.id, type:moveType, qty:loggedQty, note:note, destino:destino||null, date:new Date().toISOString(), recebido_por_nome:recebidoPorNome, comprovante_uniforme:comprovanteUniforme}, mapMovementFromRow);
       var idx = state.estoque.items.findIndex(function(i){ return i.id===item.id; });
       if(idx>-1) state.estoque.items[idx] = updatedItem;
@@ -3145,7 +3211,8 @@
       closeMoveSheet();
       var toastMap = {
         entrada:"Entrada registrada", saida:"Saída registrada",
-        uso:"Marcado como em uso", retorno:"Retorno registrado"
+        uso:"Marcado como em uso", retorno:"Retorno registrado (novo)",
+        retorno_usado:"Retorno registrado — no estoque (usado)"
       };
       var msgToast = toastMap[typeForToast] || "Registrado";
       if(typeForToast === "saida" && destino === "Recepção") msgToast = "Movido pra recepção — ainda não descontado do estoque";
@@ -5309,6 +5376,7 @@
   }
 
   var supervisaoPeriod = "7"; // '1' | '7' | '30'
+  var supervisaoEstoqueCategoria = "Frigobar"; // aba de categoria dentro de Supervisão > Estoque
 
   function computeHistoricoSolicitacoes(days, tipos){
     var since = Date.now() - days*24*3600*1000;
@@ -5488,82 +5556,106 @@
   }
 
   function renderSupervisaoEstoqueTopico(content){
+    // Sub-abas por categoria (Frigobar, Limpeza, Enxoval, Manutenção,
+    // Uniformes) — cada uma mostra seu próprio histórico de Entradas e
+    // Saídas. Os relatórios específicos de abastecimento/compra (que só
+    // fazem sentido pro Frigobar) ficam só dentro dessa aba.
+    var catTabsHtml = '<div class="cat-tabs" style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;margin-top:14px;">' +
+      CATEGORIES.map(function(cat){
+        var active = supervisaoEstoqueCategoria === cat;
+        return '<button data-scat="'+cat+'" style="white-space:nowrap;padding:7px 13px;border-radius:20px;font-size:12.5px;font-weight:'+(active?'800':'700')+';border:none;color:'+(active?'#fff':'var(--ink-600)')+';background:'+(active?'var(--teal-700)':'var(--sand-100)')+';">'+escapeHtml(CATEGORY_LABEL[cat])+'</button>';
+      }).join("") + '</div>';
+
+    var isFrigobar = supervisaoEstoqueCategoria === "Frigobar";
+
     content.innerHTML =
-      '<div class="period-chips" style="margin-top:14px;">' + ["1","7","30"].map(function(p){
+      catTabsHtml +
+      '<div class="period-chips" style="margin-top:10px;">' + ["1","7","30"].map(function(p){
         var label = p==="1" ? "Hoje" : (p==="7" ? "7 dias" : "30 dias");
         return '<button data-hperiod="'+p+'" class="'+(supervisaoPeriod===p?"active":"")+'">'+label+'</button>';
       }).join("") + '</div>' +
-      '<div id="supEstoqueHistoricoSolic"></div>' +
-      '<div class="section-title" style="margin-top:22px;">⏱️ Tempo médio de abastecimento</div>' +
-      '<div id="supEstoqueTempoAbastecimento"></div>' +
-      '<div class="section-title" style="margin-top:22px;">Movimentações de estoque</div>' +
+      (isFrigobar ? (
+        '<div id="supEstoqueHistoricoSolic"></div>' +
+        '<div class="section-title" style="margin-top:22px;">⏱️ Tempo médio de abastecimento</div>' +
+        '<div id="supEstoqueTempoAbastecimento"></div>'
+      ) : '') +
+      '<div class="section-title" style="margin-top:22px;">Movimentações — '+escapeHtml(CATEGORY_LABEL[supervisaoEstoqueCategoria])+'</div>' +
       '<div id="supEstoqueMovimentacoes"></div>' +
-      '<div class="section-title" style="margin-top:22px;">Relatório e sugestão de compra</div>' +
-      '<div id="reportText" class="report-box"></div>' +
-      '<div class="share-row">' +
-        '<button class="share-btn wa" id="sendWa">Enviar por WhatsApp</button>' +
-        '<button class="share-btn mail" id="sendMail">Enviar por Email</button>' +
-      '</div>' +
-      '<button type="button" class="link-btn" id="reportSupplierManager">🚚 Gerenciar fornecedores</button>' +
-      '<button type="button" class="link-btn" id="reportHospedinSync">🔗 Sincronizar com Hospedin</button>' +
-      '<div id="purchaseSuggestSection"></div>' +
-      '<div id="pedidosCompraSection" style="margin-top:22px;"></div>';
+      (isFrigobar ? (
+        '<div class="section-title" style="margin-top:22px;">Relatório e sugestão de compra</div>' +
+        '<div id="reportText" class="report-box"></div>' +
+        '<div class="share-row">' +
+          '<button class="share-btn wa" id="sendWa">Enviar por WhatsApp</button>' +
+          '<button class="share-btn mail" id="sendMail">Enviar por Email</button>' +
+        '</div>' +
+        '<button type="button" class="link-btn" id="reportSupplierManager">🚚 Gerenciar fornecedores</button>' +
+        '<button type="button" class="link-btn" id="reportHospedinSync">🔗 Sincronizar com Hospedin</button>' +
+        '<div id="purchaseSuggestSection"></div>' +
+        '<div id="pedidosCompraSection" style="margin-top:22px;"></div>'
+      ) : '');
 
+    content.querySelectorAll("[data-scat]").forEach(function(b){
+      b.onclick = function(){ supervisaoEstoqueCategoria = b.getAttribute("data-scat"); renderSupervisao(); };
+    });
     content.querySelectorAll("[data-hperiod]").forEach(function(b){
       b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); renderSupervisao(); };
     });
 
-    var histSolic = computeHistoricoSolicitacoes(parseInt(supervisaoPeriod,10), ["frigobar"]);
-    var histEl = document.getElementById("supEstoqueHistoricoSolic");
-    if(histSolic.items.length === 0){
-      histEl.innerHTML = '<div class="empty">Nenhum abastecimento concluído neste período.</div>';
-    } else {
-      var hh = '<div class="card">';
-      histSolic.items.forEach(function(s){
-        var dur = (s.criadoEm && s.concluidoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-        hh += '<div class="move-row"><div>🥤 <strong>Abastecimento</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId))+
-          (dur!=null ? ('<br><span style="color:var(--ink-400);font-size:12px;">levou '+fmtDuration(dur)+'</span>') : '')+
-          (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">✓ concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '')+
-          '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
-      });
-      hh += '</div>';
-      histEl.innerHTML = hh;
+    if(isFrigobar){
+      var histSolic = computeHistoricoSolicitacoes(parseInt(supervisaoPeriod,10), ["frigobar"]);
+      var histEl = document.getElementById("supEstoqueHistoricoSolic");
+      if(histSolic.items.length === 0){
+        histEl.innerHTML = '<div class="empty">Nenhum abastecimento concluído neste período.</div>';
+      } else {
+        var hh = '<div class="card">';
+        histSolic.items.forEach(function(s){
+          var dur = (s.criadoEm && s.concluidoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
+          hh += '<div class="move-row"><div>🥤 <strong>Abastecimento</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId))+
+            (dur!=null ? ('<br><span style="color:var(--ink-400);font-size:12px;">levou '+fmtDuration(dur)+'</span>') : '')+
+            (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">✓ concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '')+
+            '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
+        });
+        hh += '</div>';
+        histEl.innerHTML = hh;
+      }
+      wireSolicitacaoActions(histEl);
+
+      var tempos = computeTempoMedioPorAcomodacao(parseInt(supervisaoPeriod,10)).filter(function(r){ return r.abastecimentoN > 0; });
+      var tempoEl = document.getElementById("supEstoqueTempoAbastecimento");
+      if(tempos.length === 0){
+        tempoEl.innerHTML = '<div class="empty">Ainda não há dados suficientes no período.</div>';
+      } else {
+        var th = '<div class="card">';
+        tempos.forEach(function(r, i){
+          th += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+            '<p style="margin:0;font-size:14px;font-weight:700;">'+escapeHtml(r.nome)+'</p>' +
+            '<p class="item-meta"><b>'+fmtDuration(r.abastecimentoMedia)+'</b> · '+r.abastecimentoN+' concluído(s)</p>' +
+          '</div>';
+        });
+        th += '</div>';
+        tempoEl.innerHTML = th;
+      }
     }
-    wireSolicitacaoActions(histEl);
 
-    var tempos = computeTempoMedioPorAcomodacao(parseInt(supervisaoPeriod,10)).filter(function(r){ return r.abastecimentoN > 0; });
-    var tempoEl = document.getElementById("supEstoqueTempoAbastecimento");
-    if(tempos.length === 0){
-      tempoEl.innerHTML = '<div class="empty">Ainda não há dados suficientes no período.</div>';
-    } else {
-      var th = '<div class="card">';
-      tempos.forEach(function(r, i){
-        th += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
-          '<p style="margin:0;font-size:14px;font-weight:700;">'+escapeHtml(r.nome)+'</p>' +
-          '<p class="item-meta"><b>'+fmtDuration(r.abastecimentoMedia)+'</b> · '+r.abastecimentoN+' concluído(s)</p>' +
-        '</div>';
-      });
-      th += '</div>';
-      tempoEl.innerHTML = th;
+    renderSupervisaoMovesPorCategoria(document.getElementById("supEstoqueMovimentacoes"), supervisaoEstoqueCategoria);
+
+    if(isFrigobar){
+      var text = buildReportText();
+      document.getElementById("reportText").textContent = text;
+      document.getElementById("sendWa").onclick = function(){
+        var url = "https://wa.me/?text=" + encodeURIComponent(text);
+        window.open(url, "_blank");
+      };
+      document.getElementById("sendMail").onclick = function(){
+        var subject = "Relatório de estoque - Bagua Bangalôs - " + new Date().toLocaleDateString("pt-BR");
+        var url = "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(text);
+        window.location.href = url;
+      };
+      document.getElementById("reportSupplierManager").onclick = function(){ openSupplierList(); };
+      document.getElementById("reportHospedinSync").onclick = function(){ openHospedinSync(); };
+      renderPurchaseSuggestSection();
+      renderPedidosCompraSection();
     }
-
-    renderMovesInto(document.getElementById("supEstoqueMovimentacoes"));
-
-    var text = buildReportText();
-    document.getElementById("reportText").textContent = text;
-    document.getElementById("sendWa").onclick = function(){
-      var url = "https://wa.me/?text=" + encodeURIComponent(text);
-      window.open(url, "_blank");
-    };
-    document.getElementById("sendMail").onclick = function(){
-      var subject = "Relatório de estoque - Bagua Bangalôs - " + new Date().toLocaleDateString("pt-BR");
-      var url = "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(text);
-      window.location.href = url;
-    };
-    document.getElementById("reportSupplierManager").onclick = function(){ openSupplierList(); };
-    document.getElementById("reportHospedinSync").onclick = function(){ openHospedinSync(); };
-    renderPurchaseSuggestSection();
-    renderPedidosCompraSection();
   }
 
   function renderSupervisaoManutencaoTopico(content){
