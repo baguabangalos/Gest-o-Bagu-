@@ -745,10 +745,50 @@
   "use strict";
 
   // ---------- Supabase ----------
-  var SUPABASE_URL = "https://uyqlkkwhtbwdorxssuxb.supabase.co";
-  var SUPABASE_ANON_KEY = "sb_publishable_SjZqlf6p1qP6p_kXeIvmZQ_CETTCP5R"; // Publishable key (Settings > API Keys)
+  var SUPABASE_URL = "https://pxfyhttjngsjqupyihso.supabase.co";
+  var SUPABASE_ANON_KEY = "sb_publishable_ZGq87qAHkD7uYT3TcpeQIQ_F7flOvWq"; // Publishable key (Settings > API Keys) — projeto novo (gerencia.baguapousada@gmail.com)
   var VAPID_PUBLIC_KEY = "BOdPayA7TM7NbST3dl0BU0YKe0u96t8tusDrhwiae-kbl0ZgRtl_cmuL-F6afW2LzASWDV6SYVdPED7MAwp_jS4";
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // ---------- Storage de fotos/anexos (evita guardar base64 nas tabelas) ----------
+  // Antes, fotos (comprovante de uniforme, fotos de abastecimento, foto da
+  // jacuzzi, foto de pedido de compra, anexos de procedimento) eram salvas
+  // como base64 direto nas colunas do banco. Isso fazia cada linha pesar
+  // megabytes, e como essas tabelas são recarregadas inteiras toda vez que
+  // o app abre, o consumo de "egress" do Supabase explodia (o mesmo dado
+  // pesado sendo baixado de novo, por todo mundo, o tempo todo).
+  // Agora essas fotos vão pro Supabase Storage (bucket "app-anexos"), e só
+  // guardamos um caminho curto (texto) na coluna. A imagem só é baixada de
+  // fato quando alguém efetivamente clica pra ver.
+  var ANEXOS_BUCKET = "app-anexos";
+  var _signedUrlCache = {}; // path -> {url, expiraEm}
+  async function uploadAnexoParaStorage(dataUrl, prefixo){
+    if(!dataUrl || typeof dataUrl !== "string" || dataUrl.indexOf("data:") !== 0) return dataUrl || null;
+    var blob = await (await fetch(dataUrl)).blob();
+    var ext = (blob.type && blob.type.indexOf("png") > -1) ? "png" : (blob.type && blob.type.indexOf("pdf") > -1 ? "pdf" : "jpg");
+    var path = prefixo + "/" + Date.now() + "-" + Math.random().toString(36).slice(2,8) + "." + ext;
+    var up = await sb.storage.from(ANEXOS_BUCKET).upload(path, blob, {contentType: blob.type || "image/jpeg"});
+    if(up.error) throw up.error;
+    return path; // guardamos só o caminho, não a URL (a URL assinada expira)
+  }
+  // Recebe um caminho de storage (ou, por compatibilidade com dados antigos
+  // ainda não migrados, um data:/http já pronto) e devolve uma URL utilizável.
+  async function resolverUrlAnexo(pathOuDataUrl){
+    if(!pathOuDataUrl) return "";
+    if(pathOuDataUrl.indexOf("data:") === 0 || pathOuDataUrl.indexOf("http") === 0) return pathOuDataUrl;
+    var cached = _signedUrlCache[pathOuDataUrl];
+    if(cached && cached.expiraEm > Date.now()) return cached.url;
+    var signed = await sb.storage.from(ANEXOS_BUCKET).createSignedUrl(pathOuDataUrl, 3600);
+    if(signed.error){ console.error(signed.error); return ""; }
+    _signedUrlCache[pathOuDataUrl] = {url: signed.data.signedUrl, expiraEm: Date.now() + 55*60*1000};
+    return signed.data.signedUrl;
+  }
+  // Botão "ver foto" que só busca a imagem quando clicado, em vez de
+  // carregar todas as fotos de uma lista inteira de uma vez.
+  window.verAnexoClick = async function(btn, path){
+    var url = await resolverUrlAnexo(path);
+    if(url) abrirFotoViewer(url); else showToast("Não foi possível carregar a foto");
+  };
 
   // Detecta quando a pessoa clica no link de "esqueci minha senha" do e-mail
   sb.auth.onAuthStateChange(function(event, session){
@@ -1830,7 +1870,7 @@
       (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
       (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
       (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">👤 Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
-        (m.comprovanteUniforme ? '<br><img src="'+m.comprovanteUniforme+'" onclick="abrirFotoViewer(this.src)" style="max-width:90px;max-height:60px;border-radius:6px;border:1px solid var(--line);cursor:pointer;margin-top:4px;" alt="comprovante">' : '') : '') +
+        (m.comprovanteUniforme ? '<br><button type="button" onclick="verAnexoClick(this, \''+escapeHtml(m.comprovanteUniforme)+'\')" style="margin-top:4px;background:var(--sand-100);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;">📷 Ver comprovante</button>' : '') : '') +
       '</div><div style="display:flex;align-items:center;gap:8px;">' +
       '<div class="move-date">'+fmtDate(m.date)+'</div>' +
       (podeMexer ? (
@@ -3172,6 +3212,13 @@
         comprovanteUniforme = document.getElementById("moveUniformeCanvas").toDataURL("image/png");
       } else {
         showToast("Tire uma foto do termo ou peça pra assinar na tela antes de confirmar");
+        return;
+      }
+      try{
+        comprovanteUniforme = await uploadAnexoParaStorage(comprovanteUniforme, "comprovantes-uniforme");
+      }catch(err){
+        console.error(err);
+        showToast("Não foi possível salvar a foto do comprovante");
         return;
       }
     }
