@@ -373,6 +373,7 @@
 <main id="abastecimentoView" style="display:none;"></main>
 <main id="procedimentosView" style="display:none;"></main>
 <main id="manutencoesView" style="display:none;"></main>
+<main id="equipamentosView" style="display:none;"></main>
 <main id="adminView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
@@ -729,6 +730,41 @@
   </div>
 </div>
 
+<!-- Sheet: add/edit equipamento -->
+<div class="sheet-overlay" id="equipamentoSheetOverlay">
+  <div class="sheet">
+    <h2 id="equipamentoSheetTitle">Novo equipamento</h2>
+    <div id="eq_statusBadge" style="display:none;margin-bottom:10px;"></div>
+    <form id="equipamentoForm">
+      <label>Nome</label>
+      <input type="text" id="eq_nome" required placeholder="Ex: Ar-condicionado, Bomba d'água...">
+      <label>Tipo (opcional)</label>
+      <input type="text" id="eq_tipo" placeholder="Ex: Ar-condicionado, Bomba, Rotiador...">
+      <label>Local / acomodação atual</label>
+      <input type="text" id="eq_local" list="eq_localOptions" placeholder="Ex: Bangalô 3, Depósito...">
+      <datalist id="eq_localOptions"></datalist>
+      <label>Prazo de manutenção (meses)</label>
+      <input type="number" id="eq_prazoMeses" min="1" step="1" placeholder="Ex: 3">
+      <label>Última manutenção</label>
+      <input type="date" id="eq_ultimaManutencao">
+      <label>Observações (opcional)</label>
+      <textarea id="eq_obs" placeholder="Detalhes, número de série, prestador de serviço..."></textarea>
+      <div class="sheet-actions">
+        <button type="button" class="btn-secondary" id="equipamentoCancel">Cancelar</button>
+        <button type="submit" class="btn-primary">Salvar</button>
+      </div>
+      <button type="button" class="sheet-actions btn-primary" id="equipamentoConcertoBtn" style="display:none;width:100%;margin-top:10px;background:var(--amber-600);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;">🔧 Enviar para conserto</button>
+      <button type="button" class="sheet-actions btn-primary" id="equipamentoVoltouBtn" style="display:none;width:100%;margin-top:10px;background:var(--teal-700);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;">↩ Voltou do conserto</button>
+      <button type="button" class="btn-secondary" id="equipamentoManutencaoFeitaBtn" style="width:100%;margin-top:10px;border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:600;font-family:inherit;">✓ Marcar manutenção feita hoje</button>
+      <div id="eq_historicoWrap" style="display:none;margin-top:16px;">
+        <p style="margin:0 0 8px;font-size:12.5px;font-weight:700;color:var(--ink-600);">Histórico</p>
+        <div id="eq_historicoList"></div>
+      </div>
+      <button type="button" class="btn-danger-text" id="equipamentoDelete" style="display:none;">Excluir equipamento</button>
+    </form>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- Visualizador de foto/assinatura em tela cheia, dentro do próprio app -->
@@ -842,6 +878,15 @@
   function mapAcomodacaoFromRow(r){
     return {id:r.id, nome:r.nome, ativo:r.ativo, ordem:r.ordem, codigoHospedin:r.codigo_hospedin};
   }
+  function mapEquipamentoFromRow(r){
+    return {id:r.id, nome:r.nome, tipo:r.tipo, local:r.local, status:r.status||"em_uso",
+      prazoMeses:r.prazo_meses||null, ultimaManutencao:(r.ultima_manutencao?new Date(r.ultima_manutencao).getTime():null),
+      observacoes:r.observacoes, createdAt:new Date(r.created_at).getTime()};
+  }
+  function mapEquipamentoEventoFromRow(r){
+    return {id:r.id, equipamentoId:r.equipamento_id, tipo:r.tipo, local:r.local, observacao:r.observacao,
+      data:new Date(r.data).getTime(), registradoPor:r.registrado_por};
+  }
   function mapSolicitacaoFromRow(r){
     return {id:r.id, acomodacaoId:r.acomodacao_id, tipo:r.tipo, contexto:r.contexto, origem:r.origem,
       status:r.status, criadoEm:new Date(r.criado_em).getTime(),
@@ -920,10 +965,12 @@
       sb.from("solicitacoes_acomodacao").select("*").order("criado_em", {ascending:false}).limit(5000),
       sb.from("staff_names").select("*"),
       sb.from("pedidos_compra").select("*").order("criado_em", {ascending:false}).limit(500),
-      sb.from("app_settings").select("*").eq("key", "hospedin_ultima_sincronizacao").maybeSingle()
+      sb.from("app_settings").select("*").eq("key", "hospedin_ultima_sincronizacao").maybeSingle(),
+      sb.from("equipamentos").select("*").order("nome"),
+      sb.from("equipamento_eventos").select("*").order("data", {ascending:false}).limit(2000)
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
-    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10], syncSettingRes=results[11];
+    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10], syncSettingRes=results[11], equipRes=results[12], equipEvRes=results[13];
     var hospedinOcupacao = hospedinRes.data || [];
     var staffNames = {};
     (staffRes.data||[]).forEach(function(p){ staffNames[p.id] = p.nome; });
@@ -940,6 +987,8 @@
       },
       procedimentos: (procRes.data||[]).map(mapProcedimentoFromRow),
       manutencoes: (manRes.data||[]).map(mapManutencaoFromRow),
+      equipamentos: (equipRes.data||[]).map(mapEquipamentoFromRow),
+      equipamentoEventos: (equipEvRes.data||[]).map(mapEquipamentoEventoFromRow),
       acomodacoes: (acoRes.data||[]).map(mapAcomodacaoFromRow),
       solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !s.excluidoEm; }),
       solicitacoesExcluidas: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !!s.excluidoEm; }),
@@ -1470,6 +1519,10 @@
         h1.textContent = "Serviço Geral";
         sub.textContent = "Jacuzzi e manutenção predial";
         alertPill.style.display = "none";
+      } else if(appSection === "equipamentos"){
+        h1.textContent = "Equipamentos";
+        sub.textContent = "Ar-condicionados, bombas e outros — manutenção e histórico";
+        alertPill.style.display = "none";
       } else if(appSection === "supervisao"){
         h1.textContent = "Supervisão";
         sub.textContent = "Painel geral e histórico";
@@ -1490,6 +1543,7 @@
     if(sec==="limpeza") return "limpeza";
     if(sec==="recepcao") return "recepcao";
     if(sec==="servicogeral") return "servico_geral";
+    if(sec==="equipamentos") return "equipamentos";
     if(sec==="admin" || sec==="supervisao" || sec==="configuracoes") return null;
     return "procedimentos";
   }
@@ -1510,6 +1564,7 @@
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
     document.getElementById("recepcaoView").style.display = appSection==="recepcao" ? "block":"none";
     document.getElementById("servicoGeralView").style.display = appSection==="servicogeral" ? "block":"none";
+    document.getElementById("equipamentosView").style.display = appSection==="equipamentos" ? "block":"none";
     document.getElementById("supervisaoView").style.display = appSection==="supervisao" ? "block":"none";
     document.getElementById("configuracoesView").style.display = appSection==="configuracoes" ? "block":"none";
 
@@ -1523,6 +1578,8 @@
       fab.style.display = "flex"; fab.onclick = function(){ openProcedimentoSheet(null); };
     } else if(appSection==="manutencoes" && podeEditar("manutencao")){
       fab.style.display = "flex"; fab.onclick = function(){ openManutencaoSheet(null); };
+    } else if(appSection==="equipamentos" && podeEditar("equipamentos")){
+      fab.style.display = "flex"; fab.onclick = function(){ openEquipamentoSheet(null); };
     } else {
       fab.style.display = "none"; fab.onclick = null;
     }
@@ -1541,6 +1598,7 @@
     }
     if(appSection === "procedimentos") renderProcedimentos();
     if(appSection === "manutencoes") renderManutencoes();
+    if(appSection === "equipamentos") renderEquipamentos();
     if(appSection === "admin") renderAdmin();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
@@ -1614,6 +1672,16 @@
       '<div class="card home-card" data-section="servicogeral">' +
         '<div class="home-card-ic">🛁</div>' +
         '<div class="home-card-main"><p class="home-card-title">Serviço Geral</p><p class="home-card-sub">jacuzzi e manutenção predial</p></div>' +
+        '<div class="home-card-arrow">›</div>' +
+      '</div>';
+    }
+    if(podeVer("equipamentos")){
+      var equipAlertCount = state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length;
+      var equipSub = equipAlertCount > 0 ? (equipAlertCount + (equipAlertCount===1?" equipamento precisa de atenção":" equipamentos precisam de atenção")) : "tudo em dia";
+      cardsHtml +=
+      '<div class="card home-card" data-section="equipamentos">' +
+        '<div class="home-card-ic">🔧</div>' +
+        '<div class="home-card-main"><p class="home-card-title">Equipamentos</p><p class="home-card-sub">'+escapeHtml(equipSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
@@ -3899,6 +3967,216 @@
     });
   }
 
+  // ---------- Equipamentos (ar-condicionados, bombas, etc.) ----------
+  var equipamentoOverlay = document.getElementById("equipamentoSheetOverlay");
+  var editingEquipamentoId = null;
+
+  function fmtDateOnly(ts){
+    if(!ts) return "";
+    var d = new Date(ts);
+    return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear();
+  }
+  function proximaManutencaoTs(e){
+    if(!e.prazoMeses) return null;
+    var base = e.ultimaManutencao || e.createdAt;
+    if(!base) return null;
+    var d = new Date(base);
+    d.setMonth(d.getMonth() + e.prazoMeses);
+    return d.getTime();
+  }
+  function isEquipamentoVencido(e){
+    var prox = proximaManutencaoTs(e);
+    return !!prox && prox <= Date.now();
+  }
+  function equipamentoStatusInfo(e){
+    if(e.status === "em_conserto") return {cor:"var(--amber-600)", label:"🔧 Em conserto"};
+    if(isEquipamentoVencido(e)) return {cor:"var(--red-600)", label:"🔴 Manutenção vencida"};
+    return {cor:"var(--teal-700)", label:"🟢 Em uso"};
+  }
+
+  function renderEquipamentos(){
+    var main = document.getElementById("equipamentosView");
+    var list = state.equipamentos.slice().sort(function(a,b){
+      var va = (a.status==="em_conserto"||isEquipamentoVencido(a)) ? 0 : 1;
+      var vb = (b.status==="em_conserto"||isEquipamentoVencido(b)) ? 0 : 1;
+      if(va !== vb) return va - vb;
+      return (a.nome||"").localeCompare(b.nome||"", "pt-BR");
+    });
+    var html = "";
+    if(list.length === 0){
+      html += '<div class="empty">Nenhum equipamento cadastrado ainda. Toque em "+" para adicionar.</div>';
+    } else {
+      list.forEach(function(e){
+        var info = equipamentoStatusInfo(e);
+        var prox = proximaManutencaoTs(e);
+        html += '<div class="card equip-card" data-id="'+e.id+'" style="border-left:4px solid '+info.cor+';">' +
+          '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+info.cor+';margin-bottom:4px;">'+info.label+'</span>' +
+          '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(e.nome)+(e.tipo?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(e.tipo)+'</span>':'')+'</p>';
+        if(e.local) html += '<p class="item-meta">📍 '+escapeHtml(e.local)+'</p>';
+        if(prox) html += '<p class="item-meta">próxima manutenção: '+fmtDateOnly(prox)+(isEquipamentoVencido(e)?' (vencida)':'')+'</p>';
+        html += '</div>';
+      });
+    }
+    main.innerHTML = html;
+    main.querySelectorAll(".equip-card").forEach(function(c){
+      c.onclick = function(){
+        var e = state.equipamentos.find(function(x){ return x.id===c.getAttribute("data-id"); });
+        if(e) openEquipamentoSheet(e);
+      };
+    });
+  }
+
+  function renderEquipamentoHistorico(equipamentoId){
+    var wrap = document.getElementById("eq_historicoList");
+    var eventos = state.equipamentoEventos.filter(function(ev){ return ev.equipamentoId===equipamentoId; })
+      .sort(function(a,b){ return b.data - a.data; });
+    if(eventos.length === 0){ wrap.innerHTML = '<p class="item-meta">Nenhum evento registrado ainda.</p>'; return; }
+    var TIPO_EV_LABEL = {enviado:"🔧 Enviado para conserto", retornou:"↩ Voltou do conserto", manutencao:"✓ Manutenção realizada"};
+    var h = "";
+    eventos.forEach(function(ev, i){
+      h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:8px;margin-top:8px;':'')+'">' +
+        '<p style="margin:0;font-size:13.5px;font-weight:700;">'+(TIPO_EV_LABEL[ev.tipo]||ev.tipo)+'</p>' +
+        '<p class="item-meta">'+fmtDate(ev.data)+(ev.local?' · '+escapeHtml(ev.local):'')+'</p>' +
+        (ev.observacao ? '<p class="item-meta">'+escapeHtml(ev.observacao)+'</p>' : '') +
+      '</div>';
+    });
+    wrap.innerHTML = h;
+  }
+
+  function openEquipamentoSheet(e){
+    editingEquipamentoId = e ? e.id : null;
+    document.getElementById("equipamentoSheetTitle").textContent = e ? "Editar equipamento" : "Novo equipamento";
+    document.getElementById("eq_nome").value = e ? e.nome : "";
+    document.getElementById("eq_tipo").value = e ? (e.tipo||"") : "";
+    document.getElementById("eq_local").value = e ? (e.local||"") : "";
+    document.getElementById("eq_prazoMeses").value = e ? (e.prazoMeses||"") : "";
+    document.getElementById("eq_ultimaManutencao").value = e && e.ultimaManutencao ? new Date(e.ultimaManutencao).toISOString().slice(0,10) : "";
+    document.getElementById("eq_obs").value = e ? (e.observacoes||"") : "";
+    var localOptions = document.getElementById("eq_localOptions");
+    localOptions.innerHTML = state.acomodacoes.map(function(a){ return '<option value="'+escapeHtml(a.nome)+'">'; }).join("");
+    var badge = document.getElementById("eq_statusBadge");
+    if(e){
+      var info = equipamentoStatusInfo(e);
+      badge.style.display = "block";
+      badge.innerHTML = '<span style="display:inline-block;font-size:12px;font-weight:800;color:'+info.cor+';">'+info.label+'</span>';
+    } else {
+      badge.style.display = "none";
+    }
+    document.getElementById("equipamentoConcertoBtn").style.display = (e && e.status !== "em_conserto") ? "block" : "none";
+    document.getElementById("equipamentoVoltouBtn").style.display = (e && e.status === "em_conserto") ? "block" : "none";
+    document.getElementById("equipamentoManutencaoFeitaBtn").style.display = e ? "block" : "none";
+    document.getElementById("equipamentoDelete").style.display = (e && podeExcluir("equipamentos")) ? "block" : "none";
+    var histWrap = document.getElementById("eq_historicoWrap");
+    if(e){ histWrap.style.display = "block"; renderEquipamentoHistorico(e.id); }
+    else { histWrap.style.display = "none"; }
+    equipamentoOverlay.classList.add("open");
+  }
+  function closeEquipamentoSheet(){ equipamentoOverlay.classList.remove("open"); editingEquipamentoId = null; }
+
+  document.getElementById("equipamentoCancel").onclick = closeEquipamentoSheet;
+  equipamentoOverlay.addEventListener("click", function(ev){ if(ev.target===equipamentoOverlay) closeEquipamentoSheet(); });
+
+  async function registrarEventoEquipamento(equipamentoId, tipo, local, observacao){
+    var ev = await dbInsert("equipamento_eventos", {id:uid(), equipamento_id:equipamentoId, tipo:tipo, local:local||null, observacao:observacao||null, data:new Date().toISOString(), registrado_por:(currentUser?currentUser.nome:null)}, mapEquipamentoEventoFromRow);
+    state.equipamentoEventos.unshift(ev);
+  }
+
+  document.getElementById("equipamentoForm").addEventListener("submit", async function(ev){
+    ev.preventDefault();
+    if(!podeEditar("equipamentos")){ showToast("Você não tem permissão para editar equipamentos"); return; }
+    var nome = document.getElementById("eq_nome").value.trim();
+    if(!nome) return;
+    var tipo = document.getElementById("eq_tipo").value.trim();
+    var local = document.getElementById("eq_local").value.trim();
+    var prazoRaw = document.getElementById("eq_prazoMeses").value;
+    var prazoMeses = prazoRaw ? parseInt(prazoRaw, 10) : null;
+    var ultimaRaw = document.getElementById("eq_ultimaManutencao").value;
+    var ultimaManutencao = ultimaRaw ? new Date(ultimaRaw+"T00:00:00").toISOString() : null;
+    var observacoes = document.getElementById("eq_obs").value.trim();
+    try{
+      if(editingEquipamentoId){
+        var payload = {nome:nome, tipo:tipo, local:local, prazo_meses:prazoMeses, ultima_manutencao:ultimaManutencao, observacoes:observacoes};
+        var e1 = await dbUpdate("equipamentos", editingEquipamentoId, payload, mapEquipamentoFromRow);
+        var idx1 = state.equipamentos.findIndex(function(x){ return x.id===editingEquipamentoId; });
+        if(idx1>-1) state.equipamentos[idx1] = e1;
+        showToast("Equipamento atualizado");
+      } else {
+        var e2 = await dbInsert("equipamentos", {id:uid(), nome:nome, tipo:tipo, local:local, status:"em_uso", prazo_meses:prazoMeses, ultima_manutencao:ultimaManutencao, observacoes:observacoes}, mapEquipamentoFromRow);
+        state.equipamentos.push(e2);
+        showToast("Equipamento cadastrado");
+      }
+      closeEquipamentoSheet();
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar equipamento");
+    }
+  });
+
+  document.getElementById("equipamentoConcertoBtn").onclick = async function(){
+    if(!editingEquipamentoId) return;
+    if(!podeEditar("equipamentos")){ showToast("Você não tem permissão para editar equipamentos"); return; }
+    var local = document.getElementById("eq_local").value.trim();
+    try{
+      var e3 = await dbUpdate("equipamentos", editingEquipamentoId, {status:"em_conserto"}, mapEquipamentoFromRow);
+      var idx3 = state.equipamentos.findIndex(function(x){ return x.id===editingEquipamentoId; });
+      if(idx3>-1) state.equipamentos[idx3] = e3;
+      await registrarEventoEquipamento(editingEquipamentoId, "enviado", local, null);
+      closeEquipamentoSheet();
+      showToast("Equipamento enviado para conserto");
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao atualizar equipamento");
+    }
+  };
+  document.getElementById("equipamentoVoltouBtn").onclick = async function(){
+    if(!editingEquipamentoId) return;
+    if(!podeEditar("equipamentos")){ showToast("Você não tem permissão para editar equipamentos"); return; }
+    var local = document.getElementById("eq_local").value.trim();
+    try{
+      var e4 = await dbUpdate("equipamentos", editingEquipamentoId, {status:"em_uso", local:local}, mapEquipamentoFromRow);
+      var idx4 = state.equipamentos.findIndex(function(x){ return x.id===editingEquipamentoId; });
+      if(idx4>-1) state.equipamentos[idx4] = e4;
+      await registrarEventoEquipamento(editingEquipamentoId, "retornou", local, null);
+      closeEquipamentoSheet();
+      showToast("Equipamento de volta do conserto");
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao atualizar equipamento");
+    }
+  };
+  document.getElementById("equipamentoManutencaoFeitaBtn").onclick = async function(){
+    if(!editingEquipamentoId) return;
+    if(!podeEditar("equipamentos")){ showToast("Você não tem permissão para editar equipamentos"); return; }
+    var local = document.getElementById("eq_local").value.trim();
+    try{
+      var agora = new Date().toISOString();
+      var e5 = await dbUpdate("equipamentos", editingEquipamentoId, {ultima_manutencao: agora}, mapEquipamentoFromRow);
+      var idx5 = state.equipamentos.findIndex(function(x){ return x.id===editingEquipamentoId; });
+      if(idx5>-1) state.equipamentos[idx5] = e5;
+      await registrarEventoEquipamento(editingEquipamentoId, "manutencao", local, null);
+      closeEquipamentoSheet();
+      showToast("Manutenção registrada");
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao registrar manutenção");
+    }
+  };
+  document.getElementById("equipamentoDelete").onclick = async function(){
+    if(!editingEquipamentoId) return;
+    if(!podeExcluir("equipamentos")){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
+    if(!confirm("Excluir este equipamento? O histórico também será apagado.")) return;
+    try{
+      await dbDelete("equipamentos", editingEquipamentoId);
+      state.equipamentos = state.equipamentos.filter(function(x){ return x.id!==editingEquipamentoId; });
+      state.equipamentoEventos = state.equipamentoEventos.filter(function(x){ return x.equipamentoId!==editingEquipamentoId; });
+      closeEquipamentoSheet();
+      showToast("Equipamento excluído");
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao excluir equipamento");
+    }
+  };
+
   // ---------- Limpeza (pedidos de hóspede + tarefas do dia) ----------
   var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto", ventilacao:"Fechar acomodação", roupa_cama:"Troca de roupa de cama", sauna:"Ligar a sauna", lenha:"Reposição de lenha"};
   var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️", ventilacao:"💨", roupa_cama:"🧺", sauna:"🧖", lenha:"🪵"};
@@ -5764,7 +6042,8 @@
     {key:"hospedes", label:"Hóspedes/Documentos"},
     {key:"limpeza", label:"Limpeza (pedidos dos hóspedes)"},
     {key:"recepcao", label:"Recepção (painel de acompanhamento)"},
-    {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"}
+    {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
+    {key:"equipamentos", label:"Equipamentos (ar-condicionados, bombas etc.)"}
   ];
   var adminUsersCache = null; // [{id,nome,email,role,ativo,permissoes:{modulo:{ver,editar}}}]
 
