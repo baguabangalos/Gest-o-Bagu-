@@ -896,11 +896,14 @@
   }
   function mapTurnoExecucaoFromRow(r){
     return {id:r.id, turnoId:r.turno_id, data:r.data, criadoEm:new Date(r.criado_em).getTime(),
-      enviadoEmailEm:(r.enviado_email_em?new Date(r.enviado_email_em).getTime():null)};
+      enviadoEmailEm:(r.enviado_email_em?new Date(r.enviado_email_em).getTime():null),
+      concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null), concluidoPor:r.concluido_por,
+      observacaoPendencias:r.observacao_pendencias};
   }
   function mapTurnoAtividadeExecucaoFromRow(r){
     return {id:r.id, turnoExecucaoId:r.turno_execucao_id, turnoAtividadeId:r.turno_atividade_id, status:r.status||"pendente",
-      motivo:r.motivo, marcadoEm:(r.marcado_em?new Date(r.marcado_em).getTime():null), marcadoPor:r.marcado_por};
+      motivo:r.motivo, marcadoEm:(r.marcado_em?new Date(r.marcado_em).getTime():null), marcadoPor:r.marcado_por,
+      repassadoTurnoId:r.repassado_turno_id||null};
   }
   function mapSolicitacaoFromRow(r){
     return {id:r.id, acomodacaoId:r.acomodacao_id, tipo:r.tipo, contexto:r.contexto, origem:r.origem,
@@ -4368,6 +4371,46 @@
         html += '</div>';
       });
     }
+
+    var pendenciasHerdadas = state.turnoAtividadeExecucoes.filter(function(x){ return x.repassadoTurnoId===turno.id && x.status==="pendente"; });
+    if(pendenciasHerdadas.length > 0){
+      html += '<div class="section-title">📥 Pendências do turno anterior</div>';
+      pendenciasHerdadas.forEach(function(item){
+        var ativOrig = state.turnoAtividades.find(function(a){ return a.id===item.turnoAtividadeId; });
+        var execOrig = state.turnoExecucoes.find(function(e){ return e.id===item.turnoExecucaoId; });
+        var turnoOrig = execOrig ? state.turnos.find(function(t){ return t.id===execOrig.turnoId; }) : null;
+        html += '<div class="card" data-item-id="'+item.id+'" style="border-left:4px solid var(--amber-600);">' +
+          '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(ativOrig?ativOrig.titulo:"Atividade")+'</p>' +
+          '<p class="item-meta">herdado de '+(turnoOrig?escapeHtml(turnoOrig.nome):"—")+(execOrig?(' — '+fmtDateOnly(dateAtLocalTime(execOrig.data,"00:00").getTime())):'')+'</p>' +
+          '<div class="item-actions">' +
+            '<button class="btn btn-in" data-herdado-act="feito" data-item-id="'+item.id+'">✓ Feito</button>' +
+            '<button class="btn btn-out" data-herdado-act="naofeito" data-item-id="'+item.id+'">✗ Não realizado</button>' +
+          '</div>' +
+          '<div class="motivo-wrap" data-motivo-herdado-for="'+item.id+'" style="display:none;margin-top:8px;">' +
+            '<textarea class="motivo-input" placeholder="Motivo…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>' +
+            '<button type="button" class="btn-primary motivo-herdado-confirmar" data-item-id="'+item.id+'" style="margin-top:6px;">Confirmar</button>' +
+          '</div>' +
+        '</div>';
+      });
+    }
+
+    var jaConcluido = !!execucao.concluidoEm;
+    html += '<div class="card" style="margin-top:14px;background:var(--sand-50);">';
+    if(jaConcluido){
+      html += '<p style="margin:0;font-size:14px;font-weight:700;">✅ Turno concluído às '+fmtDate(execucao.concluidoEm).split(" ")[1]+(execucao.concluidoPor?(' por '+escapeHtml(execucao.concluidoPor)):'')+'</p>';
+      if(execucao.observacaoPendencias) html += '<p class="item-meta" style="margin-top:6px;">'+escapeHtml(execucao.observacaoPendencias)+'</p>';
+    } else {
+      var bloqueadoPorHerdadas = pendenciasHerdadas.length > 0;
+      html += '<button type="button" id="concluirTurnoBtn" '+(bloqueadoPorHerdadas?"disabled":"")+' style="display:block;width:100%;background:'+(bloqueadoPorHerdadas?"var(--ink-400)":"var(--teal-900)")+';color:#fff;border:none;border-radius:10px;padding:13px;font-family:inherit;font-size:14.5px;font-weight:700;">🏁 Concluir turno</button>';
+      if(bloqueadoPorHerdadas) html += '<p class="item-meta" style="margin-top:6px;">Resolva as pendências do turno anterior antes de concluir o seu.</p>';
+      html += '<div id="concluirTurnoObsWrap" style="display:none;margin-top:10px;">' +
+        '<p class="item-meta" style="margin-bottom:6px;">Atividades ainda pendentes — descreva o que falta pro próximo turno:</p>' +
+        '<textarea id="concluirTurnoObs" placeholder="Observação sobre as pendências…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>' +
+        '<button type="button" id="concluirTurnoConfirmarBtn" class="btn-primary" style="margin-top:8px;">Confirmar conclusão</button>' +
+      '</div>';
+    }
+    html += '</div>';
+
     main.innerHTML = html;
     main.querySelectorAll('button[data-act="feito"]').forEach(function(b){
       b.onclick = function(){ marcarAtividadeTurno(execucao, b.getAttribute("data-id"), "feito", null); };
@@ -4388,6 +4431,99 @@
         marcarAtividadeTurno(execucao, id, "nao_feito", motivo);
       };
     });
+    main.querySelectorAll('button[data-herdado-act="feito"]').forEach(function(b){
+      b.onclick = function(){
+        var item = state.turnoAtividadeExecucoes.find(function(x){ return x.id===b.getAttribute("data-item-id"); });
+        if(item) resolverPendenciaHerdada(item, "feito", null);
+      };
+    });
+    main.querySelectorAll('button[data-herdado-act="naofeito"]').forEach(function(b){
+      b.onclick = function(){
+        var id = b.getAttribute("data-item-id");
+        var wrap = main.querySelector('.motivo-wrap[data-motivo-herdado-for="'+id+'"]');
+        if(wrap) wrap.style.display = "block";
+      };
+    });
+    main.querySelectorAll('.motivo-herdado-confirmar').forEach(function(b){
+      b.onclick = function(){
+        var id = b.getAttribute("data-item-id");
+        var wrap = main.querySelector('.motivo-wrap[data-motivo-herdado-for="'+id+'"]');
+        var motivo = wrap.querySelector(".motivo-input").value.trim();
+        if(!motivo){ showToast("Descreva o motivo"); return; }
+        var item = state.turnoAtividadeExecucoes.find(function(x){ return x.id===id; });
+        if(item) resolverPendenciaHerdada(item, "nao_feito", motivo);
+      };
+    });
+    var concluirBtn = document.getElementById("concluirTurnoBtn");
+    if(concluirBtn){
+      concluirBtn.onclick = function(){
+        var temPendentesProprias = atividades.some(function(a){
+          var item = atividadeExecucaoFor(execucao.id, a.id);
+          return !item || item.status === "pendente";
+        });
+        if(temPendentesProprias){
+          document.getElementById("concluirTurnoObsWrap").style.display = "block";
+        } else if(confirm("Concluir este turno?")){
+          concluirTurno(turno, execucao, "");
+        }
+      };
+    }
+    var concluirConfirmarBtn = document.getElementById("concluirTurnoConfirmarBtn");
+    if(concluirConfirmarBtn){
+      concluirConfirmarBtn.onclick = function(){
+        var obs = document.getElementById("concluirTurnoObs").value.trim();
+        if(!obs){ showToast("Descreva o que ainda está pendente"); return; }
+        concluirTurno(turno, execucao, obs);
+      };
+    }
+  }
+
+  function proximoTurno(turno){
+    var ordenados = state.turnos.slice().sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var idx = ordenados.findIndex(function(t){ return t.id===turno.id; });
+    if(idx === -1 || ordenados.length === 0) return null;
+    return ordenados[(idx+1) % ordenados.length];
+  }
+
+  async function resolverPendenciaHerdada(item, status, motivo){
+    if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para marcar o checklist"); return; }
+    try{
+      var payload = {status:status, motivo:motivo, marcado_em:new Date().toISOString(), marcado_por:(currentUser?currentUser.nome:null)};
+      var upd = await dbUpdate("turno_atividade_execucoes", item.id, payload, mapTurnoAtividadeExecucaoFromRow);
+      var idx = state.turnoAtividadeExecucoes.findIndex(function(x){ return x.id===item.id; });
+      if(idx>-1) state.turnoAtividadeExecucoes[idx] = upd;
+      showToast("Pendência resolvida");
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar");
+    }
+  }
+
+  async function concluirTurno(turno, execucao, observacao){
+    if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para concluir o turno"); return; }
+    try{
+      var alvo = proximoTurno(turno);
+      var atividades = state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id; });
+      for(var i=0; i<atividades.length; i++){
+        var a = atividades[i];
+        var item = atividadeExecucaoFor(execucao.id, a.id);
+        if(!item){
+          var nova = await dbInsert("turno_atividade_execucoes", {id:uid(), turno_execucao_id:execucao.id, turno_atividade_id:a.id, status:"pendente", repassado_turno_id:(alvo?alvo.id:null)}, mapTurnoAtividadeExecucaoFromRow);
+          state.turnoAtividadeExecucoes.push(nova);
+        } else if(item.status === "pendente" && alvo){
+          var upd = await dbUpdate("turno_atividade_execucoes", item.id, {repassado_turno_id: alvo.id}, mapTurnoAtividadeExecucaoFromRow);
+          var idx = state.turnoAtividadeExecucoes.findIndex(function(x){ return x.id===item.id; });
+          if(idx>-1) state.turnoAtividadeExecucoes[idx] = upd;
+        }
+      }
+      var execUpd = await dbUpdate("turno_execucoes", execucao.id, {concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.nome:null), observacao_pendencias: observacao||null}, mapTurnoExecucaoFromRow);
+      var idxE = state.turnoExecucoes.findIndex(function(x){ return x.id===execucao.id; });
+      if(idxE>-1) state.turnoExecucoes[idxE] = execUpd;
+      showToast(alvo ? ("Turno concluído — pendências repassadas pro "+alvo.nome) : "Turno concluído");
+      renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao concluir turno");
+    }
   }
 
   async function marcarAtividadeTurno(execucao, atividadeId, status, motivo){
