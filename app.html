@@ -1036,7 +1036,8 @@
     var permRes = await sb.from("permissoes").select("*").eq("user_id", userId);
     var permissoes = {};
     (permRes.data||[]).forEach(function(p){ permissoes[p.modulo] = {ver:p.pode_ver, editar:p.pode_editar, excluir:p.pode_excluir}; });
-    return {id:profRes.data.id, nome:profRes.data.nome, email:profRes.data.email, role:profRes.data.role, turnoId:profRes.data.turno_id||null, permissoes:permissoes};
+    var turnoIds = (profRes.data.turno_ids && profRes.data.turno_ids.length) ? profRes.data.turno_ids : (profRes.data.turno_id ? [profRes.data.turno_id] : []);
+    return {id:profRes.data.id, nome:profRes.data.nome, email:profRes.data.email, role:profRes.data.role, turnoIds:turnoIds, permissoes:permissoes};
   }
 
   var loginMode = "entrar"; // 'entrar' | 'cadastrar'
@@ -4246,6 +4247,7 @@
 
   var checklistTurnoBusy = false;
   var checklistTurnoInterval = null;
+  var checklistTurnoSelecionado = null; // id do turno escolhido, quando a pessoa tem mais de um turno fixo
 
   async function ensureTurnoExecucaoAtual(turno){
     var cicloAtual = cicloDataAtual(turno);
@@ -4342,35 +4344,197 @@
     return {fase:"vencido", podeMarcarFeito:false, podeMarcarNaoFeito:true, podeMarcarAtrasado:true};
   }
 
+  // ---------- Gestão de turnos e atividades (só admin, dentro da aba Checklist de Turno) ----------
+  function renderTurnoManagementHtml(){
+    var html = '<div class="section-title" style="margin-top:0;">🕒 Turnos e atividades (gestão)</div>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Cada turno tem seu horário de início e sua lista de atividades. Atividades "hora fixa" só liberam pra marcar dentro da janela definida. Só administradores veem esta parte.</p>';
+    html += '<div class="card">';
+    var turnosOrdenados = state.turnos.slice().sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    if(turnosOrdenados.length === 0){
+      html += '<p class="item-meta" style="margin-bottom:10px;">Nenhum turno cadastrado ainda.</p>';
+    }
+    turnosOrdenados.forEach(function(t, ti){
+      var ativs = state.turnoAtividades.filter(function(a){ return a.turnoId===t.id; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+      html += '<div class="turno-admin-block" data-turno-id="'+t.id+'" style="'+(ti>0?'border-top:1px solid var(--line);padding-top:12px;margin-top:12px;':'')+'">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+        '<p style="margin:0;font-size:15px;font-weight:800;">'+escapeHtml(t.nome)+'</p>' +
+        '<button type="button" class="btn-edit" data-act="excluir-turno" data-id="'+t.id+'" title="Excluir turno">🗑️</button>' +
+      '</div>';
+      html += '<p class="item-meta" style="margin-bottom:8px;">início às '+escapeHtml(t.horaInicio)+'</p>';
+      if(ativs.length === 0){
+        html += '<p class="item-meta">Nenhuma atividade cadastrada.</p>';
+      }
+      ativs.forEach(function(a){
+        var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) :
+          a.tipo === "recorrente" ? ("a cada "+a.intervaloMinutos+"min, "+escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "livre";
+        html += '<div class="qty-row" style="padding:6px 0;">' +
+          '<span class="qty-name">'+escapeHtml(a.titulo)+' <span style="color:var(--ink-400);font-size:11.5px;font-weight:600;">('+horarioLbl+')</span></span>' +
+          '<button type="button" class="btn-edit" data-act="excluir-atividade" data-id="'+a.id+'" title="Remover">🗑️</button>' +
+        '</div>';
+      });
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">' +
+        '<input type="text" class="nova-atividade-titulo" placeholder="Nova atividade" style="flex:2;min-width:130px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
+        '<select class="nova-atividade-tipo" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
+          '<option value="livre">Livre (sem hora)</option><option value="hora_fixa">Hora fixa</option><option value="recorrente">Recorrente (várias vezes ao dia)</option>' +
+        '</select>' +
+        '<input type="time" class="nova-atividade-inicio" style="display:none;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
+        '<input type="time" class="nova-atividade-fim" style="display:none;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
+        '<input type="number" min="5" step="5" class="nova-atividade-intervalo" placeholder="a cada (min)" style="display:none;width:110px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
+        '<button type="button" class="btn-add-atividade" data-turno-id="'+t.id+'" style="padding:8px 12px;background:var(--teal-700);color:#fff;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:700;">+ Atividade</button>' +
+      '</div>';
+      html += '</div>';
+    });
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;'+(turnosOrdenados.length>0?'border-top:1px solid var(--line);padding-top:14px;':'')+'">' +
+      '<input type="text" id="novoTurnoNome" placeholder="Nome do turno (ex: Turno 3)" style="flex:1;min-width:140px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+      '<input type="time" id="novoTurnoHora" style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+      '<button type="button" id="adicionarTurnoBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-700);color:#fff;border:none;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Turno</button>' +
+    '</div>';
+    html += '</div>';
+    html += '<div class="section-title" style="margin-top:22px;">Seu(s) turno(s)</div>';
+    return html;
+  }
+
+  function bindTurnoManagementEvents(main){
+    var novoTurnoBtn = document.getElementById("adicionarTurnoBtn");
+    if(novoTurnoBtn){
+      novoTurnoBtn.onclick = async function(){
+        var nome = document.getElementById("novoTurnoNome").value.trim();
+        var hora = document.getElementById("novoTurnoHora").value;
+        if(!nome || !hora){ showToast("Preencha o nome e o horário do turno"); return; }
+        try{
+          await dbInsert("turnos", {id:uid(), nome:nome, hora_inicio:hora, ordem:state.turnos.length}, mapTurnoFromRow).then(function(t){ state.turnos.push(t); });
+          showToast("Turno criado"); renderChecklistTurno();
+        }catch(err){
+          console.error(err); showToast("Erro ao criar turno");
+        }
+      };
+    }
+    main.querySelectorAll('[data-act="excluir-turno"]').forEach(function(btn){
+      btn.onclick = async function(){
+        if(!confirm("Excluir este turno? As atividades e o histórico dele também serão apagados.")) return;
+        var id = btn.getAttribute("data-id");
+        try{
+          await dbDelete("turnos", id);
+          state.turnos = state.turnos.filter(function(t){ return t.id!==id; });
+          state.turnoAtividades = state.turnoAtividades.filter(function(a){ return a.turnoId!==id; });
+          if(checklistTurnoSelecionado === id) checklistTurnoSelecionado = null;
+          showToast("Turno excluído"); renderChecklistTurno();
+        }catch(err){
+          console.error(err); showToast("Erro ao excluir turno");
+        }
+      };
+    });
+    main.querySelectorAll('[data-act="excluir-atividade"]').forEach(function(btn){
+      btn.onclick = async function(){
+        if(!confirm("Remover esta atividade do turno?")) return;
+        var id = btn.getAttribute("data-id");
+        try{
+          await dbDelete("turno_atividades", id);
+          state.turnoAtividades = state.turnoAtividades.filter(function(a){ return a.id!==id; });
+          showToast("Atividade removida"); renderChecklistTurno();
+        }catch(err){
+          console.error(err); showToast("Erro ao remover atividade");
+        }
+      };
+    });
+    main.querySelectorAll(".turno-admin-block").forEach(function(block){
+      var turnoId = block.getAttribute("data-turno-id");
+      var tipoSelect = block.querySelector(".nova-atividade-tipo");
+      var inicioInput = block.querySelector(".nova-atividade-inicio");
+      var fimInput = block.querySelector(".nova-atividade-fim");
+      var intervaloInput = block.querySelector(".nova-atividade-intervalo");
+      if(tipoSelect){
+        tipoSelect.addEventListener("change", function(){
+          var comHorario = tipoSelect.value === "hora_fixa" || tipoSelect.value === "recorrente";
+          inicioInput.style.display = comHorario ? "inline-block" : "none";
+          fimInput.style.display = comHorario ? "inline-block" : "none";
+          intervaloInput.style.display = tipoSelect.value === "recorrente" ? "inline-block" : "none";
+        });
+      }
+      var addAtivBtn = block.querySelector(".btn-add-atividade");
+      if(addAtivBtn){
+        addAtivBtn.onclick = async function(){
+          var titulo = block.querySelector(".nova-atividade-titulo").value.trim();
+          if(!titulo){ showToast("Digite o nome da atividade"); return; }
+          var tipo = tipoSelect.value;
+          var comHorario = tipo === "hora_fixa" || tipo === "recorrente";
+          var horaInicio = comHorario ? inicioInput.value : null;
+          var horaFim = comHorario ? fimInput.value : null;
+          if(comHorario && (!horaInicio || !horaFim)){ showToast("Preencha o horário de início e fim"); return; }
+          var intervaloMinutos = null;
+          if(tipo === "recorrente"){
+            intervaloMinutos = parseInt(intervaloInput.value, 10);
+            if(!intervaloMinutos || intervaloMinutos <= 0){ showToast("Preencha a cada quantos minutos repete"); return; }
+          }
+          var ordemAtual = state.turnoAtividades.filter(function(a){ return a.turnoId===turnoId; }).length;
+          try{
+            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual}, mapTurnoAtividadeFromRow);
+            state.turnoAtividades.push(nova);
+            showToast("Atividade adicionada"); renderChecklistTurno();
+          }catch(err){
+            console.error(err); showToast("Erro ao adicionar atividade");
+          }
+        };
+      }
+    });
+  }
+
   async function renderChecklistTurno(){
     var main = document.getElementById("checklistTurnoView");
-    if(!currentUser.turnoId){
-      main.innerHTML = '<div class="empty">Você ainda não tem um turno atribuído. Peça pro administrador liberar em Administração.</div>';
+    var isAdmin = currentUser.role === "admin";
+    var managementHtml = isAdmin ? renderTurnoManagementHtml() : "";
+
+    var meusTurnos = state.turnos.filter(function(t){ return currentUser.turnoIds.indexOf(t.id) > -1; })
+      .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+
+    if(meusTurnos.length === 0){
+      main.innerHTML = managementHtml + '<div class="empty">'+(isAdmin ? 'Você ainda não tem um turno atribuído a você. Atribua em Administração, ou cadastre um turno acima e depois se atribua a ele.' : 'Você ainda não tem um turno atribuído. Peça pro administrador liberar em Administração.')+'</div>';
+      if(isAdmin) bindTurnoManagementEvents(main);
       return;
     }
-    var turno = state.turnos.find(function(t){ return t.id===currentUser.turnoId; });
-    if(!turno){
-      main.innerHTML = '<div class="empty">O turno atribuído a você não existe mais. Avise o administrador.</div>';
-      return;
+    if(!checklistTurnoSelecionado || !meusTurnos.some(function(t){ return t.id===checklistTurnoSelecionado; })){
+      checklistTurnoSelecionado = meusTurnos[0].id;
     }
+    var turno = meusTurnos.find(function(t){ return t.id===checklistTurnoSelecionado; });
+
     var cicloAtual = cicloDataAtual(turno);
     var execucao = state.turnoExecucoes.find(function(e){ return e.turnoId===turno.id && e.data===cicloAtual; });
     if(!execucao){
       if(checklistTurnoBusy) return;
       checklistTurnoBusy = true;
-      main.innerHTML = '<div class="empty">Carregando checklist…</div>';
+      main.innerHTML = managementHtml + '<div class="empty">Carregando checklist…</div>';
+      if(isAdmin) bindTurnoManagementEvents(main);
       try{
         execucao = await ensureTurnoExecucaoAtual(turno);
       }catch(err){
         console.error(err);
         checklistTurnoBusy = false;
-        main.innerHTML = '<div class="empty">Erro ao carregar o checklist — tente de novo.</div>';
+        main.innerHTML = managementHtml + '<div class="empty">Erro ao carregar o checklist — tente de novo.</div>';
+        if(isAdmin) bindTurnoManagementEvents(main);
         return;
       }
       checklistTurnoBusy = false;
       if(appSection !== "checklistturno") return;
     }
-    renderChecklistTurnoBody(main, turno, execucao);
+
+    var switcherHtml = "";
+    if(meusTurnos.length > 1){
+      switcherHtml = '<div class="turno-switcher" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">';
+      meusTurnos.forEach(function(t){
+        var ativo = t.id === turno.id;
+        switcherHtml += '<button type="button" class="turno-switch-btn" data-turno-id="'+t.id+'" style="flex:1;min-width:110px;padding:9px;border-radius:9px;border:1px solid var(--line);font-family:inherit;font-size:13px;font-weight:700;background:'+(ativo?"var(--teal-700)":"#fff")+';color:'+(ativo?"#fff":"var(--ink-900)")+';">'+escapeHtml(t.nome)+'</button>';
+      });
+      switcherHtml += '</div>';
+    }
+
+    renderChecklistTurnoBody(main, turno, execucao, managementHtml + switcherHtml);
+    if(isAdmin) bindTurnoManagementEvents(main);
+    main.querySelectorAll(".turno-switch-btn").forEach(function(btn){
+      btn.onclick = function(){
+        checklistTurnoSelecionado = btn.getAttribute("data-turno-id");
+        renderChecklistTurno();
+      };
+    });
     if(!checklistTurnoInterval){
       checklistTurnoInterval = setInterval(function(){
         if(appSection === "checklistturno") renderChecklistTurno();
@@ -4378,9 +4542,9 @@
     }
   }
 
-  function renderChecklistTurnoBody(main, turno, execucao){
+  function renderChecklistTurnoBody(main, turno, execucao, htmlPrefixo){
     var atividades = state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
-    var html = '<div class="card" style="margin-bottom:14px;">' +
+    var html = (htmlPrefixo||"") + '<div class="card" style="margin-bottom:14px;">' +
       '<p style="margin:0 0 3px;font-size:16px;font-weight:800;">'+escapeHtml(turno.nome)+'</p>' +
       '<p class="item-meta">ciclo de '+fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime())+' — reinicia às '+escapeHtml(turno.horaInicio)+' do dia seguinte</p>' +
     '</div>';
@@ -6539,7 +6703,8 @@
       (permRes.data||[]).filter(function(x){ return x.user_id===p.id; }).forEach(function(x){
         permissoes[x.modulo] = {ver:x.pode_ver, editar:x.pode_editar, excluir:x.pode_excluir};
       });
-      return {id:p.id, nome:p.nome, email:p.email, role:p.role, ativo:p.ativo, turnoId:p.turno_id||null, permissoes:permissoes};
+      var turnoIds = (p.turno_ids && p.turno_ids.length) ? p.turno_ids : (p.turno_id ? [p.turno_id] : []);
+      return {id:p.id, nome:p.nome, email:p.email, role:p.role, ativo:p.ativo, turnoIds:turnoIds, permissoes:permissoes};
     });
   }
 
@@ -6581,50 +6746,7 @@
     html += '<button type="button" id="enviarRelatorioAgoraBtn" style="display:block;width:100%;margin-top:12px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">📧 Enviar relatório agora</button>';
     html += '</div>';
 
-    html += '<div class="section-title" style="margin-top:22px;">🕒 Turnos e atividades (checklist)</div>';
-    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Cada turno tem seu horário de início e sua lista de atividades. Atividades "hora fixa" só liberam pra marcar dentro da janela definida.</p>';
-    html += '<div class="card">';
-    var turnosOrdenados = state.turnos.slice().sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
-    if(turnosOrdenados.length === 0){
-      html += '<p class="item-meta" style="margin-bottom:10px;">Nenhum turno cadastrado ainda.</p>';
-    }
-    turnosOrdenados.forEach(function(t, ti){
-      var ativs = state.turnoAtividades.filter(function(a){ return a.turnoId===t.id; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
-      html += '<div class="turno-admin-block" data-turno-id="'+t.id+'" style="'+(ti>0?'border-top:1px solid var(--line);padding-top:12px;margin-top:12px;':'')+'">';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-        '<p style="margin:0;font-size:15px;font-weight:800;">'+escapeHtml(t.nome)+'</p>' +
-        '<button type="button" class="btn-edit" data-act="excluir-turno" data-id="'+t.id+'" title="Excluir turno">🗑️</button>' +
-      '</div>';
-      html += '<p class="item-meta" style="margin-bottom:8px;">início às '+escapeHtml(t.horaInicio)+'</p>';
-      if(ativs.length === 0){
-        html += '<p class="item-meta">Nenhuma atividade cadastrada.</p>';
-      }
-      ativs.forEach(function(a){
-        var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) :
-          a.tipo === "recorrente" ? ("a cada "+a.intervaloMinutos+"min, "+escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "livre";
-        html += '<div class="qty-row" style="padding:6px 0;">' +
-          '<span class="qty-name">'+escapeHtml(a.titulo)+' <span style="color:var(--ink-400);font-size:11.5px;font-weight:600;">('+horarioLbl+')</span></span>' +
-          '<button type="button" class="btn-edit" data-act="excluir-atividade" data-id="'+a.id+'" title="Remover">🗑️</button>' +
-        '</div>';
-      });
-      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">' +
-        '<input type="text" class="nova-atividade-titulo" placeholder="Nova atividade" style="flex:2;min-width:130px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
-        '<select class="nova-atividade-tipo" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
-          '<option value="livre">Livre (sem hora)</option><option value="hora_fixa">Hora fixa</option><option value="recorrente">Recorrente (várias vezes ao dia)</option>' +
-        '</select>' +
-        '<input type="time" class="nova-atividade-inicio" style="display:none;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
-        '<input type="time" class="nova-atividade-fim" style="display:none;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
-        '<input type="number" min="5" step="5" class="nova-atividade-intervalo" placeholder="a cada (min)" style="display:none;width:110px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
-        '<button type="button" class="btn-add-atividade" data-turno-id="'+t.id+'" style="padding:8px 12px;background:var(--teal-700);color:#fff;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:700;">+ Atividade</button>' +
-      '</div>';
-      html += '</div>';
-    });
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;'+(turnosOrdenados.length>0?'border-top:1px solid var(--line);padding-top:14px;':'')+'">' +
-      '<input type="text" id="novoTurnoNome" placeholder="Nome do turno (ex: Turno 3)" style="flex:1;min-width:140px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
-      '<input type="time" id="novoTurnoHora" style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
-      '<button type="button" id="adicionarTurnoBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-700);color:#fff;border:none;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Turno</button>' +
-    '</div>';
-    html += '</div>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:22px 0 -8px;">A gestão de turnos e atividades do checklist agora fica na própria aba <strong>Checklist de Turno</strong>.</p>';
 
     html += '<div class="section-title" style="margin-top:22px;">Usuários e permissões</div>';
     if(adminUsersCache.length === 0){
@@ -6638,13 +6760,15 @@
       html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+'</div>';
       html += '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>';
       if(u.role !== "admin"){
-        html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno fixo (checklist)</label>';
-        html += '<select class="turno-fixo-select" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:8px;">';
-        html += '<option value="">Nenhum</option>';
+        html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno(s) fixo(s) (checklist)</label>';
+        html += '<div class="turno-fixo-checks" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">';
         state.turnos.forEach(function(t){
-          html += '<option value="'+t.id+'" '+(u.turnoId===t.id?"selected":"")+'>'+escapeHtml(t.nome)+'</option>';
+          html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;">' +
+            '<input type="checkbox" class="turno-fixo-check" value="'+t.id+'" '+(u.turnoIds.indexOf(t.id)>-1?"checked":"")+'> '+escapeHtml(t.nome) +
+          '</label>';
         });
-        html += '</select>';
+        if(state.turnos.length === 0) html += '<span class="item-meta">Nenhum turno cadastrado ainda.</span>';
+        html += '</div>';
         html += '<table class="admin-perm-table"><tr><th></th><th>Ver</th><th>Editar</th><th>Excluir</th></tr>';
         MODULOS_ADMIN.forEach(function(m){
           var perm = u.permissoes[m.key] || {ver:false, editar:false, excluir:false};
@@ -6661,13 +6785,15 @@
         }
       } else {
         html += '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 8px;">Administradores têm acesso total a tudo.</p>';
-        html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno fixo (checklist)</label>';
-        html += '<select class="turno-fixo-select" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:8px;">';
-        html += '<option value="">Nenhum</option>';
+        html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno(s) fixo(s) (checklist) — pra quem também trabalha na recepção</label>';
+        html += '<div class="turno-fixo-checks" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">';
         state.turnos.forEach(function(t){
-          html += '<option value="'+t.id+'" '+(u.turnoId===t.id?"selected":"")+'>'+escapeHtml(t.nome)+'</option>';
+          html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;">' +
+            '<input type="checkbox" class="turno-fixo-check" value="'+t.id+'" '+(u.turnoIds.indexOf(t.id)>-1?"checked":"")+'> '+escapeHtml(t.nome) +
+          '</label>';
         });
-        html += '</select>';
+        if(state.turnos.length === 0) html += '<span class="item-meta">Nenhum turno cadastrado ainda.</span>';
+        html += '</div>';
         if(currentUser.id !== u.id){
           html += '<button type="button" class="admin-role-btn" data-act="demote">Remover privilégio de admin</button>';
         }
@@ -6675,88 +6801,6 @@
       html += '</div>';
     });
     main.innerHTML = html;
-
-    var novoTurnoBtn = document.getElementById("adicionarTurnoBtn");
-    if(novoTurnoBtn){
-      novoTurnoBtn.onclick = async function(){
-        var nome = document.getElementById("novoTurnoNome").value.trim();
-        var hora = document.getElementById("novoTurnoHora").value;
-        if(!nome || !hora){ showToast("Preencha o nome e o horário do turno"); return; }
-        try{
-          await dbInsert("turnos", {id:uid(), nome:nome, hora_inicio:hora, ordem:state.turnos.length}, mapTurnoFromRow).then(function(t){ state.turnos.push(t); });
-          showToast("Turno criado"); renderAdmin();
-        }catch(err){
-          console.error(err); showToast("Erro ao criar turno");
-        }
-      };
-    }
-    main.querySelectorAll('[data-act="excluir-turno"]').forEach(function(btn){
-      btn.onclick = async function(){
-        if(!confirm("Excluir este turno? As atividades e o histórico dele também serão apagados.")) return;
-        var id = btn.getAttribute("data-id");
-        try{
-          await dbDelete("turnos", id);
-          state.turnos = state.turnos.filter(function(t){ return t.id!==id; });
-          state.turnoAtividades = state.turnoAtividades.filter(function(a){ return a.turnoId!==id; });
-          showToast("Turno excluído"); renderAdmin();
-        }catch(err){
-          console.error(err); showToast("Erro ao excluir turno");
-        }
-      };
-    });
-    main.querySelectorAll('[data-act="excluir-atividade"]').forEach(function(btn){
-      btn.onclick = async function(){
-        if(!confirm("Remover esta atividade do turno?")) return;
-        var id = btn.getAttribute("data-id");
-        try{
-          await dbDelete("turno_atividades", id);
-          state.turnoAtividades = state.turnoAtividades.filter(function(a){ return a.id!==id; });
-          showToast("Atividade removida"); renderAdmin();
-        }catch(err){
-          console.error(err); showToast("Erro ao remover atividade");
-        }
-      };
-    });
-    main.querySelectorAll(".turno-admin-block").forEach(function(block){
-      var turnoId = block.getAttribute("data-turno-id");
-      var tipoSelect = block.querySelector(".nova-atividade-tipo");
-      var inicioInput = block.querySelector(".nova-atividade-inicio");
-      var fimInput = block.querySelector(".nova-atividade-fim");
-      var intervaloInput = block.querySelector(".nova-atividade-intervalo");
-      if(tipoSelect){
-        tipoSelect.addEventListener("change", function(){
-          var comHorario = tipoSelect.value === "hora_fixa" || tipoSelect.value === "recorrente";
-          inicioInput.style.display = comHorario ? "inline-block" : "none";
-          fimInput.style.display = comHorario ? "inline-block" : "none";
-          intervaloInput.style.display = tipoSelect.value === "recorrente" ? "inline-block" : "none";
-        });
-      }
-      var addAtivBtn = block.querySelector(".btn-add-atividade");
-      if(addAtivBtn){
-        addAtivBtn.onclick = async function(){
-          var titulo = block.querySelector(".nova-atividade-titulo").value.trim();
-          if(!titulo){ showToast("Digite o nome da atividade"); return; }
-          var tipo = tipoSelect.value;
-          var comHorario = tipo === "hora_fixa" || tipo === "recorrente";
-          var horaInicio = comHorario ? inicioInput.value : null;
-          var horaFim = comHorario ? fimInput.value : null;
-          if(comHorario && (!horaInicio || !horaFim)){ showToast("Preencha o horário de início e fim"); return; }
-          var intervaloMinutos = null;
-          if(tipo === "recorrente"){
-            intervaloMinutos = parseInt(intervaloInput.value, 10);
-            if(!intervaloMinutos || intervaloMinutos <= 0){ showToast("Preencha a cada quantos minutos repete"); return; }
-          }
-          var ordemAtual = state.turnoAtividades.filter(function(a){ return a.turnoId===turnoId; }).length;
-          try{
-            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual}, mapTurnoAtividadeFromRow);
-            state.turnoAtividades.push(nova);
-            showToast("Atividade adicionada"); renderAdmin();
-          }catch(err){
-            console.error(err); showToast("Erro ao adicionar atividade");
-          }
-        };
-      }
-    });
 
     var addEmailBtn = document.getElementById("adicionarRelatorioEmailBtn");
     if(addEmailBtn){
@@ -6814,18 +6858,25 @@
     main.querySelectorAll(".admin-user-card").forEach(function(card){
       var uid = card.getAttribute("data-uid");
 
-      var turnoSelect = card.querySelector(".turno-fixo-select");
-      if(turnoSelect){
-        turnoSelect.addEventListener("change", async function(){
+      var turnoChecks = card.querySelectorAll(".turno-fixo-check");
+      turnoChecks.forEach(function(cb){
+        cb.addEventListener("change", async function(){
+          var selecionados = Array.prototype.slice.call(turnoChecks).filter(function(c){ return c.checked; }).map(function(c){ return c.value; });
           try{
-            var res = await sb.from("profiles").update({turno_id: turnoSelect.value || null}).eq("id", uid);
+            var res = await sb.from("profiles").update({turno_ids: selecionados}).eq("id", uid);
             if(res.error) throw res.error;
+            var cache = adminUsersCache.find(function(u){ return u.id===uid; });
+            if(cache) cache.turnoIds = selecionados;
+            if(currentUser && currentUser.id === uid){
+              currentUser.turnoIds = selecionados;
+              checklistTurnoSelecionado = null;
+            }
             showToast("Turno atualizado");
           }catch(err){
             console.error(err); showToast("Erro ao atualizar turno");
           }
         });
-      }
+      });
 
       card.querySelectorAll("tr[data-modulo]").forEach(function(row){
         var modulo = row.getAttribute("data-modulo");
