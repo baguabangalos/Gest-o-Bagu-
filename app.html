@@ -6660,7 +6660,14 @@
           html += '<button type="button" class="admin-role-btn" data-act="promote">Tornar administrador</button>';
         }
       } else {
-        html += '<p style="font-size:12.5px;color:var(--ink-600);margin:0;">Administradores têm acesso total a tudo.</p>';
+        html += '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 8px;">Administradores têm acesso total a tudo.</p>';
+        html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno fixo (checklist)</label>';
+        html += '<select class="turno-fixo-select" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:8px;">';
+        html += '<option value="">Nenhum</option>';
+        state.turnos.forEach(function(t){
+          html += '<option value="'+t.id+'" '+(u.turnoId===t.id?"selected":"")+'>'+escapeHtml(t.nome)+'</option>';
+        });
+        html += '</select>';
         if(currentUser.id !== u.id){
           html += '<button type="button" class="admin-role-btn" data-act="demote">Remover privilégio de admin</button>';
         }
