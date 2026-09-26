@@ -892,7 +892,8 @@
     return {id:r.id, nome:r.nome, horaInicio:r.hora_inicio, ordem:r.ordem};
   }
   function mapTurnoAtividadeFromRow(r){
-    return {id:r.id, turnoId:r.turno_id, titulo:r.titulo, tipo:r.tipo||"livre", horaInicio:r.hora_inicio, horaFim:r.hora_fim, ordem:r.ordem};
+    return {id:r.id, turnoId:r.turno_id, titulo:r.titulo, tipo:r.tipo||"livre", horaInicio:r.hora_inicio, horaFim:r.hora_fim,
+      intervaloMinutos:r.intervalo_minutos||null, ordem:r.ordem};
   }
   function mapTurnoExecucaoFromRow(r){
     return {id:r.id, turnoId:r.turno_id, data:r.data, criadoEm:new Date(r.criado_em).getTime(),
@@ -903,7 +904,7 @@
   function mapTurnoAtividadeExecucaoFromRow(r){
     return {id:r.id, turnoExecucaoId:r.turno_execucao_id, turnoAtividadeId:r.turno_atividade_id, status:r.status||"pendente",
       motivo:r.motivo, marcadoEm:(r.marcado_em?new Date(r.marcado_em).getTime():null), marcadoPor:r.marcado_por,
-      repassadoTurnoId:r.repassado_turno_id||null};
+      repassadoTurnoId:r.repassado_turno_id||null, slotHora:r.slot_hora||null, atrasado:!!r.atrasado};
   }
   function mapSolicitacaoFromRow(r){
     return {id:r.id, acomodacaoId:r.acomodacao_id, tipo:r.tipo, contexto:r.contexto, origem:r.origem,
@@ -4280,22 +4281,65 @@
   }
 
   function atividadeExecucaoFor(execucaoId, atividadeId){
-    return state.turnoAtividadeExecucoes.find(function(x){ return x.turnoExecucaoId===execucaoId && x.turnoAtividadeId===atividadeId; });
+    return state.turnoAtividadeExecucoes.find(function(x){ return x.turnoExecucaoId===execucaoId && x.turnoAtividadeId===atividadeId && !x.slotHora; });
+  }
+  function itemExecucaoSlot(execucaoId, atividadeId, slotHora){
+    return state.turnoAtividadeExecucoes.find(function(x){ return x.turnoExecucaoId===execucaoId && x.turnoAtividadeId===atividadeId && x.slotHora===slotHora; });
+  }
+  function addMinutosHM(hhmm, minutos){
+    var partes = (hhmm||"00:00").split(":").map(Number);
+    var total = partes[0]*60 + partes[1] + minutos;
+    total = ((total % 1440) + 1440) % 1440;
+    return String(Math.floor(total/60)).padStart(2,"0")+":"+String(total%60).padStart(2,"0");
+  }
+  function slotsRecorrente(atividade){
+    var slots = [];
+    if(atividade.tipo !== "recorrente" || !atividade.horaInicio || !atividade.horaFim || !atividade.intervaloMinutos) return slots;
+    var cursor = atividade.horaInicio;
+    var guard = 0;
+    while(cursor <= atividade.horaFim && guard < 200){
+      slots.push(cursor);
+      cursor = addMinutosHM(cursor, atividade.intervaloMinutos);
+      guard++;
+    }
+    return slots;
+  }
+  function ocorrenciasTurno(turno){
+    var out = [];
+    state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id; }).forEach(function(a){
+      if(a.tipo === "recorrente"){
+        slotsRecorrente(a).forEach(function(s){ out.push({atividade:a, slot:s}); });
+      } else {
+        out.push({atividade:a, slot:null});
+      }
+    });
+    return out;
   }
 
-  function estadoAtividade(atividade, execucao, item){
-    var now = new Date();
+  // Estado de uma ocorrência: bloqueado (ainda não chegou a hora),
+  // liberado (dentro da janela), vencido (passou da hora e ainda não foi
+  // marcada — só sobra "feito com atraso" ou "não realizado"), feito,
+  // feito_atrasado ou nao_feito.
+  function estadoAtividade(atividade, execucao, item, slotHora){
     if(item && item.status !== "pendente"){
-      return {fase: item.status === "feito" ? "feito" : "nao_feito", podeMarcarFeito:false, podeMarcarNaoFeito:false};
+      return {fase: item.status === "feito" ? (item.atrasado ? "feito_atrasado" : "feito") : "nao_feito",
+        podeMarcarFeito:false, podeMarcarNaoFeito:false, podeMarcarAtrasado:false};
     }
-    if(atividade.tipo !== "hora_fixa"){
-      return {fase:"liberado", podeMarcarFeito:true, podeMarcarNaoFeito:true};
+    if(atividade.tipo === "livre"){
+      return {fase:"liberado", podeMarcarFeito:true, podeMarcarNaoFeito:true, podeMarcarAtrasado:false};
     }
-    var inicio = dateAtLocalTime(execucao.data, atividade.horaInicio);
-    var fim = dateAtLocalTime(execucao.data, atividade.horaFim);
-    if(now < inicio) return {fase:"bloqueado", podeMarcarFeito:false, podeMarcarNaoFeito:false, libera:inicio};
-    if(now <= fim) return {fase:"liberado", podeMarcarFeito:true, podeMarcarNaoFeito:true};
-    return {fase:"vencido", podeMarcarFeito:false, podeMarcarNaoFeito:true};
+    var inicio, fim;
+    if(atividade.tipo === "recorrente"){
+      inicio = dateAtLocalTime(execucao.data, slotHora);
+      fim = dateAtLocalTime(execucao.data, addMinutosHM(slotHora, atividade.intervaloMinutos));
+    } else {
+      inicio = dateAtLocalTime(execucao.data, atividade.horaInicio);
+      fim = dateAtLocalTime(execucao.data, atividade.horaFim);
+    }
+    var now = new Date();
+    if(now < inicio) return {fase:"bloqueado", podeMarcarFeito:false, podeMarcarNaoFeito:false, podeMarcarAtrasado:false, libera:inicio};
+    if(now <= fim) return {fase:"liberado", podeMarcarFeito:true, podeMarcarNaoFeito:true, podeMarcarAtrasado:false};
+    return {fase:"vencido", podeMarcarFeito:false, podeMarcarNaoFeito:true, podeMarcarAtrasado:true};
   }
 
   async function renderChecklistTurno(){
@@ -4340,37 +4384,59 @@
       '<p style="margin:0 0 3px;font-size:16px;font-weight:800;">'+escapeHtml(turno.nome)+'</p>' +
       '<p class="item-meta">ciclo de '+fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime())+' — reinicia às '+escapeHtml(turno.horaInicio)+' do dia seguinte</p>' +
     '</div>';
+    var atividadesComuns = atividades.filter(function(a){ return a.tipo !== "recorrente"; });
+    var atividadesRecorrentes = atividades.filter(function(a){ return a.tipo === "recorrente"; });
     if(atividades.length === 0){
       html += '<div class="empty">Nenhuma atividade cadastrada pra este turno ainda.</div>';
-    } else {
-      atividades.forEach(function(a){
-        var item = atividadeExecucaoFor(execucao.id, a.id);
-        var est = estadoAtividade(a, execucao, item);
-        var corBorda = est.fase==="feito" ? "var(--teal-700)" : est.fase==="nao_feito" ? "var(--red-600)" : est.fase==="vencido" ? "var(--amber-600)" : est.fase==="bloqueado" ? "var(--ink-400)" : "var(--teal-700)";
-        html += '<div class="card" data-id="'+a.id+'" style="border-left:4px solid '+corBorda+';">';
-        html += '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(a.titulo)+'</p>';
-        var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "a qualquer hora";
-        html += '<p class="item-meta">🕐 '+horarioLbl+'</p>';
-        if(est.fase === "bloqueado"){
-          html += '<p class="item-meta">🔒 libera às '+fmtHM(est.libera)+'</p>';
-        } else if(est.fase === "feito"){
-          html += '<p class="item-meta">✅ Feito'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+'</p>';
-        } else if(est.fase === "nao_feito"){
-          html += '<p class="item-meta">❌ Não realizado'+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
-        } else {
-          if(est.fase === "vencido") html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ o horário passou — registre o que houve</p>';
-          html += '<div class="item-actions">';
-          if(est.podeMarcarFeito) html += '<button class="btn btn-in" data-act="feito" data-id="'+a.id+'">✓ Feito</button>';
-          if(est.podeMarcarNaoFeito) html += '<button class="btn btn-out" data-act="naofeito" data-id="'+a.id+'">✗ Não realizado</button>';
-          html += '</div>';
-          html += '<div class="motivo-wrap" data-motivo-for="'+a.id+'" style="display:none;margin-top:8px;">' +
-            '<textarea class="motivo-input" placeholder="Motivo…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>' +
-            '<button type="button" class="btn-primary motivo-confirmar" data-id="'+a.id+'" style="margin-top:6px;">Confirmar</button>' +
-          '</div>';
-        }
-        html += '</div>';
-      });
     }
+    atividadesComuns.forEach(function(a){
+      var item = atividadeExecucaoFor(execucao.id, a.id);
+      var est = estadoAtividade(a, execucao, item);
+      var corBorda = est.fase==="feito" ? "var(--teal-700)" : est.fase==="feito_atrasado" ? "var(--amber-600)" : est.fase==="nao_feito" ? "var(--red-600)" : est.fase==="vencido" ? "var(--amber-600)" : est.fase==="bloqueado" ? "var(--ink-400)" : "var(--teal-700)";
+      html += '<div class="card" data-id="'+a.id+'" style="border-left:4px solid '+corBorda+';">';
+      html += '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(a.titulo)+'</p>';
+      var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "a qualquer hora";
+      html += '<p class="item-meta">🕐 '+horarioLbl+'</p>';
+      if(est.fase === "bloqueado"){
+        html += '<p class="item-meta">🔒 libera às '+fmtHM(est.libera)+'</p>';
+      } else if(est.fase === "feito"){
+        html += '<p class="item-meta">✅ Feito'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+'</p>';
+      } else if(est.fase === "feito_atrasado"){
+        html += '<p class="item-meta">🟡 Feito com atraso'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
+      } else if(est.fase === "nao_feito"){
+        html += '<p class="item-meta">❌ Não realizado'+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
+      } else {
+        if(est.fase === "vencido") html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ o horário passou — registre o que houve</p>';
+        html += '<div class="item-actions">';
+        if(est.podeMarcarFeito) html += '<button class="btn btn-in" data-act="feito" data-id="'+a.id+'">✓ Feito</button>';
+        if(est.podeMarcarAtrasado) html += '<button class="btn btn-in" data-act="atrasado" data-id="'+a.id+'">✓ Feito (atrasado)</button>';
+        if(est.podeMarcarNaoFeito) html += '<button class="btn btn-out" data-act="naofeito" data-id="'+a.id+'">✗ Não realizado</button>';
+        html += '</div>';
+        html += '<div class="motivo-wrap" data-motivo-for="'+a.id+'" data-kind="" style="display:none;margin-top:8px;">' +
+          '<textarea class="motivo-input" placeholder="Observação…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>' +
+          '<button type="button" class="btn-primary motivo-confirmar" data-id="'+a.id+'" style="margin-top:6px;">Confirmar</button>' +
+        '</div>';
+      }
+      html += '</div>';
+    });
+    atividadesRecorrentes.forEach(function(a){
+      var slots = slotsRecorrente(a);
+      html += '<div class="card" data-id="'+a.id+'">';
+      html += '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(a.titulo)+'</p>';
+      html += '<p class="item-meta">🔁 a cada '+a.intervaloMinutos+' min, das '+escapeHtml(a.horaInicio||"")+' às '+escapeHtml(a.horaFim||"")+'</p>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">';
+      slots.forEach(function(slot){
+        var item = itemExecucaoSlot(execucao.id, a.id, slot);
+        var est = estadoAtividade(a, execucao, item, slot);
+        var cor = est.fase==="feito" ? "var(--teal-700)" : est.fase==="feito_atrasado" ? "var(--amber-600)" : est.fase==="nao_feito" ? "var(--red-600)" : est.fase==="vencido" ? "var(--amber-600)" : est.fase==="bloqueado" ? "var(--ink-400)" : "var(--teal-700)";
+        var marca = est.fase==="feito" ? "✅" : est.fase==="feito_atrasado" ? "🟡" : est.fase==="nao_feito" ? "❌" : est.fase==="vencido" ? "⏰" : est.fase==="liberado" ? "🟢" : "🔒";
+        var clicavel = est.fase==="liberado" || est.fase==="vencido";
+        html += '<button type="button" class="slot-pill" '+(clicavel?('data-slot-act="1" data-id="'+a.id+'" data-slot="'+slot+'"'):"disabled")+' style="padding:6px 9px;border-radius:20px;border:1px solid '+cor+';background:'+(clicavel?"#fff":"var(--sand-50)")+';color:'+cor+';font-family:inherit;font-size:12px;font-weight:700;">'+marca+' '+slot+'</button>';
+      });
+      html += '</div>';
+      html += '<div class="slot-action-wrap" data-slot-action-for="'+a.id+'" style="display:none;margin-top:10px;"></div>';
+      html += '</div>';
+    });
 
     var pendenciasHerdadas = state.turnoAtividadeExecucoes.filter(function(x){ return x.repassadoTurnoId===turno.id && x.status==="pendente"; });
     if(pendenciasHerdadas.length > 0){
@@ -4380,7 +4446,7 @@
         var execOrig = state.turnoExecucoes.find(function(e){ return e.id===item.turnoExecucaoId; });
         var turnoOrig = execOrig ? state.turnos.find(function(t){ return t.id===execOrig.turnoId; }) : null;
         html += '<div class="card" data-item-id="'+item.id+'" style="border-left:4px solid var(--amber-600);">' +
-          '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(ativOrig?ativOrig.titulo:"Atividade")+'</p>' +
+          '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(ativOrig?ativOrig.titulo:"Atividade")+(item.slotHora?(' — '+escapeHtml(item.slotHora)):'')+'</p>' +
           '<p class="item-meta">herdado de '+(turnoOrig?escapeHtml(turnoOrig.nome):"—")+(execOrig?(' — '+fmtDateOnly(dateAtLocalTime(execOrig.data,"00:00").getTime())):'')+'</p>' +
           '<div class="item-actions">' +
             '<button class="btn btn-in" data-herdado-act="feito" data-item-id="'+item.id+'">✓ Feito</button>' +
@@ -4413,22 +4479,61 @@
 
     main.innerHTML = html;
     main.querySelectorAll('button[data-act="feito"]').forEach(function(b){
-      b.onclick = function(){ marcarAtividadeTurno(execucao, b.getAttribute("data-id"), "feito", null); };
+      b.onclick = function(){ marcarAtividadeTurno(execucao, b.getAttribute("data-id"), "feito", null, false); };
+    });
+    main.querySelectorAll('button[data-act="atrasado"]').forEach(function(b){
+      b.onclick = function(){
+        var id = b.getAttribute("data-id");
+        var wrap = main.querySelector('.motivo-wrap[data-motivo-for="'+id+'"]');
+        if(wrap){ wrap.setAttribute("data-kind","atrasado"); wrap.querySelector(".motivo-input").placeholder = "O que causou o atraso (opcional)…"; wrap.style.display = "block"; }
+      };
     });
     main.querySelectorAll('button[data-act="naofeito"]').forEach(function(b){
       b.onclick = function(){
         var id = b.getAttribute("data-id");
         var wrap = main.querySelector('.motivo-wrap[data-motivo-for="'+id+'"]');
-        if(wrap) wrap.style.display = "block";
+        if(wrap){ wrap.setAttribute("data-kind","naofeito"); wrap.querySelector(".motivo-input").placeholder = "Motivo…"; wrap.style.display = "block"; }
       };
     });
     main.querySelectorAll('.motivo-confirmar').forEach(function(b){
       b.onclick = function(){
         var id = b.getAttribute("data-id");
         var wrap = main.querySelector('.motivo-wrap[data-motivo-for="'+id+'"]');
+        var kind = wrap.getAttribute("data-kind");
         var motivo = wrap.querySelector(".motivo-input").value.trim();
-        if(!motivo){ showToast("Descreva o motivo"); return; }
-        marcarAtividadeTurno(execucao, id, "nao_feito", motivo);
+        if(kind === "naofeito"){
+          if(!motivo){ showToast("Descreva o motivo"); return; }
+          marcarAtividadeTurno(execucao, id, "nao_feito", motivo, false);
+        } else {
+          marcarAtividadeTurno(execucao, id, "feito", motivo||null, true);
+        }
+      };
+    });
+    main.querySelectorAll('[data-slot-act]').forEach(function(btn){
+      btn.onclick = function(){
+        var atividadeId = btn.getAttribute("data-id");
+        var slot = btn.getAttribute("data-slot");
+        var atividade = atividadesRecorrentes.find(function(a){ return a.id===atividadeId; });
+        var item = itemExecucaoSlot(execucao.id, atividadeId, slot);
+        var est = estadoAtividade(atividade, execucao, item, slot);
+        var wrap = main.querySelector('.slot-action-wrap[data-slot-action-for="'+atividadeId+'"]');
+        var acHtml = '<p class="item-meta" style="margin-bottom:6px;">Horário '+slot+'</p><div class="item-actions">';
+        if(est.podeMarcarFeito) acHtml += '<button type="button" class="btn btn-in" data-slot-confirm="feito">✓ Feito</button>';
+        if(est.podeMarcarAtrasado) acHtml += '<button type="button" class="btn btn-in" data-slot-confirm="atrasado">✓ Feito (atrasado)</button>';
+        acHtml += '<button type="button" class="btn btn-out" data-slot-confirm="naofeito">✗ Não realizado</button>';
+        acHtml += '</div><textarea class="motivo-input" placeholder="Observação (obrigatório só pro não realizado)…" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>';
+        wrap.innerHTML = acHtml;
+        wrap.style.display = "block";
+        wrap.querySelectorAll('[data-slot-confirm]').forEach(function(cbtn){
+          cbtn.onclick = function(){
+            var kind = cbtn.getAttribute("data-slot-confirm");
+            var motivo = wrap.querySelector(".motivo-input").value.trim();
+            if(kind === "naofeito" && !motivo){ showToast("Descreva o motivo"); return; }
+            var status = kind === "naofeito" ? "nao_feito" : "feito";
+            var atrasado = kind === "atrasado";
+            marcarAtividadeTurno(execucao, atividadeId, status, motivo||null, atrasado, slot);
+          };
+        });
       };
     });
     main.querySelectorAll('button[data-herdado-act="feito"]').forEach(function(b){
@@ -4457,8 +4562,8 @@
     var concluirBtn = document.getElementById("concluirTurnoBtn");
     if(concluirBtn){
       concluirBtn.onclick = function(){
-        var temPendentesProprias = atividades.some(function(a){
-          var item = atividadeExecucaoFor(execucao.id, a.id);
+        var temPendentesProprias = ocorrenciasTurno(turno).some(function(oc){
+          var item = oc.slot ? itemExecucaoSlot(execucao.id, oc.atividade.id, oc.slot) : atividadeExecucaoFor(execucao.id, oc.atividade.id);
           return !item || item.status === "pendente";
         });
         if(temPendentesProprias){
@@ -4488,7 +4593,10 @@
   async function resolverPendenciaHerdada(item, status, motivo){
     if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para marcar o checklist"); return; }
     try{
-      var payload = {status:status, motivo:motivo, marcado_em:new Date().toISOString(), marcado_por:(currentUser?currentUser.nome:null)};
+      // Uma pendência herdada só chega até aqui porque já passou da hora
+      // do turno anterior — então, quando resolvida como "feito", já
+      // nasce marcada como atrasada.
+      var payload = {status:status, motivo:motivo, atrasado: status==="feito", marcado_em:new Date().toISOString(), marcado_por:(currentUser?currentUser.nome:null)};
       var upd = await dbUpdate("turno_atividade_execucoes", item.id, payload, mapTurnoAtividadeExecucaoFromRow);
       var idx = state.turnoAtividadeExecucoes.findIndex(function(x){ return x.id===item.id; });
       if(idx>-1) state.turnoAtividadeExecucoes[idx] = upd;
@@ -4503,12 +4611,14 @@
     if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para concluir o turno"); return; }
     try{
       var alvo = proximoTurno(turno);
-      var atividades = state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id; });
-      for(var i=0; i<atividades.length; i++){
-        var a = atividades[i];
-        var item = atividadeExecucaoFor(execucao.id, a.id);
+      var ocorrencias = ocorrenciasTurno(turno);
+      for(var i=0; i<ocorrencias.length; i++){
+        var oc = ocorrencias[i];
+        var item = oc.slot ? itemExecucaoSlot(execucao.id, oc.atividade.id, oc.slot) : atividadeExecucaoFor(execucao.id, oc.atividade.id);
         if(!item){
-          var nova = await dbInsert("turno_atividade_execucoes", {id:uid(), turno_execucao_id:execucao.id, turno_atividade_id:a.id, status:"pendente", repassado_turno_id:(alvo?alvo.id:null)}, mapTurnoAtividadeExecucaoFromRow);
+          var payloadNova = {id:uid(), turno_execucao_id:execucao.id, turno_atividade_id:oc.atividade.id, status:"pendente", repassado_turno_id:(alvo?alvo.id:null)};
+          if(oc.slot) payloadNova.slot_hora = oc.slot;
+          var nova = await dbInsert("turno_atividade_execucoes", payloadNova, mapTurnoAtividadeExecucaoFromRow);
           state.turnoAtividadeExecucoes.push(nova);
         } else if(item.status === "pendente" && alvo){
           var upd = await dbUpdate("turno_atividade_execucoes", item.id, {repassado_turno_id: alvo.id}, mapTurnoAtividadeExecucaoFromRow);
@@ -4526,21 +4636,22 @@
     }
   }
 
-  async function marcarAtividadeTurno(execucao, atividadeId, status, motivo){
+  async function marcarAtividadeTurno(execucao, atividadeId, status, motivo, atrasado, slotHora){
     if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para marcar o checklist"); return; }
     try{
-      var existente = atividadeExecucaoFor(execucao.id, atividadeId);
-      var payload = {status:status, motivo:motivo, marcado_em:new Date().toISOString(), marcado_por:(currentUser?currentUser.nome:null)};
+      var existente = slotHora ? itemExecucaoSlot(execucao.id, atividadeId, slotHora) : atividadeExecucaoFor(execucao.id, atividadeId);
+      var payload = {status:status, motivo:motivo, atrasado: !!atrasado, marcado_em:new Date().toISOString(), marcado_por:(currentUser?currentUser.nome:null)};
       if(existente){
         var upd = await dbUpdate("turno_atividade_execucoes", existente.id, payload, mapTurnoAtividadeExecucaoFromRow);
         var idx = state.turnoAtividadeExecucoes.findIndex(function(x){ return x.id===existente.id; });
         if(idx>-1) state.turnoAtividadeExecucoes[idx] = upd;
       } else {
         payload.id = uid(); payload.turno_execucao_id = execucao.id; payload.turno_atividade_id = atividadeId;
+        if(slotHora) payload.slot_hora = slotHora;
         var nova = await dbInsert("turno_atividade_execucoes", payload, mapTurnoAtividadeExecucaoFromRow);
         state.turnoAtividadeExecucoes.push(nova);
       }
-      showToast(status==="feito" ? "Marcado como feito" : "Registrado como não realizado");
+      showToast(status==="feito" ? (atrasado ? "Marcado como feito (atrasado)" : "Marcado como feito") : "Registrado como não realizado");
       renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao salvar");
@@ -6489,7 +6600,8 @@
         html += '<p class="item-meta">Nenhuma atividade cadastrada.</p>';
       }
       ativs.forEach(function(a){
-        var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "livre";
+        var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) :
+          a.tipo === "recorrente" ? ("a cada "+a.intervaloMinutos+"min, "+escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "livre";
         html += '<div class="qty-row" style="padding:6px 0;">' +
           '<span class="qty-name">'+escapeHtml(a.titulo)+' <span style="color:var(--ink-400);font-size:11.5px;font-weight:600;">('+horarioLbl+')</span></span>' +
           '<button type="button" class="btn-edit" data-act="excluir-atividade" data-id="'+a.id+'" title="Remover">🗑️</button>' +
@@ -6498,10 +6610,11 @@
       html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">' +
         '<input type="text" class="nova-atividade-titulo" placeholder="Nova atividade" style="flex:2;min-width:130px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
         '<select class="nova-atividade-tipo" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
-          '<option value="livre">Livre (sem hora)</option><option value="hora_fixa">Hora fixa</option>' +
+          '<option value="livre">Livre (sem hora)</option><option value="hora_fixa">Hora fixa</option><option value="recorrente">Recorrente (várias vezes ao dia)</option>' +
         '</select>' +
         '<input type="time" class="nova-atividade-inicio" style="display:none;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
         '<input type="time" class="nova-atividade-fim" style="display:none;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
+        '<input type="number" min="5" step="5" class="nova-atividade-intervalo" placeholder="a cada (min)" style="display:none;width:110px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
         '<button type="button" class="btn-add-atividade" data-turno-id="'+t.id+'" style="padding:8px 12px;background:var(--teal-700);color:#fff;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:700;">+ Atividade</button>' +
       '</div>';
       html += '</div>';
@@ -6602,11 +6715,13 @@
       var tipoSelect = block.querySelector(".nova-atividade-tipo");
       var inicioInput = block.querySelector(".nova-atividade-inicio");
       var fimInput = block.querySelector(".nova-atividade-fim");
+      var intervaloInput = block.querySelector(".nova-atividade-intervalo");
       if(tipoSelect){
         tipoSelect.addEventListener("change", function(){
-          var fixa = tipoSelect.value === "hora_fixa";
-          inicioInput.style.display = fixa ? "inline-block" : "none";
-          fimInput.style.display = fixa ? "inline-block" : "none";
+          var comHorario = tipoSelect.value === "hora_fixa" || tipoSelect.value === "recorrente";
+          inicioInput.style.display = comHorario ? "inline-block" : "none";
+          fimInput.style.display = comHorario ? "inline-block" : "none";
+          intervaloInput.style.display = tipoSelect.value === "recorrente" ? "inline-block" : "none";
         });
       }
       var addAtivBtn = block.querySelector(".btn-add-atividade");
@@ -6615,12 +6730,18 @@
           var titulo = block.querySelector(".nova-atividade-titulo").value.trim();
           if(!titulo){ showToast("Digite o nome da atividade"); return; }
           var tipo = tipoSelect.value;
-          var horaInicio = tipo === "hora_fixa" ? inicioInput.value : null;
-          var horaFim = tipo === "hora_fixa" ? fimInput.value : null;
-          if(tipo === "hora_fixa" && (!horaInicio || !horaFim)){ showToast("Preencha o horário de início e fim"); return; }
+          var comHorario = tipo === "hora_fixa" || tipo === "recorrente";
+          var horaInicio = comHorario ? inicioInput.value : null;
+          var horaFim = comHorario ? fimInput.value : null;
+          if(comHorario && (!horaInicio || !horaFim)){ showToast("Preencha o horário de início e fim"); return; }
+          var intervaloMinutos = null;
+          if(tipo === "recorrente"){
+            intervaloMinutos = parseInt(intervaloInput.value, 10);
+            if(!intervaloMinutos || intervaloMinutos <= 0){ showToast("Preencha a cada quantos minutos repete"); return; }
+          }
           var ordemAtual = state.turnoAtividades.filter(function(a){ return a.turnoId===turnoId; }).length;
           try{
-            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, ordem:ordemAtual}, mapTurnoAtividadeFromRow);
+            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual}, mapTurnoAtividadeFromRow);
             state.turnoAtividades.push(nova);
             showToast("Atividade adicionada"); renderAdmin();
           }catch(err){
