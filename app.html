@@ -559,8 +559,6 @@
     <p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Escaneie o QR code fixado nessa acomodação pra confirmar que você está lá.</p>
     <video id="qrConfirmVideo" style="width:100%;border-radius:10px;background:#111;display:block;min-height:220px;object-fit:cover;" playsinline muted autoplay></video>
     <p id="qrConfirmStatus" class="item-meta" style="margin-top:10px;">Abrindo a câmera…</p>
-    <button type="button" id="qrConfirmFotoBtn" style="display:block;width:100%;margin-top:6px;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">📷 Não consigo usar a câmera — tirar foto do QR</button>
-    <input type="file" id="qrConfirmFotoInput" accept="image/*" capture="environment" style="display:none;">
     <div class="sheet-actions">
       <button type="button" class="btn-secondary" id="qrConfirmCancel">Cancelar</button>
     </div>
@@ -3167,37 +3165,19 @@
       }).catch(function(err){
         console.error(err);
         var st3 = document.getElementById("qrConfirmStatus");
-        st3.textContent = "Não consegui acessar a câmera — use o botão abaixo pra tirar uma foto do QR.";
-        st3.style.color = "var(--amber-600)";
+        st3.textContent = "Não consegui acessar a câmera — verifique a permissão de câmera do navegador e tente de novo.";
+        st3.style.color = "var(--red-600)";
       });
     }catch(err){
       console.error(err);
       var st4 = document.getElementById("qrConfirmStatus");
-      st4.textContent = "Não consegui acessar a câmera — use o botão abaixo pra tirar uma foto do QR.";
-      st4.style.color = "var(--amber-600)";
+      st4.textContent = "Não consegui acessar a câmera — verifique a permissão de câmera do navegador e tente de novo.";
+      st4.style.color = "var(--red-600)";
     }
   }
 
   document.getElementById("qrConfirmCancel").onclick = fecharQrConfirmSheet;
   qrConfirmOverlayEl.addEventListener("click", function(e){ if(e.target===qrConfirmOverlayEl) fecharQrConfirmSheet(); });
-  document.getElementById("qrConfirmFotoBtn").onclick = function(){
-    document.getElementById("qrConfirmFotoInput").click();
-  };
-  document.getElementById("qrConfirmFotoInput").addEventListener("change", function(e){
-    var file = e.target.files[0];
-    e.target.value = "";
-    if(!file) return;
-    var st = document.getElementById("qrConfirmStatus");
-    st.textContent = "Lendo QR code da foto…";
-    st.style.color = "";
-    decodificarCodigoBarras(file, function(texto){
-      processarLeituraQrConfirm(texto);
-    }, function(){
-      var st2 = document.getElementById("qrConfirmStatus");
-      st2.textContent = "Não consegui ler o QR na foto — tenta de novo com mais luz e foco.";
-      st2.style.color = "var(--red-600)";
-    });
-  });
 
   document.getElementById("f_scanBarcodeBtn").onclick = function(){
     document.getElementById("f_codigoBarrasPhotoInput").click();
@@ -7572,7 +7552,7 @@
   }
   function renderQrAcomodacoesHtml(){
     var html = '<div class="section-title" style="margin-top:22px;">📷 QR Code das acomodações (check-in de limpeza)</div>';
-    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Imprima e cole um QR desses em cada acomodação — é fixo, sempre o mesmo, não muda a cada limpeza, e cada acomodação tem o seu próprio (nunca o mesmo código em duas acomodações diferentes). A camareira aponta a câmera do celular pra ele e abre direto a tela de check-in daquela acomodação, ou aperta "Iniciar"/"Finalizar" numa tarefa de lavagem ou manutenção dentro do app — nos dois casos, ela tem que escanear esse QR (ao vivo pela câmera, ou por foto) pra confirmar que está ali, tanto pra iniciar quanto pra concluir. Só funciona se ela estiver logada no app com permissão em Limpeza.</p>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Imprima e cole um QR desses em cada acomodação — é fixo, sempre o mesmo, não muda a cada limpeza, e cada acomodação tem o seu próprio (nunca o mesmo código em duas acomodações diferentes). A camareira aponta a câmera do celular pra ele e abre direto a tela de check-in daquela acomodação, ou aperta "Iniciar"/"Finalizar" numa tarefa de lavagem ou manutenção dentro do app — nos dois casos, ela tem que escanear esse QR com a câmera ao vivo pra confirmar que está ali, tanto pra iniciar quanto pra concluir. Só funciona se ela estiver logada no app com permissão em Limpeza.</p>';
     if(!state.acomodacoes || state.acomodacoes.length === 0){
       html += '<div class="empty">Nenhuma acomodação cadastrada ainda.</div>';
       return html;
