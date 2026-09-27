@@ -920,6 +920,7 @@
   function mapEscalaExcecaoFromRow(r){
     return {id:r.id, userId:r.user_id, data:r.data, tipo:r.tipo, horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null, observacao:r.observacao||null};
   }
+  var EQUIPE_LABEL = {recepcao:"Recepção", manutencao:"Manutenção", limpeza:"Limpeza"};
   var ESCALA_TIPO_LABEL = {trabalho:"Trabalho", folga:"Folga", folga_extra:"Folga (compensação)", falta:"Falta", atestado:"Atestado"};
   var ESCALA_TIPO_COR = {trabalho:"var(--teal-700)", folga:"var(--ink-400)", folga_extra:"var(--amber-600)", falta:"var(--red-600)", atestado:"#6d4aa8"};
   function escalaEfetiva(userId, dataStr){
@@ -1026,7 +1027,7 @@
       sb.from("turno_atividades").select("*").order("ordem"),
       sb.from("turno_execucoes").select("*").order("data", {ascending:false}).limit(400),
       sb.from("turno_atividade_execucoes").select("*").limit(4000),
-      sb.from("profiles").select("id,nome,ativo").order("nome"),
+      sb.from("profiles").select("id,nome,ativo,equipe").order("nome"),
       sb.from("escala_semanal").select("*"),
       sb.from("escala_excecoes").select("*").order("data", {ascending:false}).limit(2000)
     ]);
@@ -1058,7 +1059,7 @@
       solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !s.excluidoEm; }),
       solicitacoesExcluidas: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !!s.excluidoEm; }),
       staffNames: staffNames,
-      staffProfiles: (staffProfilesRes.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false}; }),
+      staffProfiles: (staffProfilesRes.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false, equipe:p.equipe||null}; }),
       escalaSemanal: (escalaSemanalRes.data||[]).map(mapEscalaSemanalFromRow),
       escalaExcecoes: (escalaExcecoesRes.data||[]).map(mapEscalaExcecaoFromRow)
     };
@@ -1078,7 +1079,7 @@
     var permissoes = {};
     (permRes.data||[]).forEach(function(p){ permissoes[p.modulo] = {ver:p.pode_ver, editar:p.pode_editar, excluir:p.pode_excluir}; });
     var turnoIds = (profRes.data.turno_ids && profRes.data.turno_ids.length) ? profRes.data.turno_ids : (profRes.data.turno_id ? [profRes.data.turno_id] : []);
-    return {id:profRes.data.id, nome:profRes.data.nome, email:profRes.data.email, role:profRes.data.role, turnoIds:turnoIds, permissoes:permissoes};
+    return {id:profRes.data.id, nome:profRes.data.nome, email:profRes.data.email, role:profRes.data.role, turnoIds:turnoIds, equipe:profRes.data.equipe||null, permissoes:permissoes};
   }
 
   var loginMode = "entrar"; // 'entrar' | 'cadastrar'
@@ -4960,7 +4961,7 @@
     var main = document.getElementById("escalaView");
     var podeEd = podeEditar("escala_trabalho");
     var datas = escalaSemanaDatas(escalaSemanaOffset);
-    var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; });
+    var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && (p.equipe==="recepcao" || p.equipe==="manutencao"); });
 
     var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;">' +
       '<button type="button" id="escalaSemanaPrev" class="btn-edit" title="Semana anterior">‹</button>' +
@@ -4970,9 +4971,10 @@
     if(escalaSemanaOffset !== 0){
       html += '<button type="button" id="escalaSemanaHoje" style="display:block;margin:0 auto 12px;background:none;border:none;color:var(--teal-700);font-family:inherit;font-size:12.5px;font-weight:700;">← voltar pra semana atual</button>';
     }
+    html += '<p style="color:var(--ink-600);font-size:12px;margin:0 0 12px;">Toque num dia pra marcar horário ou folga. "Salvar como padrão" fixa aquele dia da semana pra sempre (ex: folga toda segunda) — não precisa refazer toda semana. Se um dia normal de trabalho virar folga por compensação, falta ou atestado, ou se for a folga de domingo do mês, use "Salvar só este dia".</p>';
 
     if(funcionarios.length === 0){
-      html += '<div class="empty">Nenhum funcionário cadastrado ainda.</div>';
+      html += '<div class="empty">Nenhum funcionário de recepção ou manutenção com equipe definida ainda — vá em Administração e defina a "Equipe" de cada pessoa.</div>';
     } else {
       html += '<div class="card" style="overflow-x:auto;padding:10px;">';
       html += '<table style="width:100%;border-collapse:collapse;min-width:680px;">';
@@ -7113,7 +7115,7 @@
         permissoes[x.modulo] = {ver:x.pode_ver, editar:x.pode_editar, excluir:x.pode_excluir};
       });
       var turnoIds = (p.turno_ids && p.turno_ids.length) ? p.turno_ids : (p.turno_id ? [p.turno_id] : []);
-      return {id:p.id, nome:p.nome, email:p.email, role:p.role, ativo:p.ativo, turnoIds:turnoIds, permissoes:permissoes};
+      return {id:p.id, nome:p.nome, email:p.email, role:p.role, ativo:p.ativo, turnoIds:turnoIds, equipe:p.equipe||null, permissoes:permissoes};
     });
   }
 
@@ -7199,16 +7201,26 @@
       html += '<div class="admin-user-card" data-uid="'+u.id+'">';
       html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+'</div>';
       html += '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>';
+      html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Equipe</label>';
+      html += '<select class="equipe-select" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:8px;">';
+      html += '<option value="">Não definida</option>';
+      Object.keys(EQUIPE_LABEL).forEach(function(eq){
+        html += '<option value="'+eq+'" '+(u.equipe===eq?"selected":"")+'>'+EQUIPE_LABEL[eq]+'</option>';
+      });
+      html += '</select>';
+      html += '<p class="item-meta" style="margin:0 0 10px;">Define quem aparece na Escala de Trabalho (recepção e manutenção) e quem pode ter turno fixo do checklist (só recepção).</p>';
       if(u.role !== "admin"){
-        html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno(s) fixo(s) (checklist)</label>';
-        html += '<div class="turno-fixo-checks" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">';
-        state.turnos.forEach(function(t){
-          html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;">' +
-            '<input type="checkbox" class="turno-fixo-check" value="'+t.id+'" '+(u.turnoIds.indexOf(t.id)>-1?"checked":"")+'> '+escapeHtml(t.nome) +
-          '</label>';
-        });
-        if(state.turnos.length === 0) html += '<span class="item-meta">Nenhum turno cadastrado ainda.</span>';
-        html += '</div>';
+        if(u.equipe === "recepcao"){
+          html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno(s) fixo(s) (checklist)</label>';
+          html += '<div class="turno-fixo-checks" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">';
+          state.turnos.forEach(function(t){
+            html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;">' +
+              '<input type="checkbox" class="turno-fixo-check" value="'+t.id+'" '+(u.turnoIds.indexOf(t.id)>-1?"checked":"")+'> '+escapeHtml(t.nome) +
+            '</label>';
+          });
+          if(state.turnos.length === 0) html += '<span class="item-meta">Nenhum turno cadastrado ainda.</span>';
+          html += '</div>';
+        }
         html += '<table class="admin-perm-table"><tr><th></th><th>Ver</th><th>Editar</th><th>Excluir</th></tr>';
         MODULOS_ADMIN.forEach(function(m){
           var perm = u.permissoes[m.key] || {ver:false, editar:false, excluir:false};
@@ -7300,6 +7312,28 @@
 
     main.querySelectorAll(".admin-user-card").forEach(function(card){
       var uid = card.getAttribute("data-uid");
+
+      var equipeSelect = card.querySelector(".equipe-select");
+      if(equipeSelect){
+        equipeSelect.addEventListener("change", async function(){
+          var novaEquipe = equipeSelect.value || null;
+          try{
+            var res = await sb.from("profiles").update({equipe: novaEquipe}).eq("id", uid);
+            if(res.error) throw res.error;
+            var cache = adminUsersCache.find(function(u){ return u.id===uid; });
+            if(cache) cache.equipe = novaEquipe;
+            if(state.staffProfiles){
+              var sp = state.staffProfiles.find(function(p){ return p.id===uid; });
+              if(sp) sp.equipe = novaEquipe;
+            }
+            if(currentUser && currentUser.id === uid) currentUser.equipe = novaEquipe;
+            showToast("Equipe atualizada");
+            renderAdmin();
+          }catch(err){
+            console.error(err); showToast("Erro ao atualizar equipe");
+          }
+        });
+      }
 
       var turnoChecks = card.querySelectorAll(".turno-fixo-check");
       turnoChecks.forEach(function(cb){
