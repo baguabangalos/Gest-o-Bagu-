@@ -927,16 +927,46 @@
   function mapEscalaExcecaoFromRow(r){
     return {id:r.id, userId:r.user_id, data:r.data, tipo:r.tipo, horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null, observacao:r.observacao||null};
   }
-  var EQUIPE_LABEL = {recepcao:"Recepção", manutencao:"Manutenção", limpeza:"Limpeza"};
+  var EQUIPE_LABEL = {recepcao:"Recepção", manutencao:"Manutenção", limpeza:"Limpeza", guarda:"Guarda"};
   var ESCALA_TIPO_LABEL = {trabalho:"Trabalho", folga:"Folga", folga_extra:"Folga (compensação)", falta:"Falta", atestado:"Atestado"};
   var ESCALA_TIPO_COR = {trabalho:"var(--teal-700)", folga:"var(--ink-400)", folga_extra:"var(--amber-600)", falta:"var(--red-600)", atestado:"#6d4aa8"};
+  // Guarda: escala 12x36 (um dia trabalha, um dia folga, pra sempre), turno
+  // das 19:00 às 07:00 (vira o dia). Em vez de guardar "par/ímpar" (que muda
+  // de sentido quando o mês tem número ímpar de dias), guardamos só UMA data
+  // de referência em que a pessoa trabalha, e calculamos a paridade contando
+  // os dias corridos entre essa data e a data desejada — isso já reproduz
+  // sozinho a troca de par/ímpar na virada do mês, sem precisar recalcular.
+  var GUARDA_HORA_INICIO = "19:00";
+  var GUARDA_HORA_FIM = "07:00";
+  function diasEntre(dataStr1, dataStr2){
+    var d1 = dateAtLocalTime(dataStr1,"00:00").getTime();
+    var d2 = dateAtLocalTime(dataStr2,"00:00").getTime();
+    return Math.round((d2-d1)/86400000);
+  }
+  function guardaTrabalhaNoDia(referenciaData, dataStr){
+    if(!referenciaData) return null;
+    var diff = diasEntre(referenciaData, dataStr);
+    return (((diff % 2)+2)%2) === 0;
+  }
+  function turnoGuardaAtual(){
+    return (state.turnos||[]).find(function(t){ return /turno\s*3/i.test(t.nome||""); }) || null;
+  }
   function escalaEfetiva(userId, dataStr){
     var exc = (state.escalaExcecoes||[]).find(function(e){ return e.userId===userId && e.data===dataStr; });
     if(exc) return {tipo:exc.tipo, horaInicio:exc.horaInicio, horaFim:exc.horaFim, observacao:exc.observacao, excecao:true};
+    var perfil = (state.staffProfiles||[]).find(function(p){ return p.id===userId; });
+    if(perfil && perfil.equipe === "guarda"){
+      var trabalha = guardaTrabalhaNoDia(perfil.guardaReferenciaData, dataStr);
+      if(trabalha === null) return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, semPadrao:true};
+      if(trabalha){
+        var turnoG = turnoGuardaAtual();
+        return {tipo:"trabalho", horaInicio:(turnoG?turnoG.horaInicio:GUARDA_HORA_INICIO), horaFim:(turnoG?turnoG.horaFim:GUARDA_HORA_FIM), excecao:false};
+      }
+      return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false};
+    }
     var dt = dateAtLocalTime(dataStr,"00:00");
     var dow = dt.getDay();
     if(dow === 0){
-      var perfil = (state.staffProfiles||[]).find(function(p){ return p.id===userId; });
       if(perfil && perfil.domingoFolgaMes){
         var ordinal = Math.ceil(dt.getDate()/7);
         if(ordinal === perfil.domingoFolgaMes){
@@ -1044,7 +1074,7 @@
       sb.from("turno_atividades").select("*").order("ordem"),
       sb.from("turno_execucoes").select("*").order("data", {ascending:false}).limit(400),
       sb.from("turno_atividade_execucoes").select("*").limit(4000),
-      sb.from("profiles").select("id,nome,ativo,equipe,domingo_folga_mes").order("nome"),
+      sb.from("profiles").select("id,nome,ativo,equipe,domingo_folga_mes,guarda_referencia_data").order("nome"),
       sb.from("escala_semanal").select("*"),
       sb.from("escala_excecoes").select("*").order("data", {ascending:false}).limit(2000)
     ]);
@@ -1076,7 +1106,7 @@
       solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !s.excluidoEm; }),
       solicitacoesExcluidas: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !!s.excluidoEm; }),
       staffNames: staffNames,
-      staffProfiles: (staffProfilesRes.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false, equipe:p.equipe||null, domingoFolgaMes:p.domingo_folga_mes||null}; }),
+      staffProfiles: (staffProfilesRes.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false, equipe:p.equipe||null, domingoFolgaMes:p.domingo_folga_mes||null, guardaReferenciaData:p.guarda_referencia_data||null}; }),
       escalaSemanal: (escalaSemanalRes.data||[]).map(mapEscalaSemanalFromRow),
       escalaExcecoes: (escalaExcecoesRes.data||[]).map(mapEscalaExcecaoFromRow)
     };
@@ -4955,6 +4985,7 @@
     var html = '<div class="seg-toggle">' +
       '<button data-eqsub="horarios" class="'+(equipeSubView==="horarios"?"active":"")+'">Horários</button>' +
       '<button data-eqsub="folga" class="'+(equipeSubView==="folga"?"active":"")+'">Folga</button>' +
+      '<button data-eqsub="guarda" class="'+(equipeSubView==="guarda"?"active":"")+'">Guarda</button>' +
       '<button data-eqsub="setor" class="'+(equipeSubView==="setor"?"active":"")+'">Setor</button>' +
     '</div>' +
     '<div id="equipeSubBody"></div>';
@@ -4964,6 +4995,7 @@
     });
     var body = document.getElementById("equipeSubBody");
     if(equipeSubView === "folga") renderEquipeFolga(body, podeEd);
+    else if(equipeSubView === "guarda") renderEquipeGuarda(body, podeEd);
     else if(equipeSubView === "setor") renderEquipeSetor(body);
     else renderEquipeHorarios(body, podeEd);
   }
@@ -5076,6 +5108,7 @@
 
   function renderEquipeFolga(body, podeEd){
     var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && (p.equipe==="recepcao" || p.equipe==="manutencao"); });
+    var excFuncionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && (p.equipe==="recepcao" || p.equipe==="manutencao" || p.equipe==="guarda"); });
     var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Marque os dias fixos de folga na semana de cada pessoa (pode ser mais de um) e o domingo fixo de folga do mês. Fica valendo sempre — não precisa refazer toda semana ou todo mês. Folga extra, falta ou atestado fora do padrão fica no formulário no fim desta página.</p>';
 
     if(funcionarios.length === 0){
@@ -5106,12 +5139,13 @@
       html += '</div>';
     }
 
-    if(podeEd && funcionarios.length > 0){
+    if(podeEd && excFuncionarios.length > 0){
       html += '<div class="card" style="margin-top:16px;">';
       html += '<p class="section-title" style="margin:0 0 10px;">Registrar folga extra, falta ou atestado</p>';
+      html += '<p class="item-meta" style="margin:0 0 10px;">Vale pra qualquer pessoa, inclusive guardas — a escala 12×36 dos guardas se edita em Equipe → Guarda.</p>';
       html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:4px;">Funcionário</label>';
       html += '<select id="folgaExcFuncionario" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:10px;">' +
-        funcionarios.map(function(f){ return '<option value="'+f.id+'">'+escapeHtml(f.nome)+'</option>'; }).join("") +
+        excFuncionarios.map(function(f){ return '<option value="'+f.id+'">'+escapeHtml(f.nome)+(f.equipe==="guarda"?" (guarda)":"")+'</option>'; }).join("") +
       '</select>';
       html += '<div style="display:flex;gap:8px;margin-bottom:10px;">';
       html += '<input type="date" id="folgaExcData" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">';
@@ -5213,10 +5247,103 @@
     }
   }
 
+  function renderEquipeGuarda(body, podeEd){
+    var guardas = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && p.equipe==="guarda"; });
+    var turnoG = turnoGuardaAtual();
+    var horaLbl = (turnoG?turnoG.horaInicio:GUARDA_HORA_INICIO)+'–'+(turnoG?turnoG.horaFim:GUARDA_HORA_FIM);
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Escala 12×36 dos guardas: trabalha um dia, folga o dia seguinte, sempre no Turno 3 ('+escapeHtml(horaLbl)+', virando a noite). Marque apenas <strong>uma data em que a pessoa trabalha</strong> — o sistema já calcula sozinho, pra sempre, quais dias são de trabalho e quais são de folga, inclusive na virada do mês.</p>';
+
+    if(guardas.length === 0){
+      html += '<div class="empty">Nenhum guarda com equipe definida ainda — defina em Equipe → Setor.</div>';
+    } else {
+      html += '<div class="card">';
+      guardas.forEach(function(g, idx){
+        html += '<div style="padding:'+(idx===0?'0 0 14px':'14px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
+          '<p style="margin:0 0 8px;font-weight:700;font-size:13.5px;">'+escapeHtml(g.nome)+'</p>' +
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+            '<label style="font-size:12px;color:var(--ink-600);">Trabalha nesta data:</label>' +
+            '<input type="date" class="guarda-ref-data" data-uid="'+g.id+'" value="'+(g.guardaReferenciaData||"")+'" '+(podeEd?'':'disabled')+' style="padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+            (podeEd?'<button type="button" class="guarda-ref-salvar" data-uid="'+g.id+'" style="white-space:nowrap;padding:8px 12px;background:var(--teal-700);color:#fff;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:700;">Salvar</button>':'') +
+          '</div>' +
+          (g.guardaReferenciaData ? '<p class="item-meta" style="margin:8px 0 0;">Referência: '+g.guardaReferenciaData.slice(8,10)+'/'+g.guardaReferenciaData.slice(5,7)+'/'+g.guardaReferenciaData.slice(0,4)+' — a partir daí, dia sim, dia não.</p>' : '<p class="item-meta" style="margin:8px 0 0;">Sem data de referência ainda — não dá pra calcular a escala.</p>') +
+        '</div>';
+      });
+      html += '</div>';
+    }
+
+    var datas = escalaSemanaDatas(escalaSemanaOffset);
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 12px;gap:8px;">' +
+      '<button type="button" id="escalaSemanaPrev" class="btn-edit" title="Semana anterior">‹</button>' +
+      '<p style="margin:0;font-weight:800;font-size:14px;text-align:center;flex:1;">'+fmtDateOnly(dateAtLocalTime(datas[0],"00:00").getTime())+' – '+fmtDateOnly(dateAtLocalTime(datas[6],"00:00").getTime())+(escalaSemanaOffset===0?' (semana atual)':'')+'</p>' +
+      '<button type="button" id="escalaSemanaNext" class="btn-edit" title="Próxima semana">›</button>' +
+    '</div>';
+    if(escalaSemanaOffset !== 0){
+      html += '<button type="button" id="escalaSemanaHoje" style="display:block;margin:0 auto 12px;background:none;border:none;color:var(--teal-700);font-family:inherit;font-size:12.5px;font-weight:700;">← voltar pra semana atual</button>';
+    }
+
+    if(guardas.length > 0){
+      html += '<div class="card" style="overflow-x:auto;padding:10px;">';
+      html += '<table style="width:100%;border-collapse:collapse;min-width:680px;">';
+      html += '<tr><th style="text-align:left;padding:6px 8px;font-size:12px;color:var(--ink-600);">Guarda</th>';
+      datas.forEach(function(d){
+        var dow = dateAtLocalTime(d,"00:00").getDay();
+        var hoje = d === localDateStr(new Date());
+        html += '<th style="padding:6px 4px;font-size:11px;color:'+(hoje?"var(--teal-700)":"var(--ink-600)")+';text-align:center;white-space:nowrap;">'+DIAS_SEMANA_LABELS[dow]+'<br>'+d.slice(8,10)+'/'+d.slice(5,7)+'</th>';
+      });
+      html += '</tr>';
+      guardas.forEach(function(g){
+        html += '<tr>';
+        html += '<td style="padding:6px 8px;font-size:13px;font-weight:700;border-top:1px solid var(--line);white-space:nowrap;">'+escapeHtml(g.nome)+'</td>';
+        datas.forEach(function(d){
+          var ef = escalaEfetiva(g.id, d);
+          var cor = ESCALA_TIPO_COR[ef.tipo] || "var(--ink-400)";
+          var texto = ef.semPadrao ? "—" : (ef.tipo === "trabalho" ? (escapeHtml(ef.horaInicio||"?")+"–"+escapeHtml(ef.horaFim||"?")) : (ESCALA_TIPO_LABEL[ef.tipo]||ef.tipo));
+          html += '<td style="padding:3px;border-top:1px solid var(--line);text-align:center;">' +
+            '<div style="padding:6px 3px;border-radius:7px;border:1px solid '+cor+';background:'+(ef.tipo==="trabalho"?"#fff":"var(--sand-50)")+';color:'+cor+';font-size:10.5px;font-weight:700;">'+texto+(ef.excecao?' •':'')+'</div>' +
+          '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</table></div>';
+      html += '<p class="item-meta" style="margin-top:8px;">• dia com exceção (folga extra, falta, atestado) registrada na aba Folga. Turno vira a noite: quem trabalha aparece com o horário de início num dia e o de fim já é no dia seguinte de manhã.</p>';
+    }
+
+    body.innerHTML = html;
+
+    document.getElementById("escalaSemanaPrev").onclick = function(){ escalaSemanaOffset--; renderEquipe(); };
+    document.getElementById("escalaSemanaNext").onclick = function(){ escalaSemanaOffset++; renderEquipe(); };
+    var hojeBtn = document.getElementById("escalaSemanaHoje");
+    if(hojeBtn) hojeBtn.onclick = function(){ escalaSemanaOffset = 0; renderEquipe(); };
+
+    if(podeEd){
+      body.querySelectorAll(".guarda-ref-salvar").forEach(function(btn){
+        btn.onclick = function(){
+          var uid = btn.getAttribute("data-uid");
+          var data = body.querySelector('.guarda-ref-data[data-uid="'+uid+'"]').value;
+          salvarGuardaReferencia(uid, data);
+        };
+      });
+    }
+  }
+
+  async function salvarGuardaReferencia(userId, dataStr){
+    if(!dataStr){ showToast("Escolha uma data em que a pessoa trabalha"); return; }
+    try{
+      var res = await sb.from("profiles").update({guarda_referencia_data: dataStr}).eq("id", userId);
+      if(res.error) throw res.error;
+      var sp = (state.staffProfiles||[]).find(function(p){ return p.id===userId; });
+      if(sp) sp.guardaReferenciaData = dataStr;
+      showToast("Escala do guarda atualizada");
+      renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar data de referência");
+    }
+  }
+
   function renderEquipeSetor(body){
     var isAdmin = currentUser && currentUser.role === "admin";
     var staff = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; }).slice().sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||""); });
-    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Define quem é Recepção, Manutenção ou Limpeza. Isso decide quem aparece nas abas Horários e Folga (só Recepção e Manutenção) e quem pode ter turno fixo no Checklist de Turno (só Recepção).</p>';
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Define quem é Recepção, Manutenção, Limpeza ou Guarda. Isso decide quem aparece nas abas Horários e Folga (só Recepção e Manutenção), quem aparece na aba Guarda (só Guarda) e quem pode ter turno fixo no Checklist de Turno (só Recepção).</p>';
     if(!isAdmin){
       html += '<p class="item-meta" style="margin:0 0 12px;">Só administradores podem alterar o setor de cada pessoa.</p>';
     }
