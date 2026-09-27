@@ -552,6 +552,21 @@
   </div>
 </div>
 
+<!-- Sheet: confirmação por QR code (iniciar/concluir lavagem ou manutenção) -->
+<div class="sheet-overlay" id="qrConfirmSheetOverlay">
+  <div class="sheet">
+    <h2>Confirmar presença — <span id="qrConfirmAcomodacaoNome"></span></h2>
+    <p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Escaneie o QR code fixado nessa acomodação pra confirmar que você está lá.</p>
+    <video id="qrConfirmVideo" style="width:100%;border-radius:10px;background:#111;display:block;min-height:220px;object-fit:cover;" playsinline muted autoplay></video>
+    <p id="qrConfirmStatus" class="item-meta" style="margin-top:10px;">Abrindo a câmera…</p>
+    <button type="button" id="qrConfirmFotoBtn" style="display:block;width:100%;margin-top:6px;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">📷 Não consigo usar a câmera — tirar foto do QR</button>
+    <input type="file" id="qrConfirmFotoInput" accept="image/*" capture="environment" style="display:none;">
+    <div class="sheet-actions">
+      <button type="button" class="btn-secondary" id="qrConfirmCancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sheet: minha conta (trocar email/senha) -->
 <div class="sheet-overlay" id="minhaContaSheetOverlay">
   <div class="sheet">
@@ -3081,6 +3096,108 @@
     reader.onerror = function(){ onError(new Error("Não consegui ler o arquivo")); };
     reader.readAsDataURL(file);
   }
+
+  // ---------- Confirmação por QR code (iniciar/concluir lavagem e manutenção) ----------
+  // Cada acomodação tem seu próprio QR fixo (gerado em Administração →
+  // acomodacaoId embutido na URL) — nunca o mesmo código pra acomodações
+  // diferentes. Ao apertar "Iniciar" ou "Finalizar" numa tarefa de lavagem
+  // ou manutenção, a pessoa tem que escanear esse QR pra confirmar que está
+  // fisicamente ali, com a câmera ao vivo (ou, se a câmera não funcionar,
+  // uma foto do QR).
+  var qrConfirmOverlayEl = document.getElementById("qrConfirmSheetOverlay");
+  var qrConfirmReader = null;
+  var qrConfirmOnSuccess = null;
+  var qrConfirmAcomodacaoIdAlvo = null;
+
+  function extrairAcomodacaoIdDoQr(texto){
+    texto = (texto||"").trim();
+    try{
+      var u = new URL(texto);
+      var v = u.searchParams.get("scan");
+      if(v) return v;
+    }catch(e){}
+    var m = /[?&]scan=([^&]+)/.exec(texto);
+    if(m) return decodeURIComponent(m[1]);
+    return texto;
+  }
+
+  function pararQrConfirmCamera(){
+    if(qrConfirmReader){
+      try{ qrConfirmReader.reset(); }catch(e){}
+      qrConfirmReader = null;
+    }
+  }
+
+  function fecharQrConfirmSheet(){
+    pararQrConfirmCamera();
+    qrConfirmOverlayEl.classList.remove("open");
+    qrConfirmOnSuccess = null;
+    qrConfirmAcomodacaoIdAlvo = null;
+  }
+
+  function processarLeituraQrConfirm(texto){
+    if(!qrConfirmAcomodacaoIdAlvo) return;
+    var lidoId = extrairAcomodacaoIdDoQr(texto);
+    if(lidoId !== qrConfirmAcomodacaoIdAlvo){
+      var st = document.getElementById("qrConfirmStatus");
+      st.textContent = "Esse QR code é de outra acomodação — escaneie o QR fixado aqui.";
+      st.style.color = "var(--red-600)";
+      return;
+    }
+    var callback = qrConfirmOnSuccess;
+    fecharQrConfirmSheet();
+    if(callback) callback();
+  }
+
+  function abrirQrConfirmSheet(acomodacaoId, onSuccess){
+    qrConfirmAcomodacaoIdAlvo = acomodacaoId;
+    qrConfirmOnSuccess = onSuccess;
+    document.getElementById("qrConfirmAcomodacaoNome").textContent = acomodacaoNome(acomodacaoId);
+    var st = document.getElementById("qrConfirmStatus");
+    st.textContent = "Abrindo a câmera…";
+    st.style.color = "";
+    qrConfirmOverlayEl.classList.add("open");
+    try{
+      qrConfirmReader = new ZXing.BrowserMultiFormatReader();
+      qrConfirmReader.decodeFromVideoDevice(undefined, "qrConfirmVideo", function(result){
+        if(result) processarLeituraQrConfirm(result.getText());
+      }).then(function(){
+        var st2 = document.getElementById("qrConfirmStatus");
+        if(st2.textContent === "Abrindo a câmera…"){ st2.textContent = "Aponte a câmera pro QR code fixado na acomodação."; }
+      }).catch(function(err){
+        console.error(err);
+        var st3 = document.getElementById("qrConfirmStatus");
+        st3.textContent = "Não consegui acessar a câmera — use o botão abaixo pra tirar uma foto do QR.";
+        st3.style.color = "var(--amber-600)";
+      });
+    }catch(err){
+      console.error(err);
+      var st4 = document.getElementById("qrConfirmStatus");
+      st4.textContent = "Não consegui acessar a câmera — use o botão abaixo pra tirar uma foto do QR.";
+      st4.style.color = "var(--amber-600)";
+    }
+  }
+
+  document.getElementById("qrConfirmCancel").onclick = fecharQrConfirmSheet;
+  qrConfirmOverlayEl.addEventListener("click", function(e){ if(e.target===qrConfirmOverlayEl) fecharQrConfirmSheet(); });
+  document.getElementById("qrConfirmFotoBtn").onclick = function(){
+    document.getElementById("qrConfirmFotoInput").click();
+  };
+  document.getElementById("qrConfirmFotoInput").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+    var st = document.getElementById("qrConfirmStatus");
+    st.textContent = "Lendo QR code da foto…";
+    st.style.color = "";
+    decodificarCodigoBarras(file, function(texto){
+      processarLeituraQrConfirm(texto);
+    }, function(){
+      var st2 = document.getElementById("qrConfirmStatus");
+      st2.textContent = "Não consegui ler o QR na foto — tenta de novo com mais luz e foco.";
+      st2.style.color = "var(--red-600)";
+    });
+  });
 
   document.getElementById("f_scanBarcodeBtn").onclick = function(){
     document.getElementById("f_codigoBarrasPhotoInput").click();
@@ -5741,6 +5858,28 @@
     return html;
   }
 
+  async function efetivarIniciarSolicitacao(id){
+    try{
+      var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null), iniciado_via_qr:true}, mapSolicitacaoFromRow);
+      var idx1 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+      if(idx1>-1) state.solicitacoes[idx1] = s1;
+      showToast("Iniciado — confirmado por QR code"); renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao atualizar pedido");
+    }
+  }
+
+  async function efetivarFinalizarSolicitacao(id){
+    try{
+      var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
+      var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+      if(idx2>-1) state.solicitacoes[idx2] = s2;
+      showToast("Concluído — confirmado por QR code"); renderApp();
+    }catch(err){
+      console.error(err); showToast("Erro ao atualizar pedido");
+    }
+  }
+
   function wireSolicitacaoActions(container){
     container.querySelectorAll("button[data-act]").forEach(function(b){
       b.onclick = async function(e){
@@ -5761,7 +5900,10 @@
           if(act === "editarItensPedido"){
             abrirEditarItensPedidoSheet(s);
           } else if(act === "iniciar"){
-            if((s.tipo === "lavagem" || s.tipo === "limpeza") && !confirm('Confirma que vai iniciar a limpeza de "'+acomodacaoNome(s.acomodacaoId)+'"?')) return;
+            if(s.tipo === "lavagem" || s.tipo === "limpeza"){
+              abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarIniciarSolicitacao(id); });
+              return;
+            }
             var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
             var idx1 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx1>-1) state.solicitacoes[idx1] = s1;
@@ -5775,7 +5917,10 @@
           } else if(act === "finalizar" && s.tipo === "frigobar"){
             abrirAbastecerSheet(s);
           } else if(act === "finalizar"){
-            if((s.tipo === "lavagem" || s.tipo === "limpeza") && !confirm('Confirma que a limpeza de "'+acomodacaoNome(s.acomodacaoId)+'" foi finalizada?')) return;
+            if(s.tipo === "lavagem" || s.tipo === "limpeza"){
+              abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarFinalizarSolicitacao(id); });
+              return;
+            }
             var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
             var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx2>-1) state.solicitacoes[idx2] = s2;
@@ -7427,7 +7572,7 @@
   }
   function renderQrAcomodacoesHtml(){
     var html = '<div class="section-title" style="margin-top:22px;">📷 QR Code das acomodações (check-in de limpeza)</div>';
-    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Imprima e cole um QR desses em cada acomodação — é fixo, sempre o mesmo, não muda a cada limpeza. A camareira escaneia ao chegar pra marcar "iniciar limpeza" e escaneia de novo, o mesmo QR, ao terminar, pra marcar "concluir limpeza". Isso confirma que ela esteve lá nos dois momentos. Só funciona se ela estiver logada no app com permissão em Limpeza.</p>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Imprima e cole um QR desses em cada acomodação — é fixo, sempre o mesmo, não muda a cada limpeza, e cada acomodação tem o seu próprio (nunca o mesmo código em duas acomodações diferentes). A camareira aponta a câmera do celular pra ele e abre direto a tela de check-in daquela acomodação, ou aperta "Iniciar"/"Finalizar" numa tarefa de lavagem ou manutenção dentro do app — nos dois casos, ela tem que escanear esse QR (ao vivo pela câmera, ou por foto) pra confirmar que está ali, tanto pra iniciar quanto pra concluir. Só funciona se ela estiver logada no app com permissão em Limpeza.</p>';
     if(!state.acomodacoes || state.acomodacoes.length === 0){
       html += '<div class="empty">Nenhuma acomodação cadastrada ainda.</div>';
       return html;
