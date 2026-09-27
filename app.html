@@ -933,7 +933,17 @@
   function escalaEfetiva(userId, dataStr){
     var exc = (state.escalaExcecoes||[]).find(function(e){ return e.userId===userId && e.data===dataStr; });
     if(exc) return {tipo:exc.tipo, horaInicio:exc.horaInicio, horaFim:exc.horaFim, observacao:exc.observacao, excecao:true};
-    var dow = dateAtLocalTime(dataStr,"00:00").getDay();
+    var dt = dateAtLocalTime(dataStr,"00:00");
+    var dow = dt.getDay();
+    if(dow === 0){
+      var perfil = (state.staffProfiles||[]).find(function(p){ return p.id===userId; });
+      if(perfil && perfil.domingoFolgaMes){
+        var ordinal = Math.ceil(dt.getDate()/7);
+        if(ordinal === perfil.domingoFolgaMes){
+          return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, domingoFixo:true};
+        }
+      }
+    }
     var base = (state.escalaSemanal||[]).find(function(e){ return e.userId===userId && e.diaSemana===dow; });
     if(base) return {tipo:base.tipo, horaInicio:base.horaInicio, horaFim:base.horaFim, excecao:false};
     return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, semPadrao:true};
@@ -1034,7 +1044,7 @@
       sb.from("turno_atividades").select("*").order("ordem"),
       sb.from("turno_execucoes").select("*").order("data", {ascending:false}).limit(400),
       sb.from("turno_atividade_execucoes").select("*").limit(4000),
-      sb.from("profiles").select("id,nome,ativo,equipe").order("nome"),
+      sb.from("profiles").select("id,nome,ativo,equipe,domingo_folga_mes").order("nome"),
       sb.from("escala_semanal").select("*"),
       sb.from("escala_excecoes").select("*").order("data", {ascending:false}).limit(2000)
     ]);
@@ -1066,7 +1076,7 @@
       solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !s.excluidoEm; }),
       solicitacoesExcluidas: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !!s.excluidoEm; }),
       staffNames: staffNames,
-      staffProfiles: (staffProfilesRes.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false, equipe:p.equipe||null}; }),
+      staffProfiles: (staffProfilesRes.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false, equipe:p.equipe||null, domingoFolgaMes:p.domingo_folga_mes||null}; }),
       escalaSemanal: (escalaSemanalRes.data||[]).map(mapEscalaSemanalFromRow),
       escalaExcecoes: (escalaExcecoesRes.data||[]).map(mapEscalaExcecaoFromRow)
     };
@@ -4959,10 +4969,30 @@
   }
 
   function renderEquipeHorarios(body, podeEd){
-    var datas = escalaSemanaDatas(escalaSemanaOffset);
     var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && (p.equipe==="recepcao" || p.equipe==="manutencao"); });
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Defina o horário fixo de trabalho de cada pessoa — vale pra todo dia que não for folga (ex: eu trabalho de 12:00 às 20:00, a Vitória das 03:00 às 11:00). Pra dias de folga fixa, folga extra, falta ou atestado, use a aba <strong>Folga</strong>.</p>';
 
-    var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;">' +
+    if(funcionarios.length === 0){
+      html += '<div class="empty">Nenhum funcionário de recepção ou manutenção com equipe definida ainda — defina em Equipe → Setor.</div>';
+    } else {
+      html += '<div class="card">';
+      funcionarios.forEach(function(f, idx){
+        var trabalhoRow = (state.escalaSemanal||[]).find(function(e){ return e.userId===f.id && e.tipo==="trabalho"; });
+        html += '<div style="padding:'+(idx===0?'0 0 14px':'14px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
+          '<p style="margin:0 0 8px;font-weight:700;font-size:13.5px;">'+escapeHtml(f.nome)+'</p>' +
+          '<div style="display:flex;gap:8px;align-items:center;">' +
+            '<input type="time" class="horario-fixo-inicio" data-uid="'+f.id+'" value="'+(trabalhoRow?trabalhoRow.horaInicio||"":"")+'" '+(podeEd?'':'disabled')+' style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+            '<span style="color:var(--ink-400);">–</span>' +
+            '<input type="time" class="horario-fixo-fim" data-uid="'+f.id+'" value="'+(trabalhoRow?trabalhoRow.horaFim||"":"")+'" '+(podeEd?'':'disabled')+' style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+            (podeEd?'<button type="button" class="horario-fixo-salvar" data-uid="'+f.id+'" style="white-space:nowrap;padding:8px 12px;background:var(--teal-700);color:#fff;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:700;">Salvar</button>':'') +
+          '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+
+    var datas = escalaSemanaDatas(escalaSemanaOffset);
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 12px;gap:8px;">' +
       '<button type="button" id="escalaSemanaPrev" class="btn-edit" title="Semana anterior">‹</button>' +
       '<p style="margin:0;font-weight:800;font-size:14px;text-align:center;flex:1;">'+fmtDateOnly(dateAtLocalTime(datas[0],"00:00").getTime())+' – '+fmtDateOnly(dateAtLocalTime(datas[6],"00:00").getTime())+(escalaSemanaOffset===0?' (semana atual)':'')+'</p>' +
       '<button type="button" id="escalaSemanaNext" class="btn-edit" title="Próxima semana">›</button>' +
@@ -4970,11 +5000,8 @@
     if(escalaSemanaOffset !== 0){
       html += '<button type="button" id="escalaSemanaHoje" style="display:block;margin:0 auto 12px;background:none;border:none;color:var(--teal-700);font-family:inherit;font-size:12.5px;font-weight:700;">← voltar pra semana atual</button>';
     }
-    html += '<p style="color:var(--ink-600);font-size:12px;margin:0 0 12px;">Toque num dia pra marcar horário ou folga. "Salvar como padrão" fixa aquele dia da semana pra sempre (ex: folga toda segunda) — não precisa refazer toda semana. Se um dia normal de trabalho virar folga por compensação, falta ou atestado, ou se for a folga de domingo do mês, use "Salvar só este dia".</p>';
 
-    if(funcionarios.length === 0){
-      html += '<div class="empty">Nenhum funcionário de recepção ou manutenção com equipe definida ainda — defina em Equipe → Setor.</div>';
-    } else {
+    if(funcionarios.length > 0){
       html += '<div class="card" style="overflow-x:auto;padding:10px;">';
       html += '<table style="width:100%;border-collapse:collapse;min-width:680px;">';
       html += '<tr><th style="text-align:left;padding:6px 8px;font-size:12px;color:var(--ink-600);">Funcionário</th>';
@@ -4992,17 +5019,15 @@
           var cor = ESCALA_TIPO_COR[ef.tipo] || "var(--ink-400)";
           var texto = ef.tipo === "trabalho" ? (escapeHtml(ef.horaInicio||"?")+"–"+escapeHtml(ef.horaFim||"?")) : (ESCALA_TIPO_LABEL[ef.tipo]||ef.tipo);
           html += '<td style="padding:3px;border-top:1px solid var(--line);text-align:center;">' +
-            '<button type="button" class="escala-cell" data-uid="'+f.id+'" data-data="'+d+'" '+(podeEd?'':'disabled')+' style="width:100%;padding:6px 3px;border-radius:7px;border:1px solid '+cor+';background:'+(ef.tipo==="trabalho"?"#fff":"var(--sand-50)")+';color:'+cor+';font-family:inherit;font-size:10.5px;font-weight:700;'+(podeEd?"cursor:pointer;":"cursor:default;")+'">'+texto+(ef.excecao?' •':'')+'</button>' +
+            '<div style="padding:6px 3px;border-radius:7px;border:1px solid '+cor+';background:'+(ef.tipo==="trabalho"?"#fff":"var(--sand-50)")+';color:'+cor+';font-size:10.5px;font-weight:700;">'+texto+((ef.excecao||ef.domingoFixo)?' •':'')+'</div>' +
           '</td>';
         });
         html += '</tr>';
       });
       html += '</table></div>';
-      html += '<p class="item-meta" style="margin-top:8px;">• dia com exceção (folga extra, falta, atestado ou horário diferente do padrão)</p>';
-      if(podeEd) html += '<p class="item-meta" style="margin-top:2px;">Toque em um dia pra editar.</p>';
-      else html += '<p class="item-meta" style="margin-top:2px;">Só quem tem permissão de editar pode mudar a escala.</p>';
+      html += '<p class="item-meta" style="margin-top:8px;">• dia com exceção (folga extra, falta, atestado) ou domingo fixo de folga do mês — esta grade é só pra conferir, as edições ficam nas abas Horários e Folga.</p>';
     }
-    html += '<div id="escalaEditorWrap"></div>';
+
     body.innerHTML = html;
 
     document.getElementById("escalaSemanaPrev").onclick = function(){ escalaSemanaOffset--; renderEquipe(); };
@@ -5011,54 +5036,24 @@
     if(hojeBtn) hojeBtn.onclick = function(){ escalaSemanaOffset = 0; renderEquipe(); };
 
     if(podeEd){
-      body.querySelectorAll(".escala-cell").forEach(function(btn){
+      body.querySelectorAll(".horario-fixo-salvar").forEach(function(btn){
         btn.onclick = function(){
-          abrirEscalaEditor(btn.getAttribute("data-uid"), btn.getAttribute("data-data"), funcionarios);
+          var uid = btn.getAttribute("data-uid");
+          var inicio = body.querySelector('.horario-fixo-inicio[data-uid="'+uid+'"]').value;
+          var fim = body.querySelector('.horario-fixo-fim[data-uid="'+uid+'"]').value;
+          salvarHorarioFixo(uid, inicio, fim);
         };
       });
     }
   }
 
-  var DIAS_SEMANA_NOMES = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
-
-  function renderEquipeFolga(body, podeEd){
-    var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && (p.equipe==="recepcao" || p.equipe==="manutencao"); });
-    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">A folga fixa semanal fica valendo sempre — não precisa refazer toda semana (ex: a Vitória sempre folga quarta-feira). Cada pessoa tem direito a uma folga na semana e um domingo de folga por mês; pra registrar esse domingo (ou qualquer folga extra, falta ou atestado fora do dia fixo), use a aba <strong>Horários</strong>, toque no dia da pessoa e escolha "Salvar só este dia".</p>';
-    if(funcionarios.length === 0){
-      html += '<div class="empty">Nenhum funcionário de recepção ou manutenção com equipe definida ainda — defina em Equipe → Setor.</div>';
-    } else {
-      html += '<div class="card">';
-      funcionarios.forEach(function(f, idx){
-        var diaFixo = (state.escalaSemanal||[]).find(function(e){ return e.userId===f.id && e.tipo==="folga"; });
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:'+(idx===0?'0 0 12px':'12px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
-          '<span style="font-weight:700;font-size:13.5px;">'+escapeHtml(f.nome)+'</span>' +
-          '<select class="folga-fixa-select" data-uid="'+f.id+'" '+(podeEd?'':'disabled')+' style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--sand-50);">' +
-            '<option value="">Nenhuma</option>' +
-            DIAS_SEMANA_NOMES.map(function(nome,i){ return '<option value="'+i+'" '+(diaFixo && diaFixo.diaSemana===i?"selected":"")+'>'+nome+'</option>'; }).join("") +
-          '</select>' +
-        '</div>';
-      });
-      html += '</div>';
-    }
-    body.innerHTML = html;
-    if(podeEd){
-      body.querySelectorAll(".folga-fixa-select").forEach(function(sel){
-        sel.addEventListener("change", function(){ salvarFolgaFixa(sel.getAttribute("data-uid"), sel.value); });
-      });
-    }
-  }
-
-  async function salvarFolgaFixa(userId, novoDiaStr){
+  async function salvarHorarioFixo(userId, horaInicio, horaFim){
+    if(!horaInicio || !horaFim){ showToast("Preencha o horário de início e fim"); return; }
     try{
-      var antigas = (state.escalaSemanal||[]).filter(function(e){ return e.userId===userId && e.tipo==="folga"; });
-      for(var i=0;i<antigas.length;i++){
-        await dbDelete("escala_semanal", antigas[i].id);
-        state.escalaSemanal = state.escalaSemanal.filter(function(e){ return e.id!==antigas[i].id; });
-      }
-      if(novoDiaStr !== ""){
-        var dia = parseInt(novoDiaStr,10);
+      for(var dia=0; dia<=6; dia++){
         var existente = state.escalaSemanal.find(function(e){ return e.userId===userId && e.diaSemana===dia; });
-        var payload = {user_id:userId, dia_semana:dia, tipo:"folga", hora_inicio:null, hora_fim:null};
+        if(existente && existente.tipo === "folga") continue;
+        var payload = {user_id:userId, dia_semana:dia, tipo:"trabalho", hora_inicio:horaInicio, hora_fim:horaFim};
         if(existente){
           var upd = await dbUpdate("escala_semanal", existente.id, payload, mapEscalaSemanalFromRow);
           var idx = state.escalaSemanal.findIndex(function(e){ return e.id===existente.id; });
@@ -5069,10 +5064,152 @@
           state.escalaSemanal.push(novo);
         }
       }
-      showToast("Folga fixa atualizada");
+      showToast("Horário atualizado");
       renderEquipe();
     }catch(err){
-      console.error(err); showToast("Erro ao salvar folga fixa");
+      console.error(err); showToast("Erro ao salvar horário");
+    }
+  }
+
+  var DIAS_SEMANA_NOMES = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
+  var DOMINGO_FIXO_LABEL = {1:"1º domingo", 2:"2º domingo", 3:"3º domingo", 4:"4º domingo", 5:"5º domingo"};
+
+  function renderEquipeFolga(body, podeEd){
+    var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && (p.equipe==="recepcao" || p.equipe==="manutencao"); });
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Marque os dias fixos de folga na semana de cada pessoa (pode ser mais de um) e o domingo fixo de folga do mês. Fica valendo sempre — não precisa refazer toda semana ou todo mês. Folga extra, falta ou atestado fora do padrão fica no formulário no fim desta página.</p>';
+
+    if(funcionarios.length === 0){
+      html += '<div class="empty">Nenhum funcionário de recepção ou manutenção com equipe definida ainda — defina em Equipe → Setor.</div>';
+    } else {
+      html += '<div class="card">';
+      funcionarios.forEach(function(f, idx){
+        html += '<div style="padding:'+(idx===0?'0 0 14px':'14px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">';
+        html += '<p style="margin:0 0 8px;font-weight:700;font-size:13.5px;">'+escapeHtml(f.nome)+'</p>';
+        html += '<p style="margin:0 0 6px;font-size:11.5px;font-weight:700;color:var(--ink-600);text-transform:uppercase;">Dias fixos de folga</p>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">';
+        for(var dia=1; dia<=6; dia++){
+          var marcado = (state.escalaSemanal||[]).some(function(e){ return e.userId===f.id && e.diaSemana===dia && e.tipo==="folga"; });
+          html += '<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;background:var(--sand-50);border:1px solid var(--line);border-radius:8px;padding:6px 9px;">' +
+            '<input type="checkbox" class="folga-fixa-check" data-uid="'+f.id+'" data-dia="'+dia+'" '+(marcado?"checked":"")+' '+(podeEd?'':'disabled')+'> '+DIAS_SEMANA_NOMES[dia] +
+          '</label>';
+        }
+        html += '</div>';
+        var perfil = (state.staffProfiles||[]).find(function(p){ return p.id===f.id; });
+        var domingoFixo = perfil ? perfil.domingoFolgaMes : null;
+        html += '<p style="margin:0 0 6px;font-size:11.5px;font-weight:700;color:var(--ink-600);text-transform:uppercase;">Domingo fixo de folga (1x por mês)</p>';
+        html += '<select class="domingo-fixo-select" data-uid="'+f.id+'" '+(podeEd?'':'disabled')+' style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--sand-50);">' +
+          '<option value="">Nenhum</option>' +
+          [1,2,3,4,5].map(function(n){ return '<option value="'+n+'" '+(domingoFixo===n?"selected":"")+'>'+DOMINGO_FIXO_LABEL[n]+'</option>'; }).join("") +
+        '</select>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    if(podeEd && funcionarios.length > 0){
+      html += '<div class="card" style="margin-top:16px;">';
+      html += '<p class="section-title" style="margin:0 0 10px;">Registrar folga extra, falta ou atestado</p>';
+      html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:4px;">Funcionário</label>';
+      html += '<select id="folgaExcFuncionario" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:10px;">' +
+        funcionarios.map(function(f){ return '<option value="'+f.id+'">'+escapeHtml(f.nome)+'</option>'; }).join("") +
+      '</select>';
+      html += '<div style="display:flex;gap:8px;margin-bottom:10px;">';
+      html += '<input type="date" id="folgaExcData" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">';
+      html += '<select id="folgaExcTipo" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+        '<option value="folga_extra">Folga extra (compensação)</option>' +
+        '<option value="falta">Falta</option>' +
+        '<option value="atestado">Atestado</option>' +
+      '</select>';
+      html += '</div>';
+      html += '<textarea id="folgaExcObs" placeholder="Observação (opcional)" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;margin-bottom:10px;"></textarea>';
+      html += '<button type="button" id="folgaExcRegistrarBtn" class="btn-primary" style="width:100%;">Registrar</button>';
+      html += '</div>';
+
+      var futuras = (state.escalaExcecoes||[]).filter(function(e){ return e.data >= localDateStr(new Date()); }).slice().sort(function(a,b){ return a.data < b.data ? -1 : 1; });
+      if(futuras.length > 0){
+        html += '<div class="card" style="margin-top:16px;">';
+        html += '<p class="section-title" style="margin:0 0 10px;">Próximas exceções registradas</p>';
+        futuras.forEach(function(e, idx){
+          var f = funcionarios.find(function(x){ return x.id===e.userId; }) || (state.staffProfiles||[]).find(function(x){ return x.id===e.userId; });
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:'+(idx===0?'0 0 10px':'10px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
+            '<span style="font-size:13px;"><strong>'+escapeHtml(f?f.nome:"?")+'</strong> — '+(ESCALA_TIPO_LABEL[e.tipo]||e.tipo)+' em '+e.data.slice(8,10)+'/'+e.data.slice(5,7)+'</span>' +
+            '<button type="button" class="folga-exc-remover" data-uid="'+e.userId+'" data-data="'+e.data+'" style="background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12px;font-weight:700;">Remover</button>' +
+          '</div>';
+        });
+        html += '</div>';
+      }
+    }
+
+    body.innerHTML = html;
+
+    if(podeEd){
+      body.querySelectorAll(".folga-fixa-check").forEach(function(cb){
+        cb.addEventListener("change", function(){
+          toggleFolgaFixa(cb.getAttribute("data-uid"), parseInt(cb.getAttribute("data-dia"),10), cb.checked);
+        });
+      });
+      body.querySelectorAll(".domingo-fixo-select").forEach(function(sel){
+        sel.addEventListener("change", function(){ salvarDomingoFixo(sel.getAttribute("data-uid"), sel.value); });
+      });
+      var regBtn = document.getElementById("folgaExcRegistrarBtn");
+      if(regBtn) regBtn.onclick = function(){
+        var userId = document.getElementById("folgaExcFuncionario").value;
+        var dataStr = document.getElementById("folgaExcData").value;
+        var tipo = document.getElementById("folgaExcTipo").value;
+        var obs = document.getElementById("folgaExcObs").value.trim() || null;
+        if(!userId || !dataStr){ showToast("Escolha funcionário e data"); return; }
+        salvarEscalaExcecao(userId, dataStr, tipo, null, null, obs);
+      };
+      body.querySelectorAll(".folga-exc-remover").forEach(function(btn){
+        btn.onclick = function(){ removerEscalaExcecao(btn.getAttribute("data-uid"), btn.getAttribute("data-data")); };
+      });
+    }
+  }
+
+  async function toggleFolgaFixa(userId, dia, marcado){
+    try{
+      var existente = state.escalaSemanal.find(function(e){ return e.userId===userId && e.diaSemana===dia; });
+      if(marcado){
+        var payload = {user_id:userId, dia_semana:dia, tipo:"folga", hora_inicio:null, hora_fim:null};
+        if(existente){
+          var upd = await dbUpdate("escala_semanal", existente.id, payload, mapEscalaSemanalFromRow);
+          var idx = state.escalaSemanal.findIndex(function(e){ return e.id===existente.id; });
+          state.escalaSemanal[idx] = upd;
+        } else {
+          payload.id = uid();
+          var novo = await dbInsert("escala_semanal", payload, mapEscalaSemanalFromRow);
+          state.escalaSemanal.push(novo);
+        }
+      } else if(existente){
+        var horasPadrao = state.escalaSemanal.find(function(e){ return e.userId===userId && e.tipo==="trabalho"; });
+        if(horasPadrao){
+          var payload2 = {user_id:userId, dia_semana:dia, tipo:"trabalho", hora_inicio:horasPadrao.horaInicio, hora_fim:horasPadrao.horaFim};
+          var upd2 = await dbUpdate("escala_semanal", existente.id, payload2, mapEscalaSemanalFromRow);
+          var idx2 = state.escalaSemanal.findIndex(function(e){ return e.id===existente.id; });
+          state.escalaSemanal[idx2] = upd2;
+        } else {
+          await dbDelete("escala_semanal", existente.id);
+          state.escalaSemanal = state.escalaSemanal.filter(function(e){ return e.id!==existente.id; });
+        }
+      }
+      showToast("Folga atualizada");
+      renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar folga");
+    }
+  }
+
+  async function salvarDomingoFixo(userId, valorStr){
+    var valor = valorStr ? parseInt(valorStr,10) : null;
+    try{
+      var res = await sb.from("profiles").update({domingo_folga_mes: valor}).eq("id", userId);
+      if(res.error) throw res.error;
+      var sp = (state.staffProfiles||[]).find(function(p){ return p.id===userId; });
+      if(sp) sp.domingoFolgaMes = valor;
+      showToast("Domingo fixo atualizado");
+      renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar domingo fixo");
     }
   }
 
@@ -5125,65 +5262,10 @@
     }
   }
 
-  function abrirEscalaEditor(userId, dataStr, funcionarios){
-    var f = funcionarios.find(function(x){ return x.id===userId; });
-    var ef = escalaEfetiva(userId, dataStr);
-    var dow = dateAtLocalTime(dataStr,"00:00").getDay();
-    var wrap = document.getElementById("escalaEditorWrap");
-    var tipos = ["trabalho","folga","folga_extra","falta","atestado"];
-    var html = '<div class="card" style="margin-top:14px;border:2px solid var(--teal-700);">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-      '<p style="margin:0;font-weight:800;font-size:14.5px;">'+escapeHtml(f?f.nome:"")+' — '+DIAS_SEMANA_LABELS[dow]+'-feira ('+dataStr.slice(8,10)+'/'+dataStr.slice(5,7)+')</p>' +
-      '<button type="button" id="escalaEditorFechar" class="btn-edit" title="Fechar">✕</button>' +
-    '</div>';
-    html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:4px;">Tipo</label>';
-    html += '<select id="escalaEditorTipo" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:10px;">' +
-      tipos.map(function(t){ return '<option value="'+t+'" '+(ef.tipo===t?"selected":"")+'>'+ESCALA_TIPO_LABEL[t]+'</option>'; }).join("") +
-    '</select>';
-    html += '<div id="escalaEditorHorarios" style="display:'+(ef.tipo==="trabalho"?"flex":"none")+';gap:8px;margin-bottom:10px;">' +
-      '<input type="time" id="escalaEditorInicio" value="'+(ef.horaInicio||"")+'" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">' +
-      '<input type="time" id="escalaEditorFim" value="'+(ef.horaFim||"")+'" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">' +
-    '</div>';
-    html += '<textarea id="escalaEditorObs" placeholder="Observação (opcional)" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;margin-bottom:10px;">'+escapeHtml(ef.observacao||"")+'</textarea>';
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-      '<button type="button" id="escalaSalvarExcecao" class="btn-primary" style="flex:1;min-width:150px;">Salvar só este dia</button>' +
-      '<button type="button" id="escalaSalvarPadrao" style="flex:1;min-width:150px;padding:11px;background:var(--sand-50);border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;display:'+((ef.tipo==="trabalho"||ef.tipo==="folga")?"block":"none")+';">Salvar como padrão de toda '+DIAS_SEMANA_LABELS[dow]+'-feira</button>' +
-    '</div>';
-    if(ef.excecao){
-      html += '<button type="button" id="escalaRemoverExcecao" style="display:block;width:100%;margin-top:8px;background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12.5px;font-weight:700;">🗑️ Remover exceção deste dia (volta pro padrão)</button>';
-    }
-    html += '</div>';
-    wrap.innerHTML = html;
-    wrap.scrollIntoView({behavior:"smooth", block:"nearest"});
-
-    var tipoSelect = document.getElementById("escalaEditorTipo");
-    var padraoBtn = document.getElementById("escalaSalvarPadrao");
-    tipoSelect.addEventListener("change", function(){
-      var t = tipoSelect.value;
-      document.getElementById("escalaEditorHorarios").style.display = t==="trabalho" ? "flex" : "none";
-      padraoBtn.style.display = (t==="trabalho"||t==="folga") ? "block" : "none";
-    });
-    document.getElementById("escalaEditorFechar").onclick = function(){ wrap.innerHTML = ""; };
-    document.getElementById("escalaSalvarExcecao").onclick = function(){ salvarEscalaExcecao(userId, dataStr, tipoSelect.value); };
-    padraoBtn.onclick = function(){ salvarEscalaPadrao(userId, dow, tipoSelect.value); };
-    var remBtn = document.getElementById("escalaRemoverExcecao");
-    if(remBtn) remBtn.onclick = function(){ removerEscalaExcecao(userId, dataStr); };
-  }
-
-  function lerHorariosEscalaEditor(tipo){
-    var horaInicio = tipo==="trabalho" ? document.getElementById("escalaEditorInicio").value : null;
-    var horaFim = tipo==="trabalho" ? document.getElementById("escalaEditorFim").value : null;
-    if(tipo==="trabalho" && (!horaInicio || !horaFim)) return null;
-    return {horaInicio:horaInicio, horaFim:horaFim};
-  }
-
-  async function salvarEscalaExcecao(userId, dataStr, tipo){
-    var horarios = lerHorariosEscalaEditor(tipo);
-    if(!horarios){ showToast("Preencha o horário de início e fim"); return; }
-    var obs = document.getElementById("escalaEditorObs").value.trim() || null;
+  async function salvarEscalaExcecao(userId, dataStr, tipo, horaInicio, horaFim, obs){
     try{
       var existente = state.escalaExcecoes.find(function(e){ return e.userId===userId && e.data===dataStr; });
-      var payload = {user_id:userId, data:dataStr, tipo:tipo, hora_inicio:horarios.horaInicio, hora_fim:horarios.horaFim, observacao:obs};
+      var payload = {user_id:userId, data:dataStr, tipo:tipo, hora_inicio:horaInicio||null, hora_fim:horaFim||null, observacao:obs||null};
       if(existente){
         var upd = await dbUpdate("escala_excecoes", existente.id, payload, mapEscalaExcecaoFromRow);
         var idx = state.escalaExcecoes.findIndex(function(e){ return e.id===existente.id; });
@@ -5193,31 +5275,9 @@
         var novo = await dbInsert("escala_excecoes", payload, mapEscalaExcecaoFromRow);
         state.escalaExcecoes.push(novo);
       }
-      showToast("Salvo"); renderEquipe();
+      showToast("Registrado"); renderEquipe();
     }catch(err){
-      console.error(err); showToast("Erro ao salvar");
-    }
-  }
-
-  async function salvarEscalaPadrao(userId, diaSemana, tipo){
-    if(tipo!=="trabalho" && tipo!=="folga"){ showToast("Esse tipo só pode ser salvo pra esse dia específico"); return; }
-    var horarios = lerHorariosEscalaEditor(tipo);
-    if(!horarios){ showToast("Preencha o horário de início e fim"); return; }
-    try{
-      var existente = state.escalaSemanal.find(function(e){ return e.userId===userId && e.diaSemana===diaSemana; });
-      var payload = {user_id:userId, dia_semana:diaSemana, tipo:tipo, hora_inicio:horarios.horaInicio, hora_fim:horarios.horaFim};
-      if(existente){
-        var upd = await dbUpdate("escala_semanal", existente.id, payload, mapEscalaSemanalFromRow);
-        var idx = state.escalaSemanal.findIndex(function(e){ return e.id===existente.id; });
-        state.escalaSemanal[idx] = upd;
-      } else {
-        payload.id = uid();
-        var novo = await dbInsert("escala_semanal", payload, mapEscalaSemanalFromRow);
-        state.escalaSemanal.push(novo);
-      }
-      showToast("Escala padrão atualizada"); renderEquipe();
-    }catch(err){
-      console.error(err); showToast("Erro ao salvar");
+      console.error(err); showToast("Erro ao registrar");
     }
   }
 
