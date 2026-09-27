@@ -314,7 +314,6 @@
   .suggest-row-meta{font-size:12px;color:var(--ink-600);line-height:1.5;margin:0;}
 
   .home-card{display:flex;align-items:center;gap:14px;cursor:pointer;}
-  .home-card-ic{font-size:26px;width:46px;text-align:center;flex:0 0 auto;}
   .home-card-main{flex:1;min-width:0;}
   .home-card-title{font-size:16px;font-weight:700;margin:0 0 3px;}
   .home-card-sub{font-size:12.5px;color:var(--ink-600);margin:0;}
@@ -1614,8 +1613,8 @@
         sub.textContent = "Atividades do seu turno, no horário certo";
         alertPill.style.display = "none";
       } else if(appSection === "escala"){
-        h1.textContent = "Escala de Trabalho";
-        sub.textContent = "Quem trabalha, folgas, faltas e atestados";
+        h1.textContent = "Equipe";
+        sub.textContent = "Horários, folga e setor";
         alertPill.style.display = "none";
       } else if(appSection === "supervisao"){
         h1.textContent = "Supervisão";
@@ -1699,7 +1698,7 @@
     if(appSection === "manutencoes") renderManutencoes();
     if(appSection === "equipamentos") renderEquipamentos();
     if(appSection === "checklistturno") renderChecklistTurno();
-    if(appSection === "escala") renderEscala();
+    if(appSection === "escala") renderEquipe();
     if(appSection === "admin") renderAdmin();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
@@ -1724,36 +1723,26 @@
     var procSub = procCount > 0 ? (procCount + (procCount===1?" procedimento salvo":" procedimentos salvos")) : "nenhum procedimento salvo ainda";
     var cardsHtml = "";
     if(podeVer("estoque")) cardsHtml +=
-      '<div class="card home-card" data-section="estoque">' +
-        '<div class="home-card-ic">📦</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Estoque</p><p class="home-card-sub">'+escapeHtml(estoqueSub)+'</p></div>' +
+      '<div class="card home-card" data-section="estoque">' +        '<div class="home-card-main"><p class="home-card-title">Estoque</p><p class="home-card-sub">'+escapeHtml(estoqueSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     if(podeVer("procedimentos")) cardsHtml +=
-      '<div class="card home-card" data-section="procedimentos">' +
-        '<div class="home-card-ic">📄</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Procedimentos</p><p class="home-card-sub">'+escapeHtml(procSub)+'</p></div>' +
+      '<div class="card home-card" data-section="procedimentos">' +        '<div class="home-card-main"><p class="home-card-title">Procedimentos</p><p class="home-card-sub">'+escapeHtml(procSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     if(podeVer("manutencao")) cardsHtml +=
-      '<div class="card home-card" data-section="manutencoes">' +
-        '<div class="home-card-ic">🛠️</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Manutenções</p><p class="home-card-sub">'+escapeHtml(manutSub)+'</p></div>' +
+      '<div class="card home-card" data-section="manutencoes">' +        '<div class="home-card-main"><p class="home-card-title">Manutenções</p><p class="home-card-sub">'+escapeHtml(manutSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     if(podeVer("hospedes")) cardsHtml +=
-      '<div class="card home-card" data-section="hospedes">' +
-        '<div class="home-card-ic">🪪</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Hóspedes</p><p class="home-card-sub">buscar documento por CPF/passaporte</p></div>' +
+      '<div class="card home-card" data-section="hospedes">' +        '<div class="home-card-main"><p class="home-card-title">Hóspedes</p><p class="home-card-sub">buscar documento por CPF/passaporte</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     if(podeVer("limpeza")){
       var limpPend = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && !isRecepcaoOnly(s.tipo); }).length;
       var limpSub = limpPend > 0 ? (limpPend + (limpPend===1?" pedido em aberto":" pedidos em aberto")) : "tudo em dia";
       cardsHtml +=
-      '<div class="card home-card" data-section="limpeza">' +
-        '<div class="home-card-ic">🧹</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Limpeza</p><p class="home-card-sub">'+escapeHtml(limpSub)+'</p></div>' +
+      '<div class="card home-card" data-section="limpeza">' +        '<div class="home-card-main"><p class="home-card-title">Limpeza</p><p class="home-card-sub">'+escapeHtml(limpSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
@@ -1762,17 +1751,13 @@
         state.manutencoes.filter(function(m){ return m.status==="pendente" && m.origem==="hospede"; }).length;
       var recepSub = pendTotal > 0 ? (pendTotal + (pendTotal===1?" pendência":" pendências")) : "tudo em dia";
       cardsHtml +=
-      '<div class="card home-card" data-section="recepcao">' +
-        '<div class="home-card-ic">🛎️</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Recepção</p><p class="home-card-sub">'+escapeHtml(recepSub)+'</p></div>' +
+      '<div class="card home-card" data-section="recepcao">' +        '<div class="home-card-main"><p class="home-card-title">Recepção</p><p class="home-card-sub">'+escapeHtml(recepSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
     if(podeVer("servico_geral")){
       cardsHtml +=
-      '<div class="card home-card" data-section="servicogeral">' +
-        '<div class="home-card-ic">🛁</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Serviço Geral</p><p class="home-card-sub">jacuzzi e manutenção predial</p></div>' +
+      '<div class="card home-card" data-section="servicogeral">' +        '<div class="home-card-main"><p class="home-card-title">Serviço Geral</p><p class="home-card-sub">jacuzzi e manutenção predial</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
@@ -1780,9 +1765,7 @@
       var equipAlertCount = state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length;
       var equipSub = equipAlertCount > 0 ? (equipAlertCount + (equipAlertCount===1?" equipamento precisa de atenção":" equipamentos precisam de atenção")) : "tudo em dia";
       cardsHtml +=
-      '<div class="card home-card" data-section="equipamentos">' +
-        '<div class="home-card-ic">🔧</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Equipamentos</p><p class="home-card-sub">'+escapeHtml(equipSub)+'</p></div>' +
+      '<div class="card home-card" data-section="equipamentos">' +        '<div class="home-card-main"><p class="home-card-title">Equipamentos</p><p class="home-card-sub">'+escapeHtml(equipSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
@@ -1790,36 +1773,26 @@
       var turnosAtrasadosN = (currentUser.role==="admin") ? turnosAtrasados().length : 0;
       var checklistSub = turnosAtrasadosN>0 ? ('⚠️ '+turnosAtrasadosN+' turno(s) atrasado(s) pra concluir') : "atividades do seu turno";
       cardsHtml +=
-      '<div class="card home-card" data-section="checklistturno">' +
-        '<div class="home-card-ic">✅</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Checklist de Turno</p><p class="home-card-sub"'+(turnosAtrasadosN>0?' style="color:var(--red-600);font-weight:700;"':'')+'>'+escapeHtml(checklistSub)+'</p></div>' +
+      '<div class="card home-card" data-section="checklistturno">' +        '<div class="home-card-main"><p class="home-card-title">Checklist de Turno</p><p class="home-card-sub"'+(turnosAtrasadosN>0?' style="color:var(--red-600);font-weight:700;"':'')+'>'+escapeHtml(checklistSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
     if(podeVer("escala_trabalho")){
       cardsHtml +=
-      '<div class="card home-card" data-section="escala">' +
-        '<div class="home-card-ic">🗓️</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Escala de Trabalho</p><p class="home-card-sub">quem trabalha em cada dia</p></div>' +
+      '<div class="card home-card" data-section="escala">' + '<div class="home-card-main"><p class="home-card-title">Equipe</p><p class="home-card-sub">horários, folga e setor</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
     if(currentUser && currentUser.role === "admin") cardsHtml +=
-      '<div class="card home-card" data-section="supervisao">' +
-        '<div class="home-card-ic">📊</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Supervisão</p><p class="home-card-sub">painel geral e histórico</p></div>' +
+      '<div class="card home-card" data-section="supervisao">' +        '<div class="home-card-main"><p class="home-card-title">Supervisão</p><p class="home-card-sub">painel geral e histórico</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     if(currentUser && currentUser.role === "admin") cardsHtml +=
-      '<div class="card home-card" data-section="admin">' +
-        '<div class="home-card-ic">👤</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Administração</p><p class="home-card-sub">gerenciar quem acessa o quê</p></div>' +
+      '<div class="card home-card" data-section="admin">' +        '<div class="home-card-main"><p class="home-card-title">Administração</p><p class="home-card-sub">gerenciar quem acessa o quê</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     cardsHtml +=
-      '<div class="card home-card" data-section="configuracoes">' +
-        '<div class="home-card-ic">⚙️</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Configurações</p><p class="home-card-sub">minha conta e sair</p></div>' +
+      '<div class="card home-card" data-section="configuracoes">' +        '<div class="home-card-main"><p class="home-card-title">Configurações</p><p class="home-card-sub">minha conta e sair</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     main.innerHTML = cardsHtml || '<div class="empty">Você ainda não tem acesso liberado a nenhuma área. Peça para o administrador liberar seu acesso.</div>';
@@ -4357,6 +4330,7 @@
     });
   }
 
+  var equipeSubView = "horarios"; // "horarios" | "folga" | "setor" — sub-abas da tela Equipe
   var escalaSemanaOffset = 0; // quantas semanas de diferença da semana atual, na tela de Escala
   function escalaSemanaInicio(offset){
     var hoje = new Date();
@@ -4964,10 +4938,27 @@
     }
   }
 
-  // ---------- Escala de Trabalho (quem trabalha, folgas, faltas, atestados) ----------
-  async function renderEscala(){
+  // ---------- Equipe (horários, folga e setor) ----------
+  async function renderEquipe(){
     var main = document.getElementById("escalaView");
     var podeEd = podeEditar("escala_trabalho");
+    var html = '<div class="seg-toggle">' +
+      '<button data-eqsub="horarios" class="'+(equipeSubView==="horarios"?"active":"")+'">Horários</button>' +
+      '<button data-eqsub="folga" class="'+(equipeSubView==="folga"?"active":"")+'">Folga</button>' +
+      '<button data-eqsub="setor" class="'+(equipeSubView==="setor"?"active":"")+'">Setor</button>' +
+    '</div>' +
+    '<div id="equipeSubBody"></div>';
+    main.innerHTML = html;
+    main.querySelectorAll("[data-eqsub]").forEach(function(b){
+      b.onclick = function(){ equipeSubView = b.getAttribute("data-eqsub"); renderEquipe(); };
+    });
+    var body = document.getElementById("equipeSubBody");
+    if(equipeSubView === "folga") renderEquipeFolga(body, podeEd);
+    else if(equipeSubView === "setor") renderEquipeSetor(body);
+    else renderEquipeHorarios(body, podeEd);
+  }
+
+  function renderEquipeHorarios(body, podeEd){
     var datas = escalaSemanaDatas(escalaSemanaOffset);
     var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && (p.equipe==="recepcao" || p.equipe==="manutencao"); });
 
@@ -4982,7 +4973,7 @@
     html += '<p style="color:var(--ink-600);font-size:12px;margin:0 0 12px;">Toque num dia pra marcar horário ou folga. "Salvar como padrão" fixa aquele dia da semana pra sempre (ex: folga toda segunda) — não precisa refazer toda semana. Se um dia normal de trabalho virar folga por compensação, falta ou atestado, ou se for a folga de domingo do mês, use "Salvar só este dia".</p>';
 
     if(funcionarios.length === 0){
-      html += '<div class="empty">Nenhum funcionário de recepção ou manutenção com equipe definida ainda — vá em Administração e defina a "Equipe" de cada pessoa.</div>';
+      html += '<div class="empty">Nenhum funcionário de recepção ou manutenção com equipe definida ainda — defina em Equipe → Setor.</div>';
     } else {
       html += '<div class="card" style="overflow-x:auto;padding:10px;">';
       html += '<table style="width:100%;border-collapse:collapse;min-width:680px;">';
@@ -5012,19 +5003,125 @@
       else html += '<p class="item-meta" style="margin-top:2px;">Só quem tem permissão de editar pode mudar a escala.</p>';
     }
     html += '<div id="escalaEditorWrap"></div>';
-    main.innerHTML = html;
+    body.innerHTML = html;
 
-    document.getElementById("escalaSemanaPrev").onclick = function(){ escalaSemanaOffset--; renderEscala(); };
-    document.getElementById("escalaSemanaNext").onclick = function(){ escalaSemanaOffset++; renderEscala(); };
+    document.getElementById("escalaSemanaPrev").onclick = function(){ escalaSemanaOffset--; renderEquipe(); };
+    document.getElementById("escalaSemanaNext").onclick = function(){ escalaSemanaOffset++; renderEquipe(); };
     var hojeBtn = document.getElementById("escalaSemanaHoje");
-    if(hojeBtn) hojeBtn.onclick = function(){ escalaSemanaOffset = 0; renderEscala(); };
+    if(hojeBtn) hojeBtn.onclick = function(){ escalaSemanaOffset = 0; renderEquipe(); };
 
     if(podeEd){
-      main.querySelectorAll(".escala-cell").forEach(function(btn){
+      body.querySelectorAll(".escala-cell").forEach(function(btn){
         btn.onclick = function(){
           abrirEscalaEditor(btn.getAttribute("data-uid"), btn.getAttribute("data-data"), funcionarios);
         };
       });
+    }
+  }
+
+  var DIAS_SEMANA_NOMES = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
+
+  function renderEquipeFolga(body, podeEd){
+    var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && (p.equipe==="recepcao" || p.equipe==="manutencao"); });
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">A folga fixa semanal fica valendo sempre — não precisa refazer toda semana (ex: a Vitória sempre folga quarta-feira). Cada pessoa tem direito a uma folga na semana e um domingo de folga por mês; pra registrar esse domingo (ou qualquer folga extra, falta ou atestado fora do dia fixo), use a aba <strong>Horários</strong>, toque no dia da pessoa e escolha "Salvar só este dia".</p>';
+    if(funcionarios.length === 0){
+      html += '<div class="empty">Nenhum funcionário de recepção ou manutenção com equipe definida ainda — defina em Equipe → Setor.</div>';
+    } else {
+      html += '<div class="card">';
+      funcionarios.forEach(function(f, idx){
+        var diaFixo = (state.escalaSemanal||[]).find(function(e){ return e.userId===f.id && e.tipo==="folga"; });
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:'+(idx===0?'0 0 12px':'12px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
+          '<span style="font-weight:700;font-size:13.5px;">'+escapeHtml(f.nome)+'</span>' +
+          '<select class="folga-fixa-select" data-uid="'+f.id+'" '+(podeEd?'':'disabled')+' style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--sand-50);">' +
+            '<option value="">Nenhuma</option>' +
+            DIAS_SEMANA_NOMES.map(function(nome,i){ return '<option value="'+i+'" '+(diaFixo && diaFixo.diaSemana===i?"selected":"")+'>'+nome+'</option>'; }).join("") +
+          '</select>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    body.innerHTML = html;
+    if(podeEd){
+      body.querySelectorAll(".folga-fixa-select").forEach(function(sel){
+        sel.addEventListener("change", function(){ salvarFolgaFixa(sel.getAttribute("data-uid"), sel.value); });
+      });
+    }
+  }
+
+  async function salvarFolgaFixa(userId, novoDiaStr){
+    try{
+      var antigas = (state.escalaSemanal||[]).filter(function(e){ return e.userId===userId && e.tipo==="folga"; });
+      for(var i=0;i<antigas.length;i++){
+        await dbDelete("escala_semanal", antigas[i].id);
+        state.escalaSemanal = state.escalaSemanal.filter(function(e){ return e.id!==antigas[i].id; });
+      }
+      if(novoDiaStr !== ""){
+        var dia = parseInt(novoDiaStr,10);
+        var existente = state.escalaSemanal.find(function(e){ return e.userId===userId && e.diaSemana===dia; });
+        var payload = {user_id:userId, dia_semana:dia, tipo:"folga", hora_inicio:null, hora_fim:null};
+        if(existente){
+          var upd = await dbUpdate("escala_semanal", existente.id, payload, mapEscalaSemanalFromRow);
+          var idx = state.escalaSemanal.findIndex(function(e){ return e.id===existente.id; });
+          state.escalaSemanal[idx] = upd;
+        } else {
+          payload.id = uid();
+          var novo = await dbInsert("escala_semanal", payload, mapEscalaSemanalFromRow);
+          state.escalaSemanal.push(novo);
+        }
+      }
+      showToast("Folga fixa atualizada");
+      renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar folga fixa");
+    }
+  }
+
+  function renderEquipeSetor(body){
+    var isAdmin = currentUser && currentUser.role === "admin";
+    var staff = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; }).slice().sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||""); });
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Define quem é Recepção, Manutenção ou Limpeza. Isso decide quem aparece nas abas Horários e Folga (só Recepção e Manutenção) e quem pode ter turno fixo no Checklist de Turno (só Recepção).</p>';
+    if(!isAdmin){
+      html += '<p class="item-meta" style="margin:0 0 12px;">Só administradores podem alterar o setor de cada pessoa.</p>';
+    }
+    if(staff.length === 0){
+      html += '<div class="empty">Nenhum funcionário cadastrado ainda.</div>';
+    } else {
+      html += '<div class="card">';
+      staff.forEach(function(p, idx){
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:'+(idx===0?'0 0 12px':'12px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
+          '<span style="font-weight:700;font-size:13.5px;">'+escapeHtml(p.nome)+'</span>' +
+          '<select class="equipe-setor-select" data-uid="'+p.id+'" '+(isAdmin?'':'disabled')+' style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--sand-50);">' +
+            '<option value="">Não definida</option>' +
+            Object.keys(EQUIPE_LABEL).map(function(eq){ return '<option value="'+eq+'" '+(p.equipe===eq?"selected":"")+'>'+EQUIPE_LABEL[eq]+'</option>'; }).join("") +
+          '</select>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    body.innerHTML = html;
+    if(isAdmin){
+      body.querySelectorAll(".equipe-setor-select").forEach(function(sel){
+        sel.addEventListener("change", function(){ salvarEquipeSetor(sel.getAttribute("data-uid"), sel.value); });
+      });
+    }
+  }
+
+  async function salvarEquipeSetor(userId, novaEquipe){
+    novaEquipe = novaEquipe || null;
+    try{
+      var res = await sb.from("profiles").update({equipe: novaEquipe}).eq("id", userId);
+      if(res.error) throw res.error;
+      var sp = (state.staffProfiles||[]).find(function(p){ return p.id===userId; });
+      if(sp) sp.equipe = novaEquipe;
+      if(typeof adminUsersCache !== "undefined" && adminUsersCache){
+        var cache = adminUsersCache.find(function(u){ return u.id===userId; });
+        if(cache) cache.equipe = novaEquipe;
+      }
+      if(currentUser && currentUser.id === userId) currentUser.equipe = novaEquipe;
+      showToast("Setor atualizado");
+      renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao atualizar setor");
     }
   }
 
@@ -5096,7 +5193,7 @@
         var novo = await dbInsert("escala_excecoes", payload, mapEscalaExcecaoFromRow);
         state.escalaExcecoes.push(novo);
       }
-      showToast("Salvo"); renderEscala();
+      showToast("Salvo"); renderEquipe();
     }catch(err){
       console.error(err); showToast("Erro ao salvar");
     }
@@ -5118,7 +5215,7 @@
         var novo = await dbInsert("escala_semanal", payload, mapEscalaSemanalFromRow);
         state.escalaSemanal.push(novo);
       }
-      showToast("Escala padrão atualizada"); renderEscala();
+      showToast("Escala padrão atualizada"); renderEquipe();
     }catch(err){
       console.error(err); showToast("Erro ao salvar");
     }
@@ -5130,7 +5227,7 @@
     try{
       await dbDelete("escala_excecoes", existente.id);
       state.escalaExcecoes = state.escalaExcecoes.filter(function(e){ return e.id!==existente.id; });
-      showToast("Exceção removida"); renderEscala();
+      showToast("Exceção removida"); renderEquipe();
     }catch(err){
       console.error(err); showToast("Erro ao remover");
     }
@@ -7108,7 +7205,7 @@
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
     {key:"equipamentos", label:"Equipamentos (ar-condicionados, bombas etc.)"},
     {key:"checklist_turno", label:"Checklist de Turno"},
-    {key:"escala_trabalho", label:"Escala de Trabalho"}
+    {key:"escala_trabalho", label:"Equipe"}
   ];
   var adminUsersCache = null; // [{id,nome,email,role,ativo,permissoes:{modulo:{ver,editar}}}]
 
@@ -7209,14 +7306,7 @@
       html += '<div class="admin-user-card" data-uid="'+u.id+'">';
       html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+'</div>';
       html += '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>';
-      html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Equipe</label>';
-      html += '<select class="equipe-select" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:8px;">';
-      html += '<option value="">Não definida</option>';
-      Object.keys(EQUIPE_LABEL).forEach(function(eq){
-        html += '<option value="'+eq+'" '+(u.equipe===eq?"selected":"")+'>'+EQUIPE_LABEL[eq]+'</option>';
-      });
-      html += '</select>';
-      html += '<p class="item-meta" style="margin:0 0 10px;">Define quem aparece na Escala de Trabalho (recepção e manutenção) e quem pode ter turno fixo do checklist (só recepção).</p>';
+      html += '<p class="item-meta" style="margin:0 0 10px;">Setor: '+(EQUIPE_LABEL[u.equipe]||"não definido")+' — mude em Equipe → Setor.</p>';
       if(u.role !== "admin"){
         if(u.equipe === "recepcao"){
           html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno(s) fixo(s) (checklist)</label>';
@@ -7320,28 +7410,6 @@
 
     main.querySelectorAll(".admin-user-card").forEach(function(card){
       var uid = card.getAttribute("data-uid");
-
-      var equipeSelect = card.querySelector(".equipe-select");
-      if(equipeSelect){
-        equipeSelect.addEventListener("change", async function(){
-          var novaEquipe = equipeSelect.value || null;
-          try{
-            var res = await sb.from("profiles").update({equipe: novaEquipe}).eq("id", uid);
-            if(res.error) throw res.error;
-            var cache = adminUsersCache.find(function(u){ return u.id===uid; });
-            if(cache) cache.equipe = novaEquipe;
-            if(state.staffProfiles){
-              var sp = state.staffProfiles.find(function(p){ return p.id===uid; });
-              if(sp) sp.equipe = novaEquipe;
-            }
-            if(currentUser && currentUser.id === uid) currentUser.equipe = novaEquipe;
-            showToast("Equipe atualizada");
-            renderAdmin();
-          }catch(err){
-            console.error(err); showToast("Erro ao atualizar equipe");
-          }
-        });
-      }
 
       var turnoChecks = card.querySelectorAll(".turno-fixo-check");
       turnoChecks.forEach(function(cb){
