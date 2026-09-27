@@ -375,6 +375,7 @@
 <main id="manutencoesView" style="display:none;"></main>
 <main id="equipamentosView" style="display:none;"></main>
 <main id="checklistTurnoView" style="display:none;"></main>
+<main id="escalaView" style="display:none;"></main>
 <main id="adminView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
@@ -889,7 +890,7 @@
       data:new Date(r.data).getTime(), registradoPor:r.registrado_por};
   }
   function mapTurnoFromRow(r){
-    return {id:r.id, nome:r.nome, horaInicio:r.hora_inicio, ordem:r.ordem};
+    return {id:r.id, nome:r.nome, horaInicio:r.hora_inicio, horaFim:r.hora_fim||null, ordem:r.ordem};
   }
   function mapTurnoAtividadeFromRow(r){
     return {id:r.id, turnoId:r.turno_id, titulo:r.titulo, tipo:r.tipo||"livre", horaInicio:r.hora_inicio, horaFim:r.hora_fim,
@@ -905,11 +906,27 @@
     if(!diasSemana || diasSemana.length===0) return "todo dia";
     return diasSemana.slice().sort().map(function(d){ return DIAS_SEMANA_LABELS[d]; }).join(", ");
   }
+  function mapEscalaSemanalFromRow(r){
+    return {id:r.id, userId:r.user_id, diaSemana:r.dia_semana, tipo:r.tipo||"folga", horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null};
+  }
+  function mapEscalaExcecaoFromRow(r){
+    return {id:r.id, userId:r.user_id, data:r.data, tipo:r.tipo, horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null, observacao:r.observacao||null};
+  }
+  var ESCALA_TIPO_LABEL = {trabalho:"Trabalho", folga:"Folga", folga_extra:"Folga (compensação)", falta:"Falta", atestado:"Atestado"};
+  var ESCALA_TIPO_COR = {trabalho:"var(--teal-700)", folga:"var(--ink-400)", folga_extra:"var(--amber-600)", falta:"var(--red-600)", atestado:"#6d4aa8"};
+  function escalaEfetiva(userId, dataStr){
+    var exc = (state.escalaExcecoes||[]).find(function(e){ return e.userId===userId && e.data===dataStr; });
+    if(exc) return {tipo:exc.tipo, horaInicio:exc.horaInicio, horaFim:exc.horaFim, observacao:exc.observacao, excecao:true};
+    var dow = dateAtLocalTime(dataStr,"00:00").getDay();
+    var base = (state.escalaSemanal||[]).find(function(e){ return e.userId===userId && e.diaSemana===dow; });
+    if(base) return {tipo:base.tipo, horaInicio:base.horaInicio, horaFim:base.horaFim, excecao:false};
+    return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, semPadrao:true};
+  }
   function mapTurnoExecucaoFromRow(r){
     return {id:r.id, turnoId:r.turno_id, data:r.data, criadoEm:new Date(r.criado_em).getTime(),
       enviadoEmailEm:(r.enviado_email_em?new Date(r.enviado_email_em).getTime():null),
       concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null), concluidoPor:r.concluido_por,
-      observacaoPendencias:r.observacao_pendencias};
+      observacaoPendencias:r.observacao_pendencias, notificadoAtrasoEm:(r.notificado_atraso_em?new Date(r.notificado_atraso_em).getTime():null)};
   }
   function mapTurnoAtividadeExecucaoFromRow(r){
     return {id:r.id, turnoExecucaoId:r.turno_execucao_id, turnoAtividadeId:r.turno_atividade_id, status:r.status||"pendente",
@@ -1000,10 +1017,13 @@
       sb.from("turnos").select("*").order("ordem"),
       sb.from("turno_atividades").select("*").order("ordem"),
       sb.from("turno_execucoes").select("*").order("data", {ascending:false}).limit(400),
-      sb.from("turno_atividade_execucoes").select("*").limit(4000)
+      sb.from("turno_atividade_execucoes").select("*").limit(4000),
+      sb.from("profiles").select("id,nome,ativo").order("nome"),
+      sb.from("escala_semanal").select("*"),
+      sb.from("escala_excecoes").select("*").order("data", {ascending:false}).limit(2000)
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
-    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10], syncSettingRes=results[11], equipRes=results[12], equipEvRes=results[13], turnosRes=results[14], turnoAtivRes=results[15], turnoExecRes=results[16], turnoAtivExecRes=results[17];
+    var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10], syncSettingRes=results[11], equipRes=results[12], equipEvRes=results[13], turnosRes=results[14], turnoAtivRes=results[15], turnoExecRes=results[16], turnoAtivExecRes=results[17], staffProfilesRes=results[18], escalaSemanalRes=results[19], escalaExcecoesRes=results[20];
     var hospedinOcupacao = hospedinRes.data || [];
     var staffNames = {};
     (staffRes.data||[]).forEach(function(p){ staffNames[p.id] = p.nome; });
@@ -1029,7 +1049,10 @@
       acomodacoes: (acoRes.data||[]).map(mapAcomodacaoFromRow),
       solicitacoes: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !s.excluidoEm; }),
       solicitacoesExcluidas: (solRes.data||[]).map(mapSolicitacaoFromRow).filter(function(s){ return !!s.excluidoEm; }),
-      staffNames: staffNames
+      staffNames: staffNames,
+      staffProfiles: (staffProfilesRes.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false}; }),
+      escalaSemanal: (escalaSemanalRes.data||[]).map(mapEscalaSemanalFromRow),
+      escalaExcecoes: (escalaExcecoesRes.data||[]).map(mapEscalaExcecaoFromRow)
     };
   }
 
@@ -1256,6 +1279,13 @@
     }
     renderApp();
     setupRealtimeNotifications();
+    if(currentUser.role === "admin" || podeEditar("checklist_turno")){
+      if(typeof Notification !== "undefined" && Notification.permission === "default"){
+        Notification.requestPermission().catch(function(){});
+      }
+      checarNotificacoesTurnoAtrasado();
+      setInterval(checarNotificacoesTurnoAtrasado, 60000);
+    }
   }
 
   document.addEventListener("visibilitychange", function(){
@@ -1565,6 +1595,10 @@
         h1.textContent = "Checklist de Turno";
         sub.textContent = "Atividades do seu turno, no horário certo";
         alertPill.style.display = "none";
+      } else if(appSection === "escala"){
+        h1.textContent = "Escala de Trabalho";
+        sub.textContent = "Quem trabalha, folgas, faltas e atestados";
+        alertPill.style.display = "none";
       } else if(appSection === "supervisao"){
         h1.textContent = "Supervisão";
         sub.textContent = "Painel geral e histórico";
@@ -1587,6 +1621,7 @@
     if(sec==="servicogeral") return "servico_geral";
     if(sec==="equipamentos") return "equipamentos";
     if(sec==="checklistturno") return "checklist_turno";
+    if(sec==="escala") return "escala_trabalho";
     if(sec==="admin" || sec==="supervisao" || sec==="configuracoes") return null;
     return "procedimentos";
   }
@@ -1609,6 +1644,7 @@
     document.getElementById("servicoGeralView").style.display = appSection==="servicogeral" ? "block":"none";
     document.getElementById("equipamentosView").style.display = appSection==="equipamentos" ? "block":"none";
     document.getElementById("checklistTurnoView").style.display = appSection==="checklistturno" ? "block":"none";
+    document.getElementById("escalaView").style.display = appSection==="escala" ? "block":"none";
     document.getElementById("supervisaoView").style.display = appSection==="supervisao" ? "block":"none";
     document.getElementById("configuracoesView").style.display = appSection==="configuracoes" ? "block":"none";
 
@@ -1644,6 +1680,7 @@
     if(appSection === "manutencoes") renderManutencoes();
     if(appSection === "equipamentos") renderEquipamentos();
     if(appSection === "checklistturno") renderChecklistTurno();
+    if(appSection === "escala") renderEscala();
     if(appSection === "admin") renderAdmin();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
@@ -1731,10 +1768,20 @@
       '</div>';
     }
     if(podeVer("checklist_turno")){
+      var turnosAtrasadosN = (currentUser.role==="admin") ? turnosAtrasados().length : 0;
+      var checklistSub = turnosAtrasadosN>0 ? ('⚠️ '+turnosAtrasadosN+' turno(s) atrasado(s) pra concluir') : "atividades do seu turno";
       cardsHtml +=
       '<div class="card home-card" data-section="checklistturno">' +
         '<div class="home-card-ic">✅</div>' +
-        '<div class="home-card-main"><p class="home-card-title">Checklist de Turno</p><p class="home-card-sub">atividades do seu turno</p></div>' +
+        '<div class="home-card-main"><p class="home-card-title">Checklist de Turno</p><p class="home-card-sub"'+(turnosAtrasadosN>0?' style="color:var(--red-600);font-weight:700;"':'')+'>'+escapeHtml(checklistSub)+'</p></div>' +
+        '<div class="home-card-arrow">›</div>' +
+      '</div>';
+    }
+    if(podeVer("escala_trabalho")){
+      cardsHtml +=
+      '<div class="card home-card" data-section="escala">' +
+        '<div class="home-card-ic">🗓️</div>' +
+        '<div class="home-card-main"><p class="home-card-title">Escala de Trabalho</p><p class="home-card-sub">quem trabalha em cada dia</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
     }
@@ -4259,6 +4306,51 @@
   var checklistTurnoInterval = null;
   var checklistTurnoSelecionado = null; // id do turno escolhido, quando a pessoa tem mais de um turno fixo
 
+  // Turnos com horário de término cadastrado que passaram 30min do fim e
+  // ainda não foram concluídos — usado pro aviso visual e pra notificação
+  // do navegador.
+  function turnosAtrasados(){
+    var out = [];
+    var agora = Date.now();
+    (state.turnoExecucoes||[]).forEach(function(exec){
+      if(exec.concluidoEm) return;
+      var turno = state.turnos.find(function(t){ return t.id===exec.turnoId; });
+      if(!turno || !turno.horaFim) return;
+      var limite = dateAtLocalTime(exec.data, turno.horaFim).getTime() + 30*60000;
+      if(agora > limite) out.push({turno:turno, execucao:exec, atrasoMin:Math.floor((agora-limite)/60000)});
+    });
+    return out;
+  }
+
+  var notificacoesTurnoDisparadas = {}; // execucaoId -> true, evita repetir a mesma notificação do navegador
+  function checarNotificacoesTurnoAtrasado(){
+    if(typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if(!currentUser || !(currentUser.role === "admin" || podeEditar("checklist_turno"))) return;
+    turnosAtrasados().forEach(function(item){
+      if(notificacoesTurnoDisparadas[item.execucao.id]) return;
+      notificacoesTurnoDisparadas[item.execucao.id] = true;
+      try{
+        new Notification("Turno não concluído", {
+          body: item.turno.nome+" deveria ter terminado às "+item.turno.horaFim+" — já passou "+item.atrasoMin+" min.",
+          tag: "turno-atrasado-"+item.execucao.id
+        });
+      }catch(e){ console.error(e); }
+    });
+  }
+
+  var escalaSemanaOffset = 0; // quantas semanas de diferença da semana atual, na tela de Escala
+  function escalaSemanaInicio(offset){
+    var hoje = new Date();
+    var dom = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - hoje.getDay() + offset*7);
+    return localDateStr(dom);
+  }
+  function escalaSemanaDatas(offset){
+    var inicio = escalaSemanaInicio(offset);
+    var out = [];
+    for(var i=0;i<7;i++) out.push(addDiasStr(inicio, i));
+    return out;
+  }
+
   async function ensureTurnoExecucaoAtual(turno){
     var cicloAtual = cicloDataAtual(turno);
     var existente = state.turnoExecucoes.find(function(e){ return e.turnoId===turno.id && e.data===cicloAtual; });
@@ -4370,7 +4462,7 @@
         '<p style="margin:0;font-size:15px;font-weight:800;">'+escapeHtml(t.nome)+'</p>' +
         '<button type="button" class="btn-edit" data-act="excluir-turno" data-id="'+t.id+'" title="Excluir turno">🗑️</button>' +
       '</div>';
-      html += '<p class="item-meta" style="margin-bottom:8px;">início às '+escapeHtml(t.horaInicio)+'</p>';
+      html += '<p class="item-meta" style="margin-bottom:8px;">início às '+escapeHtml(t.horaInicio)+(t.horaFim?(' · término às '+escapeHtml(t.horaFim)+' (avisa se passar 30min sem concluir)'):' · sem horário de término cadastrado (não avisa atraso)')+'</p>';
       if(ativs.length === 0){
         html += '<p class="item-meta">Nenhuma atividade cadastrada.</p>';
       }
@@ -4402,11 +4494,13 @@
       '</div>';
       html += '</div>';
     });
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;'+(turnosOrdenados.length>0?'border-top:1px solid var(--line);padding-top:14px;':'')+'">' +
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;'+(turnosOrdenados.length>0?'border-top:1px solid var(--line);padding-top:14px;':'')+'align-items:center;">' +
       '<input type="text" id="novoTurnoNome" placeholder="Nome do turno (ex: Turno 3)" style="flex:1;min-width:140px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
-      '<input type="time" id="novoTurnoHora" style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
-      '<button type="button" id="adicionarTurnoBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-700);color:#fff;border:none;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Turno</button>' +
+      '<label style="font-size:11.5px;color:var(--ink-600);display:flex;flex-direction:column;gap:2px;">Início<input type="time" id="novoTurnoHora" style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
+      '<label style="font-size:11.5px;color:var(--ink-600);display:flex;flex-direction:column;gap:2px;">Término (opcional)<input type="time" id="novoTurnoHoraFim" style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
+      '<button type="button" id="adicionarTurnoBtn" style="white-space:nowrap;padding:0 14px;align-self:flex-end;height:38px;background:var(--teal-700);color:#fff;border:none;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Turno</button>' +
     '</div>';
+    html += '<p class="item-meta" style="margin-top:6px;">Se preencher o término, o app avisa quando o turno passar 30 min sem ser concluído.</p>';
     html += '</div>';
     html += '<div class="section-title" style="margin-top:22px;">Seu(s) turno(s)</div>';
     return html;
@@ -4418,9 +4512,10 @@
       novoTurnoBtn.onclick = async function(){
         var nome = document.getElementById("novoTurnoNome").value.trim();
         var hora = document.getElementById("novoTurnoHora").value;
+        var horaFim = document.getElementById("novoTurnoHoraFim").value || null;
         if(!nome || !hora){ showToast("Preencha o nome e o horário do turno"); return; }
         try{
-          await dbInsert("turnos", {id:uid(), nome:nome, hora_inicio:hora, ordem:state.turnos.length}, mapTurnoFromRow).then(function(t){ state.turnos.push(t); });
+          await dbInsert("turnos", {id:uid(), nome:nome, hora_inicio:hora, hora_fim:horaFim, ordem:state.turnos.length}, mapTurnoFromRow).then(function(t){ state.turnos.push(t); });
           showToast("Turno criado"); renderChecklistTurno();
         }catch(err){
           console.error(err); showToast("Erro ao criar turno");
@@ -4565,8 +4660,17 @@
     var atividades = state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id && atividadeAplicaNoDia(a, execucao.data); }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
     var html = (htmlPrefixo||"") + '<div class="card" style="margin-bottom:14px;">' +
       '<p style="margin:0 0 3px;font-size:16px;font-weight:800;">'+escapeHtml(turno.nome)+'</p>' +
-      '<p class="item-meta">ciclo de '+fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime())+' — reinicia às '+escapeHtml(turno.horaInicio)+' do dia seguinte</p>' +
+      '<p class="item-meta">ciclo de '+fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime())+' — reinicia às '+escapeHtml(turno.horaInicio)+' do dia seguinte'+(turno.horaFim?(' · término às '+escapeHtml(turno.horaFim)):'')+'</p>' +
     '</div>';
+    if(!execucao.concluidoEm && turno.horaFim){
+      var limiteMs = dateAtLocalTime(execucao.data, turno.horaFim).getTime() + 30*60000;
+      if(Date.now() > limiteMs){
+        var atrasoMin = Math.floor((Date.now()-limiteMs)/60000);
+        html += '<div class="card" style="margin-bottom:14px;border:2px solid var(--red-600);background:#fdf0f0;">' +
+          '<p style="margin:0;color:var(--red-600);font-weight:800;font-size:13.5px;">⚠️ Esse turno deveria ter terminado às '+escapeHtml(turno.horaFim)+' e ainda não foi concluído — já passou '+atrasoMin+' min.</p>' +
+        '</div>';
+      }
+    }
     var atividadesComuns = atividades.filter(function(a){ return a.tipo !== "recorrente"; });
     var atividadesRecorrentes = atividades.filter(function(a){ return a.tipo === "recorrente"; });
     if(atividades.length === 0){
@@ -4838,6 +4942,177 @@
       renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao salvar");
+    }
+  }
+
+  // ---------- Escala de Trabalho (quem trabalha, folgas, faltas, atestados) ----------
+  async function renderEscala(){
+    var main = document.getElementById("escalaView");
+    var podeEd = podeEditar("escala_trabalho");
+    var datas = escalaSemanaDatas(escalaSemanaOffset);
+    var funcionarios = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; });
+
+    var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;">' +
+      '<button type="button" id="escalaSemanaPrev" class="btn-edit" title="Semana anterior">‹</button>' +
+      '<p style="margin:0;font-weight:800;font-size:14px;text-align:center;flex:1;">'+fmtDateOnly(dateAtLocalTime(datas[0],"00:00").getTime())+' – '+fmtDateOnly(dateAtLocalTime(datas[6],"00:00").getTime())+(escalaSemanaOffset===0?' (semana atual)':'')+'</p>' +
+      '<button type="button" id="escalaSemanaNext" class="btn-edit" title="Próxima semana">›</button>' +
+    '</div>';
+    if(escalaSemanaOffset !== 0){
+      html += '<button type="button" id="escalaSemanaHoje" style="display:block;margin:0 auto 12px;background:none;border:none;color:var(--teal-700);font-family:inherit;font-size:12.5px;font-weight:700;">← voltar pra semana atual</button>';
+    }
+
+    if(funcionarios.length === 0){
+      html += '<div class="empty">Nenhum funcionário cadastrado ainda.</div>';
+    } else {
+      html += '<div class="card" style="overflow-x:auto;padding:10px;">';
+      html += '<table style="width:100%;border-collapse:collapse;min-width:680px;">';
+      html += '<tr><th style="text-align:left;padding:6px 8px;font-size:12px;color:var(--ink-600);">Funcionário</th>';
+      datas.forEach(function(d){
+        var dow = dateAtLocalTime(d,"00:00").getDay();
+        var hoje = d === localDateStr(new Date());
+        html += '<th style="padding:6px 4px;font-size:11px;color:'+(hoje?"var(--teal-700)":"var(--ink-600)")+';text-align:center;white-space:nowrap;">'+DIAS_SEMANA_LABELS[dow]+'<br>'+d.slice(8,10)+'/'+d.slice(5,7)+'</th>';
+      });
+      html += '</tr>';
+      funcionarios.forEach(function(f){
+        html += '<tr>';
+        html += '<td style="padding:6px 8px;font-size:13px;font-weight:700;border-top:1px solid var(--line);white-space:nowrap;">'+escapeHtml(f.nome)+'</td>';
+        datas.forEach(function(d){
+          var ef = escalaEfetiva(f.id, d);
+          var cor = ESCALA_TIPO_COR[ef.tipo] || "var(--ink-400)";
+          var texto = ef.tipo === "trabalho" ? (escapeHtml(ef.horaInicio||"?")+"–"+escapeHtml(ef.horaFim||"?")) : (ESCALA_TIPO_LABEL[ef.tipo]||ef.tipo);
+          html += '<td style="padding:3px;border-top:1px solid var(--line);text-align:center;">' +
+            '<button type="button" class="escala-cell" data-uid="'+f.id+'" data-data="'+d+'" '+(podeEd?'':'disabled')+' style="width:100%;padding:6px 3px;border-radius:7px;border:1px solid '+cor+';background:'+(ef.tipo==="trabalho"?"#fff":"var(--sand-50)")+';color:'+cor+';font-family:inherit;font-size:10.5px;font-weight:700;'+(podeEd?"cursor:pointer;":"cursor:default;")+'">'+texto+(ef.excecao?' •':'')+'</button>' +
+          '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</table></div>';
+      html += '<p class="item-meta" style="margin-top:8px;">• dia com exceção (folga extra, falta, atestado ou horário diferente do padrão)</p>';
+      if(podeEd) html += '<p class="item-meta" style="margin-top:2px;">Toque em um dia pra editar.</p>';
+      else html += '<p class="item-meta" style="margin-top:2px;">Só quem tem permissão de editar pode mudar a escala.</p>';
+    }
+    html += '<div id="escalaEditorWrap"></div>';
+    main.innerHTML = html;
+
+    document.getElementById("escalaSemanaPrev").onclick = function(){ escalaSemanaOffset--; renderEscala(); };
+    document.getElementById("escalaSemanaNext").onclick = function(){ escalaSemanaOffset++; renderEscala(); };
+    var hojeBtn = document.getElementById("escalaSemanaHoje");
+    if(hojeBtn) hojeBtn.onclick = function(){ escalaSemanaOffset = 0; renderEscala(); };
+
+    if(podeEd){
+      main.querySelectorAll(".escala-cell").forEach(function(btn){
+        btn.onclick = function(){
+          abrirEscalaEditor(btn.getAttribute("data-uid"), btn.getAttribute("data-data"), funcionarios);
+        };
+      });
+    }
+  }
+
+  function abrirEscalaEditor(userId, dataStr, funcionarios){
+    var f = funcionarios.find(function(x){ return x.id===userId; });
+    var ef = escalaEfetiva(userId, dataStr);
+    var dow = dateAtLocalTime(dataStr,"00:00").getDay();
+    var wrap = document.getElementById("escalaEditorWrap");
+    var tipos = ["trabalho","folga","folga_extra","falta","atestado"];
+    var html = '<div class="card" style="margin-top:14px;border:2px solid var(--teal-700);">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+      '<p style="margin:0;font-weight:800;font-size:14.5px;">'+escapeHtml(f?f.nome:"")+' — '+DIAS_SEMANA_LABELS[dow]+'-feira ('+dataStr.slice(8,10)+'/'+dataStr.slice(5,7)+')</p>' +
+      '<button type="button" id="escalaEditorFechar" class="btn-edit" title="Fechar">✕</button>' +
+    '</div>';
+    html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:4px;">Tipo</label>';
+    html += '<select id="escalaEditorTipo" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:10px;">' +
+      tipos.map(function(t){ return '<option value="'+t+'" '+(ef.tipo===t?"selected":"")+'>'+ESCALA_TIPO_LABEL[t]+'</option>'; }).join("") +
+    '</select>';
+    html += '<div id="escalaEditorHorarios" style="display:'+(ef.tipo==="trabalho"?"flex":"none")+';gap:8px;margin-bottom:10px;">' +
+      '<input type="time" id="escalaEditorInicio" value="'+(ef.horaInicio||"")+'" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">' +
+      '<input type="time" id="escalaEditorFim" value="'+(ef.horaFim||"")+'" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">' +
+    '</div>';
+    html += '<textarea id="escalaEditorObs" placeholder="Observação (opcional)" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;margin-bottom:10px;">'+escapeHtml(ef.observacao||"")+'</textarea>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
+      '<button type="button" id="escalaSalvarExcecao" class="btn-primary" style="flex:1;min-width:150px;">Salvar só este dia</button>' +
+      '<button type="button" id="escalaSalvarPadrao" style="flex:1;min-width:150px;padding:11px;background:var(--sand-50);border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;display:'+((ef.tipo==="trabalho"||ef.tipo==="folga")?"block":"none")+';">Salvar como padrão de toda '+DIAS_SEMANA_LABELS[dow]+'-feira</button>' +
+    '</div>';
+    if(ef.excecao){
+      html += '<button type="button" id="escalaRemoverExcecao" style="display:block;width:100%;margin-top:8px;background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12.5px;font-weight:700;">🗑️ Remover exceção deste dia (volta pro padrão)</button>';
+    }
+    html += '</div>';
+    wrap.innerHTML = html;
+    wrap.scrollIntoView({behavior:"smooth", block:"nearest"});
+
+    var tipoSelect = document.getElementById("escalaEditorTipo");
+    var padraoBtn = document.getElementById("escalaSalvarPadrao");
+    tipoSelect.addEventListener("change", function(){
+      var t = tipoSelect.value;
+      document.getElementById("escalaEditorHorarios").style.display = t==="trabalho" ? "flex" : "none";
+      padraoBtn.style.display = (t==="trabalho"||t==="folga") ? "block" : "none";
+    });
+    document.getElementById("escalaEditorFechar").onclick = function(){ wrap.innerHTML = ""; };
+    document.getElementById("escalaSalvarExcecao").onclick = function(){ salvarEscalaExcecao(userId, dataStr, tipoSelect.value); };
+    padraoBtn.onclick = function(){ salvarEscalaPadrao(userId, dow, tipoSelect.value); };
+    var remBtn = document.getElementById("escalaRemoverExcecao");
+    if(remBtn) remBtn.onclick = function(){ removerEscalaExcecao(userId, dataStr); };
+  }
+
+  function lerHorariosEscalaEditor(tipo){
+    var horaInicio = tipo==="trabalho" ? document.getElementById("escalaEditorInicio").value : null;
+    var horaFim = tipo==="trabalho" ? document.getElementById("escalaEditorFim").value : null;
+    if(tipo==="trabalho" && (!horaInicio || !horaFim)) return null;
+    return {horaInicio:horaInicio, horaFim:horaFim};
+  }
+
+  async function salvarEscalaExcecao(userId, dataStr, tipo){
+    var horarios = lerHorariosEscalaEditor(tipo);
+    if(!horarios){ showToast("Preencha o horário de início e fim"); return; }
+    var obs = document.getElementById("escalaEditorObs").value.trim() || null;
+    try{
+      var existente = state.escalaExcecoes.find(function(e){ return e.userId===userId && e.data===dataStr; });
+      var payload = {user_id:userId, data:dataStr, tipo:tipo, hora_inicio:horarios.horaInicio, hora_fim:horarios.horaFim, observacao:obs};
+      if(existente){
+        var upd = await dbUpdate("escala_excecoes", existente.id, payload, mapEscalaExcecaoFromRow);
+        var idx = state.escalaExcecoes.findIndex(function(e){ return e.id===existente.id; });
+        state.escalaExcecoes[idx] = upd;
+      } else {
+        payload.id = uid();
+        var novo = await dbInsert("escala_excecoes", payload, mapEscalaExcecaoFromRow);
+        state.escalaExcecoes.push(novo);
+      }
+      showToast("Salvo"); renderEscala();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar");
+    }
+  }
+
+  async function salvarEscalaPadrao(userId, diaSemana, tipo){
+    if(tipo!=="trabalho" && tipo!=="folga"){ showToast("Esse tipo só pode ser salvo pra esse dia específico"); return; }
+    var horarios = lerHorariosEscalaEditor(tipo);
+    if(!horarios){ showToast("Preencha o horário de início e fim"); return; }
+    try{
+      var existente = state.escalaSemanal.find(function(e){ return e.userId===userId && e.diaSemana===diaSemana; });
+      var payload = {user_id:userId, dia_semana:diaSemana, tipo:tipo, hora_inicio:horarios.horaInicio, hora_fim:horarios.horaFim};
+      if(existente){
+        var upd = await dbUpdate("escala_semanal", existente.id, payload, mapEscalaSemanalFromRow);
+        var idx = state.escalaSemanal.findIndex(function(e){ return e.id===existente.id; });
+        state.escalaSemanal[idx] = upd;
+      } else {
+        payload.id = uid();
+        var novo = await dbInsert("escala_semanal", payload, mapEscalaSemanalFromRow);
+        state.escalaSemanal.push(novo);
+      }
+      showToast("Escala padrão atualizada"); renderEscala();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar");
+    }
+  }
+
+  async function removerEscalaExcecao(userId, dataStr){
+    var existente = state.escalaExcecoes.find(function(e){ return e.userId===userId && e.data===dataStr; });
+    if(!existente) return;
+    try{
+      await dbDelete("escala_excecoes", existente.id);
+      state.escalaExcecoes = state.escalaExcecoes.filter(function(e){ return e.id!==existente.id; });
+      showToast("Exceção removida"); renderEscala();
+    }catch(err){
+      console.error(err); showToast("Erro ao remover");
     }
   }
 
@@ -6708,7 +6983,8 @@
     {key:"recepcao", label:"Recepção (painel de acompanhamento)"},
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
     {key:"equipamentos", label:"Equipamentos (ar-condicionados, bombas etc.)"},
-    {key:"checklist_turno", label:"Checklist de Turno"}
+    {key:"checklist_turno", label:"Checklist de Turno"},
+    {key:"escala_trabalho", label:"Escala de Trabalho"}
   ];
   var adminUsersCache = null; // [{id,nome,email,role,ativo,permissoes:{modulo:{ver,editar}}}]
 
