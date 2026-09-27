@@ -319,6 +319,13 @@
     transition:opacity .25s;
   }
   .toast.show{opacity:1;}
+
+  @media print{
+    body *{ visibility:hidden; }
+    #qrPrintArea, #qrPrintArea *{ visibility:visible; }
+    #qrPrintArea{ position:absolute; left:0; top:0; width:100%; }
+    .qr-print-card{ break-inside:avoid; page-break-inside:avoid; }
+  }
 </style>
 </head>
 <body>
@@ -376,6 +383,7 @@
 <main id="equipamentosView" style="display:none;"></main>
 <main id="checklistTurnoView" style="display:none;"></main>
 <main id="escalaView" style="display:none;"></main>
+<main id="scanLimpezaView" style="display:none;"></main>
 <main id="adminView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
@@ -945,7 +953,7 @@
       incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama,
       jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por, jacuzziFoto:r.jacuzzi_foto,
       revisaoConcluidaEm:(r.revisao_concluida_em?new Date(r.revisao_concluida_em).getTime():null), revisaoConcluidaPor:r.revisao_concluida_por,
-      transferenciaDe:r.transferencia_de||null};
+      transferenciaDe:r.transferencia_de||null, iniciadoViaQr:!!r.iniciado_via_qr};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -1296,6 +1304,7 @@
 
   var state = null;
   var appSection = "home"; // 'home' | 'estoque' | 'procedimentos' | 'manutencoes'
+  var scanAcomodacaoId = (new URLSearchParams(window.location.search)).get("scan") || null; // QR escaneado na acomodação
   var activeCategory = CATEGORIES[0];
   var activeView = "items";
   var editingItemId = null;
@@ -1627,6 +1636,7 @@
   }
 
   function renderApp(){
+    if(scanAcomodacaoId){ renderScanLimpeza(); return; }
     if(appSection === "admin" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
     else if(appSection === "supervisao" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
     else if(appSection !== "home" && appSection !== "admin" && appSection !== "supervisao" && appSection !== "configuracoes" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
@@ -5130,6 +5140,92 @@
     return a ? a.nome : id;
   }
 
+  // ---------- Check-in de limpeza via QR Code ----------
+  // Tela dedicada — abre quando o link tem ?scan=<acomodacaoId>, o que só
+  // acontece ao escanear o QR colado na própria acomodação. Confirma que
+  // quem está marcando a limpeza está fisicamente ali.
+  function limparParamScan(){
+    scanAcomodacaoId = null;
+    var url = new URL(window.location.href);
+    url.searchParams.delete("scan");
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  var SCAN_VIEW_IDS = ["homeView","itemsView","countView","abastecimentoView","procedimentosView","manutencoesView","equipamentosView","checklistTurnoView","escalaView","adminView","hospedesView","limpezaView","recepcaoView","servicoGeralView","supervisaoView","configuracoesView"];
+
+  function renderScanLimpeza(){
+    document.getElementById("homeBackBtn").style.display = "none";
+    document.getElementById("alertPill").style.display = "none";
+    document.getElementById("appTitle").textContent = "Check-in de limpeza";
+    document.getElementById("appSubtitle").textContent = "Escaneado na acomodação";
+    document.getElementById("tabs").style.display = "none";
+    document.querySelector("footer.bottom-nav").style.display = "none";
+    document.getElementById("fab").style.display = "none";
+    SCAN_VIEW_IDS.forEach(function(id){ document.getElementById(id).style.display = "none"; });
+    var main = document.getElementById("scanLimpezaView");
+    main.style.display = "block";
+
+    if(!currentUser || !state){
+      main.innerHTML = '<div class="empty">Faça login pra confirmar a limpeza.</div>';
+      return;
+    }
+
+    var aco = state.acomodacoes.find(function(a){ return a.id===scanAcomodacaoId; });
+    var html = '';
+    if(!aco){
+      html = '<div class="empty">Acomodação não encontrada — confira esse QR code com o administrador.</div>';
+    } else {
+      var tarefa = state.solicitacoes
+        .filter(function(s){ return s.acomodacaoId===aco.id && (s.tipo==="limpeza"||s.tipo==="lavagem") && s.status!=="concluido"; })
+        .sort(function(a,b){ return b.criadoEm-a.criadoEm; })[0];
+
+      html += '<div class="card" style="text-align:center;padding:26px 18px;">';
+      html += '<div style="font-size:40px;margin-bottom:8px;">🧹</div>';
+      html += '<p style="margin:0 0 4px;font-size:18px;font-weight:800;">'+escapeHtml(aco.nome)+'</p>';
+      if(!tarefa){
+        html += '<p class="item-meta" style="margin-top:10px;">Não há nenhuma limpeza pendente cadastrada pra essa acomodação agora.</p>';
+      } else if(!podeAgirSolicitacao(tarefa)){
+        html += '<p class="item-meta" style="margin-top:10px;">Sua conta não tem permissão pra marcar limpeza. Peça pro administrador liberar o módulo Limpeza pra você.</p>';
+      } else if(tarefa.status === "bloqueada"){
+        html += '<p class="item-meta" style="margin-top:10px;color:var(--amber-600);font-weight:700;">🔒 Essa acomodação ainda está bloqueada pra limpeza (aguardando a recepção liberar).</p>';
+      } else if(tarefa.status === "em_andamento"){
+        html += '<p class="item-meta" style="margin-top:10px;">✅ Limpeza já em andamento'+(tarefa.iniciadoEm?(', iniciada às '+fmtDate(tarefa.iniciadoEm).split(" ")[1]):'')+(tarefa.iniciadoPor?(' por '+escapeHtml(nomeStaff(tarefa.iniciadoPor))):'')+'.</p>';
+      } else {
+        html += '<p class="item-meta" style="margin:10px 0 16px;">Confirma que você está nessa acomodação agora e vai começar a limpeza?</p>';
+        html += '<button type="button" id="scanIniciarBtn" class="btn-primary" style="width:100%;padding:14px;font-size:15px;" data-tarefa-id="'+tarefa.id+'">✓ Iniciar limpeza aqui</button>';
+      }
+      html += '</div>';
+    }
+    html += '<button type="button" id="scanIrParaApp" style="display:block;margin:16px auto 0;background:none;border:none;color:var(--teal-700);font-family:inherit;font-size:13px;font-weight:700;">Ir pro app</button>';
+    main.innerHTML = html;
+
+    var iniciarBtn = document.getElementById("scanIniciarBtn");
+    if(iniciarBtn){
+      iniciarBtn.onclick = async function(){
+        var tarefaId = iniciarBtn.getAttribute("data-tarefa-id");
+        iniciarBtn.disabled = true; iniciarBtn.textContent = "Confirmando…";
+        try{
+          var s1 = await dbUpdate("solicitacoes_acomodacao", tarefaId, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null), iniciado_via_qr:true}, mapSolicitacaoFromRow);
+          var idx = state.solicitacoes.findIndex(function(x){ return x.id===tarefaId; });
+          if(idx>-1) state.solicitacoes[idx] = s1;
+          showToast("Limpeza iniciada!");
+          renderScanLimpeza();
+        }catch(err){
+          console.error(err); showToast("Erro ao confirmar — tente de novo");
+          iniciarBtn.disabled = false; iniciarBtn.textContent = "✓ Iniciar limpeza aqui";
+        }
+      };
+    }
+    var irParaAppBtn = document.getElementById("scanIrParaApp");
+    if(irParaAppBtn){
+      irParaAppBtn.onclick = function(){
+        limparParamScan();
+        appSection = "home";
+        renderApp();
+      };
+    }
+  }
+
   // Hospedin/HBOOK sempre manda um bloco fixo de dados da reserva junto da
   // observação (forma de pagamento, parcelas, código promocional, tipo de
   // quarto/tarifa/cama no HBOOK) — isso é ruído de reserva, não é recado do
@@ -5301,7 +5397,7 @@
         html += '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?"⚠️ ":"")+'esperando há '+fmtDuration(m)+'</p>';
       }
     } else if(s.status === "em_andamento"){
-      html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+'</p>';
+      html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+(s.iniciadoViaQr?' · <span style="color:var(--teal-700);font-weight:700;">📷 confirmado por QR code na acomodação</span>':'')+'</p>';
     } else {
       var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
       var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "sauna" ? "ligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
@@ -7010,6 +7106,35 @@
     return res.data || [];
   }
 
+  // ---------- QR Code por acomodação (check-in de limpeza) ----------
+  function baseAppUrl(){
+    return window.location.origin + window.location.pathname;
+  }
+  function urlScanAcomodacao(acomodacaoId){
+    return baseAppUrl() + "?scan=" + encodeURIComponent(acomodacaoId);
+  }
+  function renderQrAcomodacoesHtml(){
+    var html = '<div class="section-title" style="margin-top:22px;">📷 QR Code das acomodações (check-in de limpeza)</div>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Imprima e cole um desses em cada acomodação. A camareira escaneia com o celular ao chegar — isso confirma que ela está lá e já marca a limpeza como iniciada. Só funciona se ela estiver logada no app com permissão em Limpeza.</p>';
+    if(!state.acomodacoes || state.acomodacoes.length === 0){
+      html += '<div class="empty">Nenhuma acomodação cadastrada ainda.</div>';
+      return html;
+    }
+    html += '<div id="qrPrintArea">';
+    html += '<div class="card" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;">';
+    state.acomodacoes.slice().sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); }).forEach(function(a){
+      var url = urlScanAcomodacao(a.id);
+      var qrImg = "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=" + encodeURIComponent(url);
+      html += '<div class="qr-print-card" style="text-align:center;">' +
+        '<img src="'+qrImg+'" alt="QR '+escapeHtml(a.nome)+'" style="width:100%;max-width:160px;border:1px solid var(--line);border-radius:8px;">' +
+        '<p style="margin:6px 0 0;font-size:13px;font-weight:800;">'+escapeHtml(a.nome)+'</p>' +
+      '</div>';
+    });
+    html += '</div></div>';
+    html += '<button type="button" id="imprimirQrsBtn" style="display:block;width:100%;margin-top:10px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">🖨️ Imprimir todos os QR Codes</button>';
+    return html;
+  }
+
   async function renderAdmin(){
     var main = document.getElementById("adminView");
     main.innerHTML = '<div class="empty">Carregando usuários…</div>';
@@ -7040,6 +7165,8 @@
     '</div>';
     html += '<button type="button" id="enviarRelatorioAgoraBtn" style="display:block;width:100%;margin-top:12px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">📧 Enviar relatório agora</button>';
     html += '</div>';
+
+    html += renderQrAcomodacoesHtml();
 
     html += '<p style="color:var(--ink-600);font-size:12.5px;margin:22px 0 -8px;">A gestão de turnos e atividades do checklist agora fica na própria aba <strong>Checklist de Turno</strong>.</p>';
 
@@ -7096,6 +7223,9 @@
       html += '</div>';
     });
     main.innerHTML = html;
+
+    var imprimirQrsBtn = document.getElementById("imprimirQrsBtn");
+    if(imprimirQrsBtn) imprimirQrsBtn.onclick = function(){ window.print(); };
 
     var addEmailBtn = document.getElementById("adicionarRelatorioEmailBtn");
     if(addEmailBtn){
