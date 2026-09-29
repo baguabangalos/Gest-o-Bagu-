@@ -6049,6 +6049,9 @@
           searchable_code:info.searchableCode||null, transferencia_de:transferenciaDeNome};
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
+        if(contexto === "checkout" || contexto === "checkin_checkout"){
+          await limparFotosFrigobarAntigas(id, Date.now());
+        }
       }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
     }
 
@@ -6073,8 +6076,28 @@
           var atualizadaR = await dbUpdate("solicitacoes_acomodacao", tarefaR.id, {contexto:contextoCorrigido, status:"bloqueada"}, mapSolicitacaoFromRow);
           var idxR = state.solicitacoes.findIndex(function(x){ return x.id===tarefaR.id; });
           if(idxR>-1) state.solicitacoes[idxR] = atualizadaR;
+          await limparFotosFrigobarAntigas(idR, Date.now());
         }catch(err){ console.error("Erro ao corrigir tarefa de lavagem com checkout que apareceu depois:", err); }
       }
+    }
+  }
+
+  // Uma acomodação só precisa da foto do abastecimento do frigobar da
+  // estadia ATUAL — é só pra conferir que foi feito certinho antes do
+  // hóspede entrar. Assim que ele sai (checkout registrado), a foto da
+  // estadia que terminou não serve mais de nada guardada — só ocupa espaço
+  // — então limpa (mantém o registro em si, pra estatística de tempo, só
+  // tira a foto) e a próxima foto tirada já aparece limpa, sem as antigas.
+  async function limparFotosFrigobarAntigas(acomodacaoId, antesDe){
+    var alvos = state.solicitacoes.filter(function(s){
+      return s.tipo === "frigobar" && s.acomodacaoId === acomodacaoId && s.fotosAbastecimento && s.fotosAbastecimento.length && s.criadoEm < antesDe;
+    });
+    for(var k=0;k<alvos.length;k++){
+      try{
+        var upd = await dbUpdate("solicitacoes_acomodacao", alvos[k].id, {fotos_abastecimento:null}, mapSolicitacaoFromRow);
+        var idx = state.solicitacoes.findIndex(function(x){ return x.id===alvos[k].id; });
+        if(idx>-1) state.solicitacoes[idx] = upd;
+      }catch(err){ console.error("Erro ao limpar foto antiga de frigobar:", err); }
     }
   }
 
@@ -6384,7 +6407,12 @@
       .sort(function(a,b){ return acomodacaoNome(a.acomodacaoId).localeCompare(acomodacaoNome(b.acomodacaoId), "pt-BR"); });
     var feitos = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
       .sort(function(a,b){ return b.concluidoEm - a.concluidoEm; });
-    var html = '<div class="seg-toggle">' +
+    var html = '<div style="margin-bottom:16px;">' +
+      '<button type="button" id="novoAbastecimentoAvulsoBtn" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:10px;">+ Criar abastecimento avulso</button>' +
+      '<button type="button" id="importarExtratoBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">📄 Importar extrato do Hospedin (PDF)</button>' +
+      '<input type="file" id="importarExtratoInput" accept="application/pdf" style="display:none;">' +
+    '</div>';
+    html += '<div class="seg-toggle">' +
       '<button data-asub="pendentes" class="'+(abastecimentoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-asub="feitos" class="'+(abastecimentoSubView==="feitos"?"active":"")+'">Abastecidos hoje</button>' +
     '</div>';
@@ -6396,11 +6424,6 @@
         html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
       });
     }
-    html += '<div style="margin-top:16px;">' +
-      '<button type="button" id="novoAbastecimentoAvulsoBtn" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:10px;">+ Criar abastecimento avulso</button>' +
-      '<button type="button" id="importarExtratoBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">📄 Importar extrato do Hospedin (PDF)</button>' +
-      '<input type="file" id="importarExtratoInput" accept="application/pdf" style="display:none;">' +
-    '</div>';
     main.innerHTML = html;
     main.querySelectorAll("[data-asub]").forEach(function(b){
       b.onclick = function(){ abastecimentoSubView = b.getAttribute("data-asub"); renderAbastecimento(); };
@@ -7139,6 +7162,9 @@
             origem:"equipe", status:statusInicial, criado_por:(currentUser?currentUser.id:null)};
           var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
           state.solicitacoes.unshift(s);
+          if(contexto === "checkout" || contexto === "checkin_checkout"){
+            await limparFotosFrigobarAntigas(acomodacaoId, Date.now());
+          }
           showToast("Lavagem adicionada!");
           renderApp();
         }catch(err){
