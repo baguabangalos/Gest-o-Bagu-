@@ -6862,6 +6862,8 @@
         pode.push({id:s.id, nome:nome, tag:"🧹 LIMPEZA SOLICITADA", cor:"var(--amber-600)", motivo:null});
       }
     });
+    var porNome = function(a,b){ return a.nome.localeCompare(b.nome, "pt-BR"); };
+    pode.sort(porNome); naoPode.sort(porNome);
     return {pode:pode, naoPode:naoPode};
   }
 
@@ -7114,8 +7116,13 @@
       }
     }
 
+    html += renderQrAcomodacoesHtml();
+
     main.innerHTML = html;
     wireSolicitacaoActions(main);
+
+    var imprimirQrsBtn = document.getElementById("imprimirQrsBtn");
+    if(imprimirQrsBtn) imprimirQrsBtn.onclick = function(){ window.print(); };
 
     var lavagemAvulsaBtn = document.getElementById("lavagemAvulsaBtn");
     if(lavagemAvulsaBtn){
@@ -7621,9 +7628,7 @@
     html += '<button type="button" id="enviarRelatorioAgoraBtn" style="display:block;width:100%;margin-top:12px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">📧 Enviar relatório agora</button>';
     html += '</div>';
 
-    html += renderQrAcomodacoesHtml();
-
-    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:22px 0 -8px;">A gestão de turnos e atividades do checklist agora fica na própria aba <strong>Checklist de Turno</strong>.</p>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:22px 0 -8px;">Os QR Codes das acomodações agora ficam na aba <strong>Recepção</strong>. A gestão de turnos e atividades do checklist fica na própria aba <strong>Checklist de Turno</strong>.</p>';
 
     html += '<div class="section-title" style="margin-top:22px;">Usuários e permissões</div>';
     if(adminUsersCache.length === 0){
@@ -7681,9 +7686,6 @@
       html += '</div>';
     });
     main.innerHTML = html;
-
-    var imprimirQrsBtn = document.getElementById("imprimirQrsBtn");
-    if(imprimirQrsBtn) imprimirQrsBtn.onclick = function(){ window.print(); };
 
     var addEmailBtn = document.getElementById("adicionarRelatorioEmailBtn");
     if(addEmailBtn){
