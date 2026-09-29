@@ -924,7 +924,7 @@
   }
   function mapTurnoAtividadeFromRow(r){
     return {id:r.id, turnoId:r.turno_id, titulo:r.titulo, tipo:r.tipo||"livre", horaInicio:r.hora_inicio, horaFim:r.hora_fim,
-      intervaloMinutos:r.intervalo_minutos||null, ordem:r.ordem, diasSemana:r.dias_semana||[]};
+      intervaloMinutos:r.intervalo_minutos||null, ordem:r.ordem, diasSemana:r.dias_semana||[], observacao:r.observacao||null};
   }
   var DIAS_SEMANA_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   function atividadeAplicaNoDia(atividade, dataStr){
@@ -1016,7 +1016,7 @@
       incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama,
       jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por, jacuzziFoto:r.jacuzzi_foto,
       revisaoConcluidaEm:(r.revisao_concluida_em?new Date(r.revisao_concluida_em).getTime():null), revisaoConcluidaPor:r.revisao_concluida_por,
-      transferenciaDe:r.transferencia_de||null, iniciadoViaQr:!!r.iniciado_via_qr};
+      transferenciaDe:r.transferencia_de||null, iniciadoViaQr:!!r.iniciado_via_qr, observacao:r.observacao||null};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -4669,10 +4669,16 @@
       ativs.forEach(function(a){
         var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) :
           a.tipo === "recorrente" ? ("a cada "+a.intervaloMinutos+"min, "+escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "livre";
-        html += '<div class="qty-row" style="padding:6px 0;">' +
+        html += '<div style="padding:6px 0;'+(a.observacao?'':'')+'">';
+        html += '<div class="qty-row" style="padding:0;">' +
           '<span class="qty-name">'+escapeHtml(a.titulo)+' <span style="color:var(--ink-400);font-size:11.5px;font-weight:600;">('+horarioLbl+' · '+escapeHtml(diasSemanaLabel(a.diasSemana))+')</span></span>' +
+          '<span style="display:flex;gap:4px;">' +
+          '<button type="button" class="btn-edit" data-act="editar-atividade" data-id="'+a.id+'" title="Editar">'+ic("pencil")+'</button>' +
           '<button type="button" class="btn-edit" data-act="excluir-atividade" data-id="'+a.id+'" title="Remover">'+ic("trash")+'</button>' +
+          '</span>' +
         '</div>';
+        if(a.observacao) html += '<p class="item-meta" style="margin:2px 0 0;">'+ic("pencil")+' '+escapeHtml(a.observacao)+'</p>';
+        html += '</div>';
       });
       html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;">' +
         '<input type="text" class="nova-atividade-titulo" placeholder="Nova atividade" style="flex:2;min-width:130px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
@@ -4692,6 +4698,7 @@
         }).join("") +
         '</div>' +
       '</div>';
+      html += '<textarea class="nova-atividade-obs" rows="2" placeholder="Observação (opcional) — instrução que aparece toda vez que essa atividade repetir" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;"></textarea>';
       html += '</div>';
     });
     html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;'+(turnosOrdenados.length>0?'border-top:1px solid var(--line);padding-top:14px;':'')+'align-items:center;">' +
@@ -4750,6 +4757,13 @@
         }
       };
     });
+    main.querySelectorAll('[data-act="editar-atividade"]').forEach(function(btn){
+      btn.onclick = function(){
+        var id = btn.getAttribute("data-id");
+        var a = state.turnoAtividades.find(function(x){ return x.id===id; });
+        if(a) abrirEditarAtividadeSheet(a);
+      };
+    });
     main.querySelectorAll(".turno-admin-block").forEach(function(block){
       var turnoId = block.getAttribute("data-turno-id");
       var tipoSelect = block.querySelector(".nova-atividade-tipo");
@@ -4781,8 +4795,9 @@
           }
           var ordemAtual = state.turnoAtividades.filter(function(a){ return a.turnoId===turnoId; }).length;
           var diasSemana = Array.prototype.slice.call(block.querySelectorAll(".nova-atividade-dia:checked")).map(function(cb){ return parseInt(cb.value,10); });
+          var obsTxt = block.querySelector(".nova-atividade-obs").value.trim();
           try{
-            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana}, mapTurnoAtividadeFromRow);
+            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana, observacao:(obsTxt||null)}, mapTurnoAtividadeFromRow);
             state.turnoAtividades.push(nova);
             showToast("Atividade adicionada"); renderChecklistTurno();
           }catch(err){
@@ -4791,6 +4806,86 @@
         };
       }
     });
+  }
+
+  // Editar uma atividade de turno já cadastrada (título, horário, dias e
+  // observação) — antes só dava pra criar ou excluir, não editar.
+  function abrirEditarAtividadeSheet(a){
+    var comHorario = a.tipo === "hora_fixa" || a.tipo === "recorrente";
+    var html =
+      '<div class="sheet-overlay open" id="editarAtividadeOverlay">' +
+        '<div class="sheet">' +
+          '<h2>'+ic("pencil")+' Editar atividade</h2>' +
+          '<label>Nome</label>' +
+          '<input type="text" id="eaTitulo" value="'+escapeHtml(a.titulo)+'" style="width:100%;padding:10px 12px;margin-bottom:10px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+          '<label>Tipo</label>' +
+          '<select id="eaTipo" style="width:100%;padding:10px 12px;margin-bottom:10px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+            '<option value="livre"'+(a.tipo==="livre"?" selected":"")+'>Livre (sem hora)</option>' +
+            '<option value="hora_fixa"'+(a.tipo==="hora_fixa"?" selected":"")+'>Hora fixa</option>' +
+            '<option value="recorrente"'+(a.tipo==="recorrente"?" selected":"")+'>Recorrente (várias vezes ao dia)</option>' +
+          '</select>' +
+          '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
+            '<label style="flex:1;font-size:11.5px;color:var(--ink-600);display:flex;flex-direction:column;gap:2px;">Início<input type="time" id="eaInicio" value="'+escapeHtml(a.horaInicio||"")+'" style="display:'+(comHorario?"block":"none")+';padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
+            '<label style="flex:1;font-size:11.5px;color:var(--ink-600);display:flex;flex-direction:column;gap:2px;">Fim<input type="time" id="eaFim" value="'+escapeHtml(a.horaFim||"")+'" style="display:'+(comHorario?"block":"none")+';padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
+          '</div>' +
+          '<input type="number" min="5" step="5" id="eaIntervalo" value="'+(a.intervaloMinutos||"")+'" placeholder="a cada (min)" style="display:'+(a.tipo==="recorrente"?"block":"none")+';width:100%;padding:9px 11px;margin-bottom:10px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+          '<p class="item-meta" style="margin:0 0 4px;">Repete em quais dias? (deixe tudo desmarcado pra todo dia)</p>' +
+          '<div id="eaDias" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">' +
+          DIAS_SEMANA_LABELS.map(function(lbl, idx){
+            var marcado = (a.diasSemana||[]).indexOf(idx) > -1;
+            return '<label style="display:flex;align-items:center;gap:4px;font-size:12.5px;"><input type="checkbox" class="eaDia" value="'+idx+'"'+(marcado?" checked":"")+'> '+lbl+'</label>';
+          }).join("") +
+          '</div>' +
+          '<label>Observação (opcional)</label>' +
+          '<textarea id="eaObs" rows="2" style="width:100%;padding:10px 12px;margin-bottom:4px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;">'+escapeHtml(a.observacao||"")+'</textarea>' +
+          '<div class="sheet-actions">' +
+            '<button type="button" class="btn-secondary" id="eaCancel">Cancelar</button>' +
+            '<button type="button" class="btn-primary" id="eaSalvar">'+ic("check")+' Salvar</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("editarAtividadeOverlay");
+    var tipoSel = document.getElementById("eaTipo");
+    var inicioInp = document.getElementById("eaInicio");
+    var fimInp = document.getElementById("eaFim");
+    var intervaloInp = document.getElementById("eaIntervalo");
+    tipoSel.addEventListener("change", function(){
+      var ch = tipoSel.value === "hora_fixa" || tipoSel.value === "recorrente";
+      inicioInp.style.display = ch ? "block" : "none";
+      fimInp.style.display = ch ? "block" : "none";
+      intervaloInp.style.display = tipoSel.value === "recorrente" ? "block" : "none";
+    });
+    document.getElementById("eaCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+    document.getElementById("eaSalvar").onclick = async function(){
+      var titulo = document.getElementById("eaTitulo").value.trim();
+      if(!titulo){ showToast("Digite o nome da atividade"); return; }
+      var tipo = tipoSel.value;
+      var comHor = tipo === "hora_fixa" || tipo === "recorrente";
+      var horaInicio = comHor ? inicioInp.value : null;
+      var horaFim = comHor ? fimInp.value : null;
+      if(comHor && (!horaInicio || !horaFim)){ showToast("Preencha o horário de início e fim"); return; }
+      var intervaloMinutos = null;
+      if(tipo === "recorrente"){
+        intervaloMinutos = parseInt(intervaloInp.value, 10);
+        if(!intervaloMinutos || intervaloMinutos <= 0){ showToast("Preencha a cada quantos minutos repete"); return; }
+      }
+      var diasSemana = Array.prototype.slice.call(overlay.querySelectorAll(".eaDia:checked")).map(function(cb){ return parseInt(cb.value,10); });
+      var obsTxt = document.getElementById("eaObs").value.trim();
+      var btn = document.getElementById("eaSalvar"); btn.disabled = true;
+      try{
+        var atualizada = await dbUpdate("turno_atividades", a.id, {titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, dias_semana:diasSemana, observacao:(obsTxt||null)}, mapTurnoAtividadeFromRow);
+        var idx = state.turnoAtividades.findIndex(function(x){ return x.id===a.id; });
+        if(idx>-1) state.turnoAtividades[idx] = atualizada;
+        overlay.remove();
+        showToast("Atividade atualizada");
+        renderChecklistTurno();
+      }catch(err){
+        console.error(err); showToast("Erro ao salvar atividade");
+        btn.disabled = false;
+      }
+    };
   }
 
   async function renderChecklistTurno(){
@@ -5818,6 +5913,9 @@
     var label = tipoLabelCompleto(s);
     var html = '<p class="item-name" style="margin:0 0 3px;">'+STATUS_DOT[s.status]+' '+icon+' '+escapeHtml(label)+
       ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</span></p>';
+    if(s.observacao){
+      html += '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+ic("pencil")+' '+escapeHtml(s.observacao)+'</p>';
+    }
     if(s.itens && s.itens.length){
       var itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
       html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
@@ -5884,9 +5982,10 @@
     }
     var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") ? "recepcao" : "limpeza";
     var lixoHtml = podeExcluir(moduloExclusao) ? '<button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">'+ic("trash")+'</button>' : '';
+    var obsHtml = podeEditar(moduloExclusao) ? '<button class="btn-edit" data-act="editarObservacao" data-id="'+s.id+'" title="Observação">'+ic("pencil")+'</button>' : '';
     if(podeAgirSolicitacao(s)){
       if(s.status === "bloqueada"){
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">'+ic("lockOpen")+' Liberar</button>'+lixoHtml+'</div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">'+ic("lockOpen")+' Liberar</button>'+obsHtml+lixoHtml+'</div>';
       } else if(s.status === "pendente"){
         var acaoLabel = "▶ Iniciar", acaoAct = "iniciar";
         if(s.tipo === "frigobar"){ acaoLabel = ""+ic('check')+" Abasteceu"; acaoAct = "finalizar"; }
@@ -5896,14 +5995,14 @@
         else if(s.tipo === "lenha"){ acaoLabel = ""+ic('check')+" Reposta"; acaoAct = "finalizar"; }
         var editarItensHtml = (s.tipo === "frigobar" && podeEditar("estoque")) ?
           '<button class="btn btn-out" data-act="editarItensPedido" data-id="'+s.id+'">'+ic("pencil")+' Editar itens</button>' : '';
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+editarItensHtml+lixoHtml+'</div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+editarItensHtml+obsHtml+lixoHtml+'</div>';
       } else if(s.status === "em_andamento"){
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">'+ic("check")+' Finalizar</button>'+lixoHtml+'</div>';
-      } else if(lixoHtml){
-        html += '<div class="item-actions">'+lixoHtml+'</div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">'+ic("check")+' Finalizar</button>'+obsHtml+lixoHtml+'</div>';
+      } else if(obsHtml || lixoHtml){
+        html += '<div class="item-actions">'+obsHtml+lixoHtml+'</div>';
       }
-    } else if(lixoHtml){
-      html += '<div class="item-actions">'+lixoHtml+'</div>';
+    } else if(obsHtml || lixoHtml){
+      html += '<div class="item-actions">'+obsHtml+lixoHtml+'</div>';
     }
     return html;
   }
@@ -5943,12 +6042,16 @@
           if(!podeExcluir(moduloExclusao)){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
         } else if(act === "editarItensPedido"){
           if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+        } else if(act === "editarObservacao"){
+          if(!podeEditar(moduloExclusao)){ showToast("Você não tem permissão para essa ação"); return; }
         } else if(!podeAgirSolicitacao(s)){
           showToast("Você não tem permissão para essa ação"); return;
         }
         try{
           if(act === "editarItensPedido"){
             abrirEditarItensPedidoSheet(s);
+          } else if(act === "editarObservacao"){
+            abrirObservacaoSolicitacaoSheet(s);
           } else if(act === "iniciar"){
             if(s.tipo === "lavagem" || s.tipo === "limpeza"){
               abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarIniciarSolicitacao(id); });
@@ -6590,6 +6693,43 @@
     };
   }
 
+  // Observação manual numa solicitação (limpeza/lavagem/manutenção/frigobar/etc.) —
+  // pra anotar coisas como "camas separadas" vindas do Hospedin ou combinadas
+  // na hora, tanto em pedidos avulsos quanto nos gerados automaticamente.
+  function abrirObservacaoSolicitacaoSheet(s){
+    var html =
+      '<div class="sheet-overlay open" id="obsSolicitacaoOverlay">' +
+        '<div class="sheet">' +
+          '<h2>'+ic("pencil")+' Observação</h2>' +
+          '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">'+escapeHtml(acomodacaoNome(s.acomodacaoId))+' — visível pra quem for atender esse pedido. Ex: "camas separadas".</p>' +
+          '<textarea id="obsSolicitacaoTexto" rows="4" placeholder="Observação (opcional)" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);resize:vertical;">'+escapeHtml(s.observacao||"")+'</textarea>' +
+          '<div class="sheet-actions">' +
+            '<button type="button" class="btn-secondary" id="obsSolicitacaoCancel">Cancelar</button>' +
+            '<button type="button" class="btn-primary" id="obsSolicitacaoSalvar">'+ic("check")+' Salvar</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("obsSolicitacaoOverlay");
+    document.getElementById("obsSolicitacaoCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+    document.getElementById("obsSolicitacaoSalvar").onclick = async function(){
+      var texto = document.getElementById("obsSolicitacaoTexto").value.trim();
+      var btn = document.getElementById("obsSolicitacaoSalvar"); btn.disabled = true;
+      try{
+        var atualizado = await dbUpdate("solicitacoes_acomodacao", s.id, {observacao:texto||null}, mapSolicitacaoFromRow);
+        var idx = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
+        if(idx>-1) state.solicitacoes[idx] = atualizado;
+        overlay.remove();
+        showToast("Observação salva");
+        renderApp();
+      }catch(err){
+        console.error(err); showToast("Erro ao salvar observação");
+        btn.disabled = false;
+      }
+    };
+  }
+
   function abrirNovoAbastecimentoAvulsoSheet(){
     var todasAtivas = state.acomodacoes.filter(function(a){ return a.ativo; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
@@ -6613,6 +6753,8 @@
             '</select>' +
             '<button type="button" id="avulsoExtraAddBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>' +
           '</div>' +
+          '<label>Observação (opcional)</label>' +
+          '<textarea id="avulsoObs" rows="2" placeholder="Ex: camas separadas" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);resize:vertical;"></textarea>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="avulsoCancel">Cancelar</button>' +
             '<button type="button" class="btn-primary" id="avulsoConfirm">'+ic("check")+' Criar pedido de abastecimento</button>' +
@@ -6669,8 +6811,9 @@
       if(itens.length === 0){ showToast("Adicione pelo menos um item"); return; }
       var btn = document.getElementById("avulsoConfirm"); btn.disabled = true;
       try{
+        var obsTxt = document.getElementById("avulsoObs").value.trim();
         var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"frigobar", origem:"equipe",
-          criado_por:(currentUser?currentUser.id:null), status:"pendente", itens:itens};
+          criado_por:(currentUser?currentUser.id:null), status:"pendente", itens:itens, observacao:(obsTxt||null)};
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
         overlay.remove();
@@ -7214,6 +7357,7 @@
           '<option value="checkout">Checkout</option>' +
           '<option value="checkin_checkout">Check-in + Checkout (mesmo dia)</option>' +
           '</select>' +
+          '<textarea id="lavagemAvulsaObs" rows="2" placeholder="Observação (opcional) — ex: camas separadas" style="width:100%;padding:10px 12px;margin-top:8px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);resize:vertical;"></textarea>' +
           '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="lavagemAvulsaBtn" style="flex:1;">'+ic("basket")+' Adicionar lavagem</button></div>' +
         '</div>';
 
@@ -7224,6 +7368,7 @@
           '<option value="">Selecionar acomodação…</option>' +
           todasAtivas.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
           '</select>' +
+          '<textarea id="limpezaRecepcaoObs" rows="2" placeholder="Observação (opcional) — ex: camas separadas" style="width:100%;padding:10px 12px;margin-top:8px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);resize:vertical;"></textarea>' +
           '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="solicitarLimpezaRecepcaoBtn" style="flex:1;">'+ic("broom")+' Solicitar limpeza</button></div>' +
         '</div>';
 
@@ -7295,6 +7440,7 @@
       lavagemAvulsaBtn.onclick = async function(){
         var sel = document.getElementById("lavagemAvulsaSelect");
         var tipoSel = document.getElementById("lavagemAvulsaTipo");
+        var obsSel = document.getElementById("lavagemAvulsaObs");
         var acomodacaoId = sel.value;
         var contexto = tipoSel.value;
         if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
@@ -7302,7 +7448,7 @@
         try{
           var statusInicial = (contexto === "checkin") ? "pendente" : "bloqueada";
           var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"lavagem", contexto:contexto,
-            origem:"equipe", status:statusInicial, criado_por:(currentUser?currentUser.id:null)};
+            origem:"equipe", status:statusInicial, criado_por:(currentUser?currentUser.id:null), observacao:(obsSel.value.trim()||null)};
           var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
           state.solicitacoes.unshift(s);
           showToast("Lavagem adicionada!");
@@ -7318,12 +7464,13 @@
     if(solicitarLimpezaBtn){
       solicitarLimpezaBtn.onclick = async function(){
         var sel = document.getElementById("limpezaRecepcaoSelect");
+        var obsSel = document.getElementById("limpezaRecepcaoObs");
         var acomodacaoId = sel.value;
         if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
         solicitarLimpezaBtn.disabled = true;
         try{
           var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"limpeza", contexto:"estadia",
-            origem:"equipe", status:"pendente", criado_por:(currentUser?currentUser.id:null)};
+            origem:"equipe", status:"pendente", criado_por:(currentUser?currentUser.id:null), observacao:(obsSel.value.trim()||null)};
           var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
           state.solicitacoes.unshift(s);
           showToast("Limpeza solicitada!");
