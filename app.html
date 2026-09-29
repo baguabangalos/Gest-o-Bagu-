@@ -3466,6 +3466,11 @@
       var s2 = await dbUpdate("solicitacoes_acomodacao", s.id, payload, mapSolicitacaoFromRow);
       var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
       if(idx2>-1) state.solicitacoes[idx2] = s2;
+      if(abastecerFotosPendentes.length > 0){
+        // Só agora, com a foto nova de fato tirada e salva, as fotos antigas
+        // dessa acomodação podem sumir — nunca antes disso.
+        await limparFotosFrigobarAntigas(s.acomodacaoId, s.id);
+      }
       closeAbastecerSheet();
       showToast(faltando.length ? "Abastecido — "+faltando.length+" item(ns) marcado(s) em falta" : "Abastecimento registrado");
       renderApp();
@@ -6049,9 +6054,6 @@
           searchable_code:info.searchableCode||null, transferencia_de:transferenciaDeNome};
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
-        if(contexto === "checkout" || contexto === "checkin_checkout"){
-          await limparFotosFrigobarAntigas(id, Date.now());
-        }
       }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
     }
 
@@ -6076,21 +6078,22 @@
           var atualizadaR = await dbUpdate("solicitacoes_acomodacao", tarefaR.id, {contexto:contextoCorrigido, status:"bloqueada"}, mapSolicitacaoFromRow);
           var idxR = state.solicitacoes.findIndex(function(x){ return x.id===tarefaR.id; });
           if(idxR>-1) state.solicitacoes[idxR] = atualizadaR;
-          await limparFotosFrigobarAntigas(idR, Date.now());
         }catch(err){ console.error("Erro ao corrigir tarefa de lavagem com checkout que apareceu depois:", err); }
       }
     }
   }
 
-  // Uma acomodação só precisa da foto do abastecimento do frigobar da
-  // estadia ATUAL — é só pra conferir que foi feito certinho antes do
-  // hóspede entrar. Assim que ele sai (checkout registrado), a foto da
-  // estadia que terminou não serve mais de nada guardada — só ocupa espaço
-  // — então limpa (mantém o registro em si, pra estatística de tempo, só
-  // tira a foto) e a próxima foto tirada já aparece limpa, sem as antigas.
-  async function limparFotosFrigobarAntigas(acomodacaoId, antesDe){
+  // Uma acomodação só precisa ficar com a foto do abastecimento do frigobar
+  // mais recente — as antigas só ocupam espaço. Mas a foto antiga só pode
+  // sumir quando uma foto NOVA for tirada de verdade (alguém foi lá
+  // conferir/reabastecer) — nunca só porque o checkout foi marcado, senão
+  // fica um período sem nenhuma foto de comprovação. Por isso isso é
+  // chamado só no momento em que um abastecimento é concluído com foto,
+  // não quando o checkout acontece. Mantém o registro em si (pra
+  // estatística de tempo na Supervisão), só tira a foto das antigas.
+  async function limparFotosFrigobarAntigas(acomodacaoId, exceptoId){
     var alvos = state.solicitacoes.filter(function(s){
-      return s.tipo === "frigobar" && s.acomodacaoId === acomodacaoId && s.fotosAbastecimento && s.fotosAbastecimento.length && s.criadoEm < antesDe;
+      return s.tipo === "frigobar" && s.acomodacaoId === acomodacaoId && s.id !== exceptoId && s.fotosAbastecimento && s.fotosAbastecimento.length;
     });
     for(var k=0;k<alvos.length;k++){
       try{
@@ -7162,9 +7165,6 @@
             origem:"equipe", status:statusInicial, criado_por:(currentUser?currentUser.id:null)};
           var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
           state.solicitacoes.unshift(s);
-          if(contexto === "checkout" || contexto === "checkin_checkout"){
-            await limparFotosFrigobarAntigas(acomodacaoId, Date.now());
-          }
           showToast("Lavagem adicionada!");
           renderApp();
         }catch(err){
