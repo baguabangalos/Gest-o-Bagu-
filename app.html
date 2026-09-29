@@ -1069,7 +1069,13 @@
         return await fn(atual);
       }catch(err){
         var msg = (err && err.message) || "";
-        var m = msg.match(/column ["']?([a-zA-Z_]+)["']?/i) || msg.match(/the ['"]([a-zA-Z_]+)['"] column/i);
+        // Ordem importa: a mensagem padrão do PostgREST é "Could not find the
+        // 'X' column of 'Y' in the schema cache" — testamos esse formato
+        // primeiro. O padrão genérico exige aspas ao redor do nome para não
+        // capturar por engano a palavra "of" que aparece logo depois de
+        // "column" nessa frase (bug que fazia o retry desistir na primeira
+        // tentativa em vez de remover a coluna que realmente falta).
+        var m = msg.match(/the ['"]([a-zA-Z_]+)['"] column/i) || msg.match(/column ['"]([a-zA-Z_]+)['"]/i);
         if(m && atual && Object.prototype.hasOwnProperty.call(atual, m[1])){
           var novo = {};
           for(var k in atual){ if(k !== m[1]) novo[k] = atual[k]; }
