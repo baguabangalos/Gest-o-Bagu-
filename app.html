@@ -197,6 +197,23 @@
     display:block;text-align:center;color:var(--red-600);font-size:13px;font-weight:600;
     margin-top:14px;background:none;border:none;font-family:inherit;width:100%;padding:8px;
   }
+  .sheet-overlay.fullpage{align-items:stretch;}
+  .sheet-overlay.fullpage .sheet{
+    width:100%;max-width:720px;margin:0 auto;border-radius:0;max-height:100vh;height:100%;
+    padding-top:calc(18px + env(safe-area-inset-top));box-sizing:border-box;
+  }
+  .proc-ed-toolbar{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;}
+  .proc-ed-btn{padding:6px 10px;border:1px solid var(--line);background:var(--sand-50);border-radius:7px;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-700);cursor:pointer;}
+  .proc-ed-btn.active{background:var(--teal-700);color:#fff;border-color:var(--teal-700);}
+  .proc-editor{min-height:180px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:15px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);line-height:1.65;overflow-y:auto;}
+  .proc-editor:focus{outline:2px solid var(--teal-700);outline-offset:-1px;}
+  .proc-editor:empty:before{content:attr(data-placeholder);color:var(--ink-400);}
+  .proc-editor img,.proc-leitura-conteudo img{max-width:100%;border-radius:8px;display:block;margin:10px 0;}
+  .proc-editor h3,.proc-leitura-conteudo h3{margin:16px 0 6px;font-size:18px;}
+  .proc-editor ul,.proc-leitura-conteudo ul,.proc-editor ol,.proc-leitura-conteudo ol{padding-left:22px;margin:8px 0;}
+  .proc-editor a,.proc-leitura-conteudo a{color:var(--teal-700);}
+  .proc-leitura-conteudo{font-size:15.5px;line-height:1.7;color:var(--ink-900);}
+  .proc-leitura-conteudo p{margin:0 0 12px;}
   .qty-stepper{display:flex;align-items:center;gap:10px;}
   .qty-stepper button{
     width:44px;height:44px;border-radius:10px;border:1px solid var(--line);
@@ -662,15 +679,27 @@
 </div>
 
 <!-- Sheet: add/edit procedimento -->
-<div class="sheet-overlay" id="procedimentoSheetOverlay">
+<div class="sheet-overlay fullpage" id="procedimentoSheetOverlay">
   <div class="sheet">
     <h2 id="procedimentoSheetTitle">Novo procedimento</h2>
     <form id="procedimentoForm">
       <label>Título</label>
       <input type="text" id="pr_title" required placeholder="Ex: Checklist de limpeza do quarto">
       <label>Texto (opcional)</label>
-      <textarea id="pr_text" placeholder="Descreva o passo a passo…" style="min-height:100px;"></textarea>
-      <label>Foto (opcional)</label>
+      <div class="proc-ed-toolbar">
+        <button type="button" class="proc-ed-btn" data-cmd="bold" title="Negrito"><b>N</b></button>
+        <button type="button" class="proc-ed-btn" data-cmd="italic" title="Itálico"><i>I</i></button>
+        <button type="button" class="proc-ed-btn" data-cmd="underline" title="Sublinhado"><u>S</u></button>
+        <button type="button" class="proc-ed-btn" data-cmd="formatBlock" data-value="H3" title="Título">Título</button>
+        <button type="button" class="proc-ed-btn" data-cmd="formatBlock" data-value="P" title="Texto normal">Texto</button>
+        <button type="button" class="proc-ed-btn" data-cmd="insertUnorderedList" title="Lista com marcadores">• Lista</button>
+        <button type="button" class="proc-ed-btn" data-cmd="insertOrderedList" title="Lista numerada">1. Lista</button>
+        <button type="button" class="proc-ed-btn" id="prInserirImagemBtn" title="Inserir imagem no texto">+ Imagem</button>
+        <button type="button" class="proc-ed-btn" id="prInserirLinkBtn" title="Inserir link">+ Link</button>
+      </div>
+      <div id="pr_text_editor" class="proc-editor" contenteditable="true" data-placeholder="Descreva o passo a passo…"></div>
+      <input type="file" id="pr_text_img" accept="image/*" style="display:none;">
+      <label>Foto de capa (opcional)</label>
       <div class="photo-preview-wrap" id="prPhotoPicker">
         <img id="prPhotoPreviewImg" class="photo-preview-img" alt="">
         <span id="prPhotoPlaceholder" class="photo-placeholder"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>Adicionar foto</span>
@@ -3953,7 +3982,7 @@
     var q = normalizarBusca(procedimentosSearchQuery.trim());
     if(q){
       list = list.filter(function(p){
-        return normalizarBusca(p.title).indexOf(q) > -1 || normalizarBusca(p.text).indexOf(q) > -1;
+        return normalizarBusca(p.title).indexOf(q) > -1 || normalizarBusca(htmlToPlainText(p.text)).indexOf(q) > -1;
       });
     }
     if(list.length === 0){
@@ -3964,20 +3993,21 @@
     }
     var html = "";
     list.forEach(function(p){
-      var preview = p.text ? escapeHtml(p.text.length > 140 ? p.text.slice(0,140)+"…" : p.text) : "";
+      var plainText = htmlToPlainText(p.text);
+      var preview = plainText ? escapeHtml(plainText.length > 140 ? plainText.slice(0,140)+"…" : plainText) : "";
       html += '<div class="card proc-card" data-id="'+p.id+'">';
       if(p.photo) html += '<div style="width:100%;height:140px;border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--sand-100);"><img src="'+p.photo+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>';
       html += '<p class="item-name" style="margin:0 0 4px;">'+escapeHtml(p.title)+'</p>';
       if(preview) html += '<p class="item-meta" style="white-space:pre-wrap;">'+preview+'</p>';
       if(p.fileName) html += '<p class="item-meta" style="margin-top:6px;">'+ic("paperclip")+' '+escapeHtml(p.fileName)+'</p>';
-      if(p.videoUrl) html += '<p class="item-meta" style="margin-top:6px;"><a href="'+escapeHtml(p.videoUrl)+'" target="_blank" rel="noopener" class="video-link-proc" style="color:var(--teal-700);font-weight:700;text-decoration:none;">▶ Assistir vídeo</a></p>';
+      if(p.videoUrl) html += '<p class="item-meta" style="margin-top:6px;"><a href="'+escapeHtml(p.videoUrl)+'" target="_blank" rel="noopener" class="video-link-proc" style="color:var(--teal-700);font-weight:700;text-decoration:none;">'+ic("login")+' Assistir vídeo</a></p>';
       html += '</div>';
     });
     container.innerHTML = html;
     container.querySelectorAll(".proc-card").forEach(function(c){
       c.onclick = function(){
         var p = state.procedimentos.find(function(x){ return x.id === c.getAttribute("data-id"); });
-        if(p) openProcedimentoSheet(p);
+        if(p) abrirProcedimentoLeituraSheet(p);
       };
     });
     container.querySelectorAll(".video-link-proc").forEach(function(a){
@@ -4016,7 +4046,7 @@
     editingProcedimentoId = p ? p.id : null;
     document.getElementById("procedimentoSheetTitle").textContent = p ? "Editar procedimento" : "Novo procedimento";
     document.getElementById("pr_title").value = p ? p.title : "";
-    document.getElementById("pr_text").value = p ? (p.text||"") : "";
+    document.getElementById("pr_text_editor").innerHTML = p ? (p.text||"") : "";
     document.getElementById("pr_videoUrl").value = p ? (p.videoUrl||"") : "";
     document.getElementById("pr_file").value = "";
     pendingProcFile = (p && p.fileName) ? {name:p.fileName, data:p.fileData} : null;
@@ -4027,6 +4057,91 @@
     procedimentoOverlay.classList.add("open");
   }
   function closeProcedimentoSheet(){ procedimentoOverlay.classList.remove("open"); editingProcedimentoId = null; }
+
+  // Tela de leitura do procedimento — abre como uma folha completa, com o
+  // conteúdo formatado (texto rico) igual foi criado, sem o aperto da versão
+  // antiga que ficava tudo espremido dentro do formulário de edição.
+  function abrirProcedimentoLeituraSheet(p){
+    var podeEd = podeEditar("procedimentos");
+    var html =
+      '<div class="sheet-overlay fullpage open" id="procLeituraOverlay">' +
+        '<div class="sheet">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px;">' +
+            '<button type="button" id="procLeituraFechar" style="background:none;border:none;padding:4px;color:var(--ink-600);cursor:pointer;">'+ic("close")+'</button>' +
+            (podeEd ? '<button type="button" id="procLeituraEditar" class="btn-edit" title="Editar">'+ic("pencil")+' Editar</button>' : '') +
+          '</div>' +
+          (p.photo ? '<div style="width:100%;max-height:260px;border-radius:14px;overflow:hidden;margin-bottom:14px;background:var(--sand-100);"><img src="'+p.photo+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>' : '') +
+          '<h1 style="font-size:21px;margin:0 0 14px;">'+escapeHtml(p.title)+'</h1>' +
+          '<div class="proc-leitura-conteudo">'+(p.text||'<p style="color:var(--ink-400);">Sem texto.</p>')+'</div>' +
+          (p.videoUrl ? '<p style="margin-top:18px;"><a href="'+escapeHtml(p.videoUrl)+'" target="_blank" rel="noopener" style="color:var(--teal-700);font-weight:700;text-decoration:none;">'+ic("login")+' Assistir vídeo</a></p>' : '') +
+          (p.fileName ? '<p style="margin-top:10px;"><a href="'+escapeHtml(p.fileData)+'" download="'+escapeHtml(p.fileName)+'" style="color:var(--teal-700);font-weight:700;text-decoration:none;">'+ic("paperclip")+' '+escapeHtml(p.fileName)+'</a></p>' : '') +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("procLeituraOverlay");
+    document.getElementById("procLeituraFechar").onclick = function(){ overlay.remove(); };
+    var editarBtn = document.getElementById("procLeituraEditar");
+    if(editarBtn) editarBtn.onclick = function(){ overlay.remove(); openProcedimentoSheet(p); };
+  }
+
+  // Editor de texto rico do procedimento — igual a formatar texto no Word,
+  // só com o essencial (negrito, itálico, título, listas, imagem no meio do
+  // texto e link), sem precisar de nenhuma biblioteca externa.
+  var procTextEditor = document.getElementById("pr_text_editor");
+  document.querySelectorAll(".proc-ed-btn[data-cmd]").forEach(function(btn){
+    btn.onmousedown = function(e){ e.preventDefault(); }; // não perde a seleção do texto ao clicar
+    btn.onclick = function(){
+      procTextEditor.focus();
+      document.execCommand(btn.getAttribute("data-cmd"), false, btn.getAttribute("data-value")||null);
+    };
+  });
+  document.getElementById("prInserirImagemBtn").onmousedown = function(e){ e.preventDefault(); };
+  document.getElementById("prInserirImagemBtn").onclick = function(){
+    procTextEditor.focus();
+    document.getElementById("pr_text_img").click();
+  };
+  document.getElementById("pr_text_img").addEventListener("change", function(e){
+    var file = e.target.files && e.target.files[0];
+    if(!file) return;
+    if(!/^image\//.test(file.type)){ showToast("Escolha um arquivo de imagem"); e.target.value=""; return; }
+    compressImage(file, 900, 0.72, function(dataUrl){
+      e.target.value = "";
+      if(!dataUrl){ showToast("Não foi possível carregar a imagem"); return; }
+      procTextEditor.focus();
+      document.execCommand("insertImage", false, dataUrl);
+    });
+  });
+  document.getElementById("prInserirLinkBtn").onmousedown = function(e){ e.preventDefault(); };
+  document.getElementById("prInserirLinkBtn").onclick = function(){
+    var url = window.prompt("Link (https://...)");
+    if(!url) return;
+    procTextEditor.focus();
+    if(!window.getSelection().toString()){
+      document.execCommand("insertHTML", false, '<a href="'+escapeHtml(url)+'" target="_blank" rel="noopener">'+escapeHtml(url)+'</a>');
+    } else {
+      document.execCommand("createLink", false, url);
+    }
+  };
+  // Tira <script>/<style>/iframes e atributos onXxx do HTML do editor antes
+  // de salvar — o editor não gera isso sozinho, mas é uma rede de segurança
+  // básica já que o conteúdo é salvo e mostrado como HTML de verdade.
+  function sanitizeProcHtml(html){
+    var div = document.createElement("div");
+    div.innerHTML = html || "";
+    div.querySelectorAll("script,style,iframe,object,embed").forEach(function(el){ el.remove(); });
+    div.querySelectorAll("*").forEach(function(el){
+      Array.prototype.slice.call(el.attributes).forEach(function(attr){
+        if(/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+      });
+    });
+    return div.innerHTML;
+  }
+  function htmlToPlainText(html){
+    if(!html) return "";
+    var div = document.createElement("div");
+    div.innerHTML = html;
+    return (div.textContent || div.innerText || "").replace(/\s+/g," ").trim();
+  }
 
   document.getElementById("prPhotoPicker").onclick = function(){ document.getElementById("pr_photo").click(); };
   document.getElementById("pr_photo").addEventListener("change", function(e){
@@ -4064,7 +4179,8 @@
     e.preventDefault();
     if(!podeEditar("procedimentos")){ showToast("Você não tem permissão para editar procedimentos"); return; }
     var title = document.getElementById("pr_title").value.trim();
-    var text = document.getElementById("pr_text").value.trim();
+    var text = sanitizeProcHtml(document.getElementById("pr_text_editor").innerHTML);
+    if(!htmlToPlainText(text)) text = ""; // editor "vazio" pode deixar um <br> sozinho
     var videoUrl = document.getElementById("pr_videoUrl").value.trim();
     if(!title) return;
     var payload = {title:title, text_content:text, photo:pendingProcPhoto, video_url:videoUrl||null,
