@@ -760,6 +760,7 @@
 <div class="sheet-overlay" id="manutencaoSheetOverlay">
   <div class="sheet">
     <h2 id="manutencaoSheetTitle">Nova manutenção</h2>
+    <div id="mn_auditInfo" style="display:none;font-size:12.5px;color:var(--ink-400);margin-bottom:10px;"></div>
     <form id="manutencaoForm">
       <label>Título</label>
       <input type="text" id="mn_title" required placeholder="Ex: Torneira vazando">
@@ -928,13 +929,19 @@
   }
   function mapProcedimentoFromRow(r){
     return {id:r.id, title:r.title, text:r.text_content, photo:r.photo, fileName:r.file_name, fileData:r.file_data,
-      videoUrl:r.video_url, createdAt:new Date(r.created_at).getTime()};
+      videoUrl:r.video_url, createdAt:new Date(r.created_at).getTime(),
+      criadoPor:r.criado_por||null, criadoPorNome:r.criado_por_nome||null,
+      atualizadoPor:r.atualizado_por||null, atualizadoPorNome:r.atualizado_por_nome||null,
+      atualizadoEm:(r.atualizado_em?new Date(r.atualizado_em).getTime():null)};
   }
   function mapManutencaoFromRow(r){
     return {id:r.id, title:r.title, local:r.local, description:r.description, status:r.status,
       createdAt:new Date(r.created_at).getTime(), resolvedAt:(r.resolved_at?new Date(r.resolved_at).getTime():null),
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
-      resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id, responsavel:r.responsavel, prioridade:r.prioridade||"media"};
+      resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id, responsavel:r.responsavel, prioridade:r.prioridade||"media",
+      criadoPor:r.criado_por||null, criadoPorNome:r.criado_por_nome||null,
+      atualizadoPor:r.atualizado_por||null, atualizadoPorNome:r.atualizado_por_nome||null,
+      atualizadoEm:(r.atualizado_em?new Date(r.atualizado_em).getTime():null)};
   }
   function mapAcomodacaoFromRow(r){
     return {id:r.id, nome:r.nome, ativo:r.ativo, ordem:r.ordem, codigoHospedin:r.codigo_hospedin};
@@ -1045,7 +1052,9 @@
       incluiTrocaRoupaCama:!!r.inclui_troca_roupa_cama, diaEstadiaRoupaCama:r.dia_estadia_roupa_cama,
       jacuzziConcluidaEm:(r.jacuzzi_concluida_em?new Date(r.jacuzzi_concluida_em).getTime():null), jacuzziConcluidaPor:r.jacuzzi_concluida_por, jacuzziFoto:r.jacuzzi_foto,
       revisaoConcluidaEm:(r.revisao_concluida_em?new Date(r.revisao_concluida_em).getTime():null), revisaoConcluidaPor:r.revisao_concluida_por,
-      transferenciaDe:r.transferencia_de||null, iniciadoViaQr:!!r.iniciado_via_qr, observacao:r.observacao||null};
+      transferenciaDe:r.transferencia_de||null, iniciadoViaQr:!!r.iniciado_via_qr, observacao:r.observacao||null,
+      criadoPorNome:r.criado_por_nome||null, atualizadoPor:r.atualizado_por||null,
+      atualizadoPorNome:r.atualizado_por_nome||null, atualizadoEm:(r.atualizado_em?new Date(r.atualizado_em).getTime():null)};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -1072,25 +1081,124 @@
     }
     return await fn(atual);
   }
+  // ---------- Autoria e histórico de alterações ----------
+  // Todo registro criado/editado pelo app fica marcado com quem fez e
+  // quando — automaticamente, em qualquer tabela, sem precisar mexer em
+  // cada tela — e toda edição gera uma linha no histórico com o valor de
+  // antes e o de depois. Tabelas que ainda não rodaram a migração desses
+  // campos simplesmente não recebem essas colunas (o retry de "coluna
+  // faltando" acima já cuida disso), então nada quebra em lugar nenhum.
+  var CAMPOS_BINARIOS_HISTORICO = {photo:1, foto:1, file_data:1, fotos_abastecimento:1, jacuzzi_foto:1, comprovante_uniforme:1};
+  var CAMPO_LABEL_HISTORICO = {
+    title:"Título", text_content:"Texto", observacao:"Observação", status:"Status",
+    contexto:"Contexto", tipo:"Tipo", video_url:"Vídeo", local:"Local",
+    description:"Descrição", resolution_note:"Nota de conclusão", responsavel:"Responsável",
+    prioridade:"Prioridade", photo:"Foto", foto:"Foto", file_name:"Arquivo anexado",
+    itens:"Itens", nome:"Nome", horario:"Horário", hora_inicio:"Hora de início", hora_fim:"Hora de fim",
+    dias_semana:"Dias da semana", ordem:"Ordem"
+  };
+  function labelCampoHistorico(campo){
+    return CAMPO_LABEL_HISTORICO[campo] || campo;
+  }
+  function valorHistoricoLegivel(v){
+    if(v === null || v === undefined || v === "") return null;
+    if(typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  }
+  async function registrarHistoricoAlteracoes(table, id, before, payloadOriginal){
+    if(!before || !currentUser || !payloadOriginal) return;
+    var linhas = [];
+    Object.keys(payloadOriginal).forEach(function(campo){
+      if(!(campo in before)) return;
+      var vAntes = before[campo], vDepois = payloadOriginal[campo];
+      if(JSON.stringify(vAntes===undefined?null:vAntes) === JSON.stringify(vDepois===undefined?null:vDepois)) return;
+      var binario = !!CAMPOS_BINARIOS_HISTORICO[campo];
+      var antesTxt = binario ? (vAntes ? "(arquivo)" : null) : valorHistoricoLegivel(vAntes);
+      var depoisTxt = binario ? (vDepois ? "(arquivo)" : null) : valorHistoricoLegivel(vDepois);
+      linhas.push({id:uid(), tabela:table, registro_id:String(id), campo:campo,
+        valor_anterior:antesTxt, valor_novo:depoisTxt,
+        usuario_id:currentUser.id, usuario_nome:currentUser.nome});
+    });
+    if(!linhas.length) return;
+    try{ await sb.from("historico_alteracoes").insert(linhas); }
+    catch(e){ /* histórico é best-effort — nunca deve travar a ação principal */ }
+  }
   async function dbInsert(table, payload, mapFn){
+    var payloadComAutoria = Object.assign({}, payload);
+    if(currentUser){
+      if(!("criado_por" in payloadComAutoria)) payloadComAutoria.criado_por = currentUser.id;
+      if(!("criado_por_nome" in payloadComAutoria)) payloadComAutoria.criado_por_nome = currentUser.nome;
+    }
     var data = await comColunasFaltantesToleradas(async function(p){
       var res = await sb.from(table).insert(p).select().single();
       if(res.error) throw res.error;
       return res.data;
-    }, payload);
+    }, payloadComAutoria);
     return mapFn(data);
   }
   async function dbUpdate(table, id, payload, mapFn){
+    var payloadKeys = Object.keys(payload);
+    var before = null;
+    if(payloadKeys.length){
+      try{
+        var beforeRes = await sb.from(table).select(payloadKeys.join(",")).eq("id", id).maybeSingle();
+        if(!beforeRes.error) before = beforeRes.data;
+      }catch(e){ /* histórico é best-effort */ }
+    }
+    var payloadComAutoria = Object.assign({}, payload);
+    if(currentUser){
+      if(!("atualizado_por" in payloadComAutoria)) payloadComAutoria.atualizado_por = currentUser.id;
+      if(!("atualizado_por_nome" in payloadComAutoria)) payloadComAutoria.atualizado_por_nome = currentUser.nome;
+      if(!("atualizado_em" in payloadComAutoria)) payloadComAutoria.atualizado_em = new Date().toISOString();
+    }
     var data = await comColunasFaltantesToleradas(async function(p){
       var res = await sb.from(table).update(p).eq("id", id).select().single();
       if(res.error) throw res.error;
       return res.data;
-    }, payload);
+    }, payloadComAutoria);
+    registrarHistoricoAlteracoes(table, id, before, payload).catch(function(){});
     return mapFn(data);
   }
   async function dbDelete(table, id){
     var res = await sb.from(table).delete().eq("id", id);
     if(res.error) throw res.error;
+  }
+  // Folha de histórico genérica — mostra, para qualquer registro, quem
+  // mudou o quê e quando (de/para), mais recente primeiro. Usada em
+  // procedimentos, manutenções e solicitações (limpeza/lavagem/abastecimento).
+  async function abrirHistoricoSheet(tabela, registroId, tituloRegistro){
+    var existente = document.getElementById("historicoOverlay");
+    if(existente) existente.remove();
+    var html = '<div class="sheet-overlay open" id="historicoOverlay"><div class="sheet">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+      '<h2 style="margin:0;">Histórico'+(tituloRegistro?' — '+escapeHtml(tituloRegistro):'')+'</h2>' +
+      '<button type="button" id="historicoFechar" style="background:none;border:none;padding:4px;color:var(--ink-600);cursor:pointer;">'+ic("close")+'</button>' +
+      '</div><div id="historicoConteudo" style="color:var(--ink-400);font-size:14px;">Carregando…</div>' +
+      '</div></div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("historicoOverlay");
+    document.getElementById("historicoFechar").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target===overlay) overlay.remove(); });
+    try{
+      var res = await sb.from("historico_alteracoes").select("*").eq("tabela", tabela).eq("registro_id", String(registroId)).order("criado_em", {ascending:false}).limit(200);
+      if(res.error) throw res.error;
+      var linhas = res.data || [];
+      var conteudo = document.getElementById("historicoConteudo");
+      if(!conteudo) return;
+      if(!linhas.length){ conteudo.textContent = "Nenhuma alteração registrada ainda."; return; }
+      conteudo.innerHTML = linhas.map(function(h){
+        var quando = fmtDate(new Date(h.criado_em).getTime());
+        return '<div style="border-bottom:1px solid var(--line);padding:10px 0;">' +
+          '<p style="margin:0 0 4px;font-size:13.5px;font-weight:700;">'+escapeHtml(labelCampoHistorico(h.campo))+'</p>' +
+          '<p style="margin:0 0 3px;font-size:13.5px;color:var(--ink-600);">De: '+escapeHtml(h.valor_anterior||"(vazio)")+'</p>' +
+          '<p style="margin:0 0 6px;font-size:13.5px;color:var(--ink-900);">Para: <strong>'+escapeHtml(h.valor_novo||"(vazio)")+'</strong></p>' +
+          '<p style="margin:0;font-size:12px;color:var(--ink-400);">'+escapeHtml(h.usuario_nome||"—")+' · '+quando+'</p>' +
+        '</div>';
+      }).join("");
+    }catch(e){
+      var conteudo2 = document.getElementById("historicoConteudo");
+      if(conteudo2) conteudo2.textContent = "Não foi possível carregar o histórico.";
+    }
   }
 
   function hospedinCutoffDate(){
@@ -4075,6 +4183,11 @@
           '<div class="proc-leitura-conteudo">'+(p.text||'<p style="color:var(--ink-400);">Sem texto.</p>')+'</div>' +
           (p.videoUrl ? '<p style="margin-top:18px;"><a href="'+escapeHtml(p.videoUrl)+'" target="_blank" rel="noopener" style="color:var(--teal-700);font-weight:700;text-decoration:none;">'+ic("login")+' Assistir vídeo</a></p>' : '') +
           (p.fileName ? '<p style="margin-top:10px;"><a href="'+escapeHtml(p.fileData)+'" download="'+escapeHtml(p.fileName)+'" style="color:var(--teal-700);font-weight:700;text-decoration:none;">'+ic("paperclip")+' '+escapeHtml(p.fileName)+'</a></p>' : '') +
+          '<div style="margin-top:22px;padding-top:12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-400);">' +
+            (p.criadoPorNome ? '<p style="margin:0 0 3px;">Criado por '+escapeHtml(p.criadoPorNome)+' em '+fmtDate(p.createdAt)+'</p>' : '<p style="margin:0 0 3px;">Criado em '+fmtDate(p.createdAt)+'</p>') +
+            (p.atualizadoEm ? '<p style="margin:0 0 8px;">Última atualização por '+escapeHtml(p.atualizadoPorNome||"—")+' em '+fmtDate(p.atualizadoEm)+'</p>' : '') +
+            ((currentUser && currentUser.role==="admin") ? '<button type="button" id="procLeituraHistorico" class="btn-edit" style="padding:6px 0;">'+ic("clock")+' Ver histórico de alterações</button>' : '') +
+          '</div>' +
         '</div>' +
       '</div>';
     document.body.insertAdjacentHTML("beforeend", html);
@@ -4082,6 +4195,8 @@
     document.getElementById("procLeituraFechar").onclick = function(){ overlay.remove(); };
     var editarBtn = document.getElementById("procLeituraEditar");
     if(editarBtn) editarBtn.onclick = function(){ overlay.remove(); openProcedimentoSheet(p); };
+    var historicoBtn = document.getElementById("procLeituraHistorico");
+    if(historicoBtn) historicoBtn.onclick = function(){ abrirHistoricoSheet("procedimentos", p.id, p.title); };
   }
 
   // Editor de texto rico do procedimento — igual a formatar texto no Word,
@@ -6096,12 +6211,19 @@
       var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "sauna" ? "ligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
       html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
     }
+    if(currentUser && currentUser.role === "admin"){
+      html += '<p class="item-meta" style="font-size:11px;color:var(--ink-400);">'+
+        (s.criadoPorNome ? 'criado por '+escapeHtml(s.criadoPorNome) : 'criado em '+fmtDate(s.criadoEm)) +
+        (s.atualizadoEm ? ' · última atualização por '+escapeHtml(s.atualizadoPorNome||"—")+' em '+fmtDate(s.atualizadoEm) : '') +
+      '</p>';
+    }
     var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") ? "recepcao" : "limpeza";
     var lixoHtml = podeExcluir(moduloExclusao) ? '<button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">'+ic("trash")+'</button>' : '';
     var obsHtml = podeEditar(moduloExclusao) ? '<button class="btn-edit" data-act="editarObservacao" data-id="'+s.id+'" title="Observação">'+ic("pencil")+'</button>' : '';
+    var histHtml = (currentUser && currentUser.role === "admin") ? '<button class="btn-edit" data-act="historico" data-id="'+s.id+'" title="Ver histórico">'+ic("clock")+'</button>' : '';
     if(podeAgirSolicitacao(s)){
       if(s.status === "bloqueada"){
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">'+ic("lockOpen")+' Liberar</button>'+obsHtml+lixoHtml+'</div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">'+ic("lockOpen")+' Liberar</button>'+obsHtml+histHtml+lixoHtml+'</div>';
       } else if(s.status === "pendente"){
         var acaoLabel = "▶ Iniciar", acaoAct = "iniciar";
         if(s.tipo === "frigobar"){ acaoLabel = ""+ic('check')+" Abasteceu"; acaoAct = "finalizar"; }
@@ -6111,14 +6233,14 @@
         else if(s.tipo === "lenha"){ acaoLabel = ""+ic('check')+" Reposta"; acaoAct = "finalizar"; }
         var editarItensHtml = (s.tipo === "frigobar" && podeEditar("estoque")) ?
           '<button class="btn btn-out" data-act="editarItensPedido" data-id="'+s.id+'">'+ic("pencil")+' Editar itens</button>' : '';
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+editarItensHtml+obsHtml+lixoHtml+'</div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+editarItensHtml+obsHtml+histHtml+lixoHtml+'</div>';
       } else if(s.status === "em_andamento"){
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">'+ic("check")+' Finalizar</button>'+obsHtml+lixoHtml+'</div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">'+ic("check")+' Finalizar</button>'+obsHtml+histHtml+lixoHtml+'</div>';
       } else if(obsHtml || lixoHtml){
-        html += '<div class="item-actions">'+obsHtml+lixoHtml+'</div>';
+        html += '<div class="item-actions">'+obsHtml+histHtml+lixoHtml+'</div>';
       }
     } else if(obsHtml || lixoHtml){
-      html += '<div class="item-actions">'+obsHtml+lixoHtml+'</div>';
+      html += '<div class="item-actions">'+obsHtml+histHtml+lixoHtml+'</div>';
     }
     return html;
   }
@@ -6153,6 +6275,10 @@
         var s = state.solicitacoes.find(function(x){ return x.id===id; });
         if(!s) return;
         var act = b.getAttribute("data-act");
+        if(act === "historico"){
+          abrirHistoricoSheet("solicitacoes_acomodacao", s.id, tipoLabelCompleto(s)+" — "+acomodacaoNome(s.acomodacaoId));
+          return;
+        }
         var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") ? "recepcao" : "limpeza";
         if(act === "excluir"){
           if(!podeExcluir(moduloExclusao)){ showToast("Só o administrador (ou quem ele autorizar) pode excluir"); return; }
@@ -8485,6 +8611,19 @@
     document.getElementById("manutencaoResolveBtn").style.display = (m && m.status==="em_andamento") ? "block" : "none";
     document.getElementById("manutencaoReopenBtn").style.display = (m && m.status==="concluida") ? "block" : "none";
     document.getElementById("manutencaoDelete").style.display = (m && podeExcluir("manutencao")) ? "block" : "none";
+    var auditInfo = document.getElementById("mn_auditInfo");
+    if(m){
+      var linhas = m.criadoPorNome ? ('Criado por '+escapeHtml(m.criadoPorNome)+' em '+fmtDate(m.createdAt)) : ('Criado em '+fmtDate(m.createdAt));
+      if(m.atualizadoEm) linhas += '<br>Última atualização por '+escapeHtml(m.atualizadoPorNome||"—")+' em '+fmtDate(m.atualizadoEm);
+      if(currentUser && currentUser.role==="admin") linhas += '<br><button type="button" id="mnHistoricoBtn" class="btn-edit" style="padding:6px 0;">'+ic("clock")+' Ver histórico de alterações</button>';
+      auditInfo.innerHTML = linhas;
+      auditInfo.style.display = "block";
+      var mnHistoricoBtn = document.getElementById("mnHistoricoBtn");
+      if(mnHistoricoBtn) mnHistoricoBtn.onclick = function(){ abrirHistoricoSheet("manutencoes", m.id, m.title); };
+    } else {
+      auditInfo.style.display = "none";
+      auditInfo.innerHTML = "";
+    }
     manutencaoOverlay.classList.add("open");
   }
   function closeManutencaoSheet(){ manutencaoOverlay.classList.remove("open"); editingManutencaoId = null; }
