@@ -402,9 +402,9 @@
 <button class="fab" id="fab">+</button>
 
 <footer class="bottom-nav" style="display:none;">
-  <button class="nav-btn" data-view="abastecimento"><span class="ic">🥤</span>Abastecer</button>
-  <button class="nav-btn active" data-view="items"><span class="ic">📦</span>Estoque</button>
-  <button class="nav-btn" data-view="count"><span class="ic">📋</span>Contagem</button>
+  <button class="nav-btn" data-view="abastecimento"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M7 8h10l-1 12H8L7 8z"/><path d="M7 8l-1-3h12l-1 3"/></svg></span>Abastecer</button>
+  <button class="nav-btn active" data-view="items"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M3 8l9-4 9 4-9 4-9-4z"/><path d="M3 8v9l9 4 9-4V8"/><path d="M12 12v9"/></svg></span>Estoque</button>
+  <button class="nav-btn" data-view="count"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Contagem</button>
 </footer>
 
 <!-- Sheet: add/edit item -->
@@ -415,7 +415,7 @@
       <label>Foto do produto (opcional)</label>
       <div class="photo-preview-wrap" id="photoPicker">
         <img id="photoPreviewImg" class="photo-preview-img" alt="">
-        <span id="photoPlaceholder" class="photo-placeholder"><span class="ic">📷</span>Adicionar foto</span>
+        <span id="photoPlaceholder" class="photo-placeholder"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>Adicionar foto</span>
       </div>
       <input type="file" id="f_photo" accept="image/*" capture="environment" style="display:none;">
       <button type="button" class="btn-danger-text" id="photoRemove" style="display:none;">Remover foto</button>
@@ -425,7 +425,7 @@
       <label>Código de barras (opcional)</label>
       <div style="display:flex;gap:8px;">
         <input type="text" id="f_codigoBarras" placeholder="Ex: 7891000100103" style="flex:1;">
-        <button type="button" class="btn-secondary" id="f_scanBarcodeBtn" style="white-space:nowrap;padding:0 14px;">📷 Ler</button>
+        <button type="button" class="btn-secondary" id="f_scanBarcodeBtn" style="white-space:nowrap;padding:0 14px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/></svg> Ler</button>
       </div>
       <input type="file" id="f_codigoBarrasPhotoInput" accept="image/*" capture="environment" style="display:none;">
       <label>Número de série (opcional)</label>
@@ -490,8 +490,8 @@
         <img id="moveUniformePreview" style="width:100%;max-height:160px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#fff;display:block;">
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px;">
-        <button type="button" id="moveUniformeFotoBtn" style="flex:1;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13px;font-weight:700;">📷 Foto do termo</button>
-        <button type="button" id="moveUniformeAssinarBtn" style="flex:1;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13px;font-weight:700;">✍️ Assinar na tela</button>
+        <button type="button" id="moveUniformeFotoBtn" style="flex:1;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13px;font-weight:700;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/></svg> Foto do termo</button>
+        <button type="button" id="moveUniformeAssinarBtn" style="flex:1;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13px;font-weight:700;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M4 20l4-1 11-11-3-3L5 16l-1 4z"/></svg> Assinar na tela</button>
       </div>
       <input type="file" id="moveUniformeFotoInput" accept="image/*" style="display:none;">
       <div id="moveUniformeAssinaturaWrap" style="display:none;margin-bottom:8px;">
@@ -543,11 +543,11 @@
     </div>
     <label style="margin-top:14px;">Fotos do frigobar abastecido (opcional, pode tirar várias)</label>
     <div id="abastecerFotosGrid" style="display:none;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;"></div>
-    <button type="button" id="abastecerFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">📷 Tirar foto</button>
+    <button type="button" id="abastecerFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/></svg> Tirar foto</button>
     <input type="file" id="abastecerFotoInput" accept="image/*" capture="environment" style="display:none;">
     <div class="sheet-actions">
       <button type="button" class="btn-secondary" id="abastecerCancel">Cancelar</button>
-      <button type="button" class="btn-primary" id="abastecerConfirm">✓ Confirmar abastecimento</button>
+      <button type="button" class="btn-primary" id="abastecerConfirm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M5 13l4 4L19 7"/></svg> Confirmar abastecimento</button>
     </div>
   </div>
 </div>
@@ -671,7 +671,7 @@
       <label>Foto (opcional)</label>
       <div class="photo-preview-wrap" id="prPhotoPicker">
         <img id="prPhotoPreviewImg" class="photo-preview-img" alt="">
-        <span id="prPhotoPlaceholder" class="photo-placeholder"><span class="ic">📷</span>Adicionar foto</span>
+        <span id="prPhotoPlaceholder" class="photo-placeholder"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>Adicionar foto</span>
       </div>
       <input type="file" id="pr_photo" accept="image/*" style="display:none;">
       <button type="button" class="btn-danger-text" id="prPhotoRemove" style="display:none;">Remover foto</button>
@@ -704,10 +704,10 @@
       <input type="text" id="h_passaporte" placeholder="Número do passaporte">
       <label>Fotos do documento</label>
       <div id="hospedeFotosGrid" class="hospede-fotos-grid"></div>
-      <button type="button" class="btn-secondary" id="hospedeAddFotoBtn" style="width:100%;margin-top:8px;">📷 Adicionar foto</button>
+      <button type="button" class="btn-secondary" id="hospedeAddFotoBtn" style="width:100%;margin-top:8px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/></svg> Adicionar foto</button>
       <input type="file" id="h_foto_input" accept="image/*" style="display:none;">
 <input type="file" id="quickSaidaPhotoInput" accept="image/*" style="display:none;">
-      <label>🥤 Welcome drink entregue (opcional)</label>
+      <label><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M7 8h10l-1 12H8L7 8z"/><path d="M7 8l-1-3h12l-1 3"/></svg> Welcome drink entregue (opcional)</label>
       <label class="checkbox-row"><input type="checkbox" id="wd_agua_sem_gas"> Água sem gás</label>
       <label class="checkbox-row"><input type="checkbox" id="wd_agua_com_gas"> Água com gás</label>
       <label class="checkbox-row"><input type="checkbox" id="wd_heineken"> Heineken</label>
@@ -734,9 +734,9 @@
       <input type="text" id="mn_title" required placeholder="Ex: Torneira vazando">
       <label>Prioridade</label>
       <select id="mn_prioridade">
-        <option value="alta">🔴 Alta</option>
-        <option value="media" selected>🟡 Média</option>
-        <option value="baixa">🟢 Baixa</option>
+        <option value="alta">Alta</option>
+        <option value="media" selected>Média</option>
+        <option value="baixa">Baixa</option>
       </select>
       <label>Local (opcional)</label>
       <input type="text" id="mn_local" placeholder="Ex: Bangalô 3">
@@ -753,7 +753,7 @@
         <button type="submit" class="btn-primary">Salvar</button>
       </div>
       <button type="button" class="sheet-actions btn-primary" id="manutencaoIniciarBtn" style="display:none;width:100%;margin-top:10px;background:var(--teal-700);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;">▶ Iniciar</button>
-      <button type="button" class="sheet-actions btn-primary" id="manutencaoResolveBtn" style="display:none;width:100%;margin-top:10px;background:var(--teal-900);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;">✓ Marcar como concluída</button>
+      <button type="button" class="sheet-actions btn-primary" id="manutencaoResolveBtn" style="display:none;width:100%;margin-top:10px;background:var(--teal-900);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M5 13l4 4L19 7"/></svg> Marcar como concluída</button>
       <button type="button" class="btn-secondary" id="manutencaoReopenBtn" style="display:none;width:100%;margin-top:10px;border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:600;font-family:inherit;">↺ Reabrir</button>
       <button type="button" class="btn-danger-text" id="manutencaoDelete" style="display:none;">Excluir manutenção</button>
     </form>
@@ -783,9 +783,9 @@
         <button type="button" class="btn-secondary" id="equipamentoCancel">Cancelar</button>
         <button type="submit" class="btn-primary">Salvar</button>
       </div>
-      <button type="button" class="sheet-actions btn-primary" id="equipamentoConcertoBtn" style="display:none;width:100%;margin-top:10px;background:var(--amber-600);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;">🔧 Enviar para conserto</button>
+      <button type="button" class="sheet-actions btn-primary" id="equipamentoConcertoBtn" style="display:none;width:100%;margin-top:10px;background:var(--amber-600);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2-2z"/></svg> Enviar para conserto</button>
       <button type="button" class="sheet-actions btn-primary" id="equipamentoVoltouBtn" style="display:none;width:100%;margin-top:10px;background:var(--teal-700);border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:700;font-family:inherit;color:#fff;">↩ Voltou do conserto</button>
-      <button type="button" class="btn-secondary" id="equipamentoManutencaoFeitaBtn" style="width:100%;margin-top:10px;border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:600;font-family:inherit;">✓ Marcar manutenção feita hoje</button>
+      <button type="button" class="btn-secondary" id="equipamentoManutencaoFeitaBtn" style="width:100%;margin-top:10px;border:none;border-radius:10px;padding:12px;font-size:14.5px;font-weight:600;font-family:inherit;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M5 13l4 4L19 7"/></svg> Marcar manutenção feita hoje</button>
       <div id="eq_historicoWrap" style="display:none;margin-top:16px;">
         <p style="margin:0 0 8px;font-size:12.5px;font-weight:700;color:var(--ink-600);">Histórico</p>
         <div id="eq_historicoList"></div>
@@ -1436,6 +1436,67 @@
       return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
     });
   }
+
+  // Ícones de linha (substituem os emojis) — monocromáticos, herdam a cor do
+  // texto ao redor (currentColor), no espírito visual da Baguá: minimalista,
+  // sem "figurinhas" coloridas. icDot() é usado só pros pontinhos de status
+  // (vermelho/amarelo/verde), que precisam manter a cor fixa pra continuar
+  // dando pra identificar a distância.
+  var ICON_PATHS = {
+    check:'<path d="M5 13l4 4L19 7"/>',
+    close:'<path d="M6 6l12 12M18 6L6 18"/>',
+    lockClosed:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    lockOpen:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-1.5"/>',
+    wrench:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2-2z"/>',
+    warning:'<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/>',
+    box:'<path d="M3 8l9-4 9 4-9 4-9-4z"/><path d="M3 8v9l9 4 9-4V8"/><path d="M12 12v9"/>',
+    trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+    bell:'<path d="M6 10a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M9.5 20a2.5 2.5 0 0 0 5 0"/>',
+    link:'<path d="M9 15l6-6"/><path d="M8 12l-2.5 2.5a3 3 0 1 0 4.2 4.2L12 16"/><path d="M16 12l2.5-2.5a3 3 0 1 0-4.2-4.2L12 8"/>',
+    login:'<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4"/><path d="M10 8l5 4-5 4"/><path d="M15 12H3"/>',
+    logout:'<path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4"/><path d="M14 8l5 4-5 4"/><path d="M19 12H7"/>',
+    phone:'<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
+    mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+    camera:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/>',
+    user:'<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6"/>',
+    gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+    cup:'<path d="M7 8h10l-1 12H8L7 8z"/><path d="M7 8l-1-3h12l-1 3"/>',
+    cube:'<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M5 12h14M12 5v14"/>',
+    broom:'<path d="M14 4l6 6-8 8-3-3z"/><path d="M9 15l-5 5M6 15l3 3M4 18l2 2"/>',
+    basket:'<path d="M4 10h16l-2 9H6l-2-9z"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+    wind:'<path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 13h15a3 3 0 1 1-3 3"/><path d="M3 18h9a2.5 2.5 0 1 0-2.5-2.5"/>',
+    bed:'<path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6"/><path d="M3 18v2M21 18v2"/><path d="M3 13V9a2 2 0 0 1 2-2h4v4"/>',
+    droplet:'<path d="M12 3c2.5 3 4 5.5 4 8a4 4 0 1 1-8 0c0-2.5 1.5-5 4-8z"/>',
+    flame:'<path d="M12 3c2 3-1 4-1 7a3 3 0 1 0 6 0c0-1-.5-2-1-2 .3 3-2 3-2 1 0-2 1-3-2-6z"/>',
+    flag:'<path d="M6 3v18"/><path d="M6 4h12l-3 4 3 4H6"/>',
+    clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/>',
+    repeat:'<path d="M17 2l4 4-4 4"/><path d="M21 6H8a5 5 0 0 0-5 5v1"/><path d="M7 22l-4-4 4-4"/><path d="M3 18h13a5 5 0 0 0 5-5v-1"/>',
+    download:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/>',
+    printer:'<rect x="6" y="9" width="12" height="7" rx="1"/><path d="M6 9V4h12v5"/><path d="M8 16v4h8v-4"/>',
+    pin:'<path d="M12 21s7-7.5 7-12a7 7 0 1 0-14 0c0 4.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/>',
+    doc:'<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+    key:'<circle cx="8" cy="15" r="3"/><path d="M10.5 12.5L20 3M17 6l2 2M14 9l2 2"/>',
+    pencil:'<path d="M4 20l4-1 11-11-3-3L5 16l-1 4z"/>',
+    home:'<path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/><path d="M10 20v-6h4v6"/>',
+    bath:'<path d="M3 12h18v2a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5v-2z"/><path d="M7 12V7a3 3 0 0 1 5-2"/>',
+    truck:'<rect x="2" y="8" width="11" height="8" rx="1"/><path d="M13 11h4l3 3v2h-7z"/><circle cx="6" cy="18" r="1.7"/><circle cx="17" cy="18" r="1.7"/>',
+    paperclip:'<path d="M8 12l7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l8-8"/>',
+    calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>',
+    search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>',
+    statusBars:'<rect x="9" y="2" width="6" height="20" rx="3"/><circle cx="12" cy="7" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1.3" fill="currentColor" stroke="none"/>'
+  };
+  function icDot(color){
+    return '<svg width="10" height="10" viewBox="0 0 24 24" style="vertical-align:1px;margin-right:6px;flex-shrink:0;"><circle cx="12" cy="12" r="9" style="fill:'+color+'"/></svg>';
+  }
+  function ic(name){
+    if(name==="dotRed") return icDot("var(--red-600)");
+    if(name==="dotAmber") return icDot("var(--amber-600)");
+    if(name==="dotGreen") return icDot("var(--teal-700)");
+    var d = ICON_PATHS[name];
+    if(!d) return "";
+    return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;flex-shrink:0;">'+d+'</svg>';
+  }
   function showToast(msg, duracaoMs){
     var t = document.getElementById("toast");
     t.textContent = msg;
@@ -1566,7 +1627,7 @@
         if(payload.new.origem === "hospede"){
           playNotifySound();
           var label = TIPO_LABEL[s.tipo] || s.tipo;
-          showToast("🔔 Novo pedido: " + label + " — " + acomodacaoNome(s.acomodacaoId));
+          showToast("Novo pedido: " + label + " — " + acomodacaoNome(s.acomodacaoId));
         }
         // Não recarrega a tela se a pessoa estiver contando o estoque —
         // isso apagaria os números já digitados e ainda não salvos.
@@ -1580,7 +1641,7 @@
         // (transição de bloqueada -> pendente feita pela recepção)
         if(payload.old && payload.old.status === "bloqueada" && payload.new.status === "pendente" && s.tipo === "lavagem"){
           playNotifySound();
-          showToast("🔓 " + acomodacaoNome(s.acomodacaoId) + " foi liberada pra lavagem");
+          showToast(acomodacaoNome(s.acomodacaoId) + " foi liberada pra lavagem");
         }
         if(!(appSection==="estoque" && activeView==="count")) renderApp();
       });
@@ -1591,7 +1652,7 @@
         var m = mapManutencaoFromRow(payload.new);
         if(!state.manutencoes.some(function(x){ return x.id===m.id; })) state.manutencoes.unshift(m);
         playNotifySound();
-        showToast("🔔 Novo pedido de reparo — " + (m.local||""));
+        showToast("Novo pedido de reparo — " + (m.local||""));
         if(!(appSection==="estoque" && activeView==="count")) renderApp();
       });
     }
@@ -1824,7 +1885,7 @@
     }
     if(podeVer("checklist_turno")){
       var turnosAtrasadosN = (currentUser.role==="admin") ? turnosAtrasados().length : 0;
-      var checklistSub = turnosAtrasadosN>0 ? ('⚠️ '+turnosAtrasadosN+' turno(s) atrasado(s) pra concluir') : "atividades do seu turno";
+      var checklistSub = turnosAtrasadosN>0 ? (''+ic("warning")+' '+turnosAtrasadosN+' turno(s) atrasado(s) pra concluir') : "atividades do seu turno";
       cardsHtml +=
       '<div class="card home-card" data-section="checklistturno">' +        '<div class="home-card-main"><p class="home-card-title">Checklist de Turno</p><p class="home-card-sub"'+(turnosAtrasadosN>0?' style="color:var(--red-600);font-weight:700;"':'')+'>'+escapeHtml(checklistSub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
@@ -1867,13 +1928,13 @@
         '<p style="margin:0 0 3px;font-size:16px;font-weight:700;">'+escapeHtml((currentUser&&currentUser.nome)||"")+'</p>' +
         '<p style="margin:0;font-size:13px;color:var(--ink-600);">'+escapeHtml((currentUser&&currentUser.email)||"")+(currentUser&&currentUser.role==="admin"?" · admin":"")+'</p>' +
       '</div>' +
-      '<button type="button" id="cfgMinhaContaBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">🔑 Minha conta<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Trocar e-mail e senha</span></button>' +
+      '<button type="button" id="cfgMinhaContaBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("key")+' Minha conta<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Trocar e-mail e senha</span></button>' +
       '<div style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;">' +
-        '<div><p style="margin:0;font-size:14.5px;font-weight:700;color:var(--ink-900);">🔔 Notificações</p><p id="cfgNotifStatusTxt" style="margin:2px 0 0;font-size:12.5px;color:var(--ink-600);">Verificando…</p></div>' +
+        '<div><p style="margin:0;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("bell")+' Notificações</p><p id="cfgNotifStatusTxt" style="margin:2px 0 0;font-size:12.5px;color:var(--ink-600);">Verificando…</p></div>' +
         '<button type="button" id="cfgNotifToggle" style="background:var(--sand-200);border:none;border-radius:999px;width:52px;height:30px;position:relative;flex-shrink:0;"><span id="cfgNotifKnob" style="position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s;"></span></button>' +
       '</div>' +
-      '<button type="button" id="cfgSyncHospedinBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">🔗 Sincronizar com Hospedin<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Atualiza as reservas na hora, sem esperar o ciclo automático</span></button>' +
-      '<button type="button" id="cfgSairBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">🚪 Sair da conta</button>';
+      '<button type="button" id="cfgSyncHospedinBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("link")+' Sincronizar com Hospedin<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Atualiza as reservas na hora, sem esperar o ciclo automático</span></button>' +
+      '<button type="button" id="cfgSairBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">'+ic("logout")+' Sair da conta</button>';
     document.getElementById("cfgMinhaContaBtn").onclick = abrirMinhaConta;
     document.getElementById("cfgSairBtn").onclick = fazerLogout;
     document.getElementById("cfgSyncHospedinBtn").onclick = function(){ openHospedinSync(); };
@@ -1983,7 +2044,7 @@
       quickBtn.type = "button";
       quickBtn.className = "btn-secondary";
       quickBtn.style.cssText = "width:100%;margin-bottom:12px;";
-      quickBtn.textContent = "📷 Retirada rápida — ler código de barras";
+      quickBtn.innerHTML = ""+ic('camera')+" Retirada rápida — ler código de barras";
       quickBtn.onclick = function(){ document.getElementById("quickSaidaPhotoInput").click(); };
       main.appendChild(quickBtn);
     }
@@ -2010,7 +2071,7 @@
       if(supplier) metaText += " · "+escapeHtml(supplier.name);
       if(it.numeroSerie) metaText += " · nº série "+escapeHtml(it.numeroSerie);
       var retornoUsadoBtn = (it.trackUsage && it.category === "Uniformes") ?
-        '<button class="btn btn-in" data-act="retorno_usado" data-id="'+it.id+'">♻ Retornou usado</button>' : '';
+        '<button class="btn btn-in" data-act="retorno_usado" data-id="'+it.id+'">'+ic("repeat")+' Retornou usado</button>' : '';
       var usageActions = it.trackUsage ?
         '<div class="item-actions">' +
           '<button class="btn btn-in" data-act="retorno" data-id="'+it.id+'">← Retornou novo</button>' +
@@ -2019,7 +2080,7 @@
         '</div>' : '';
       card.innerHTML =
         '<div class="item-row">' +
-          '<div class="item-thumb">' + (it.photo ? '<img src="'+it.photo+'" alt="">' : '<span class="item-thumb-ph">📦</span>') + '</div>' +
+          '<div class="item-thumb">' + (it.photo ? '<img src="'+it.photo+'" alt="">' : '<span class="item-thumb-ph">'+ic("box")+'</span>') + '</div>' +
           '<div class="item-main">' +
             '<p class="item-name">'+escapeHtml(it.name)+'</p>' +
             '<p class="item-meta">'+metaText+'</p>' +
@@ -2029,7 +2090,7 @@
         '<div class="item-actions">' +
           '<button class="btn btn-in" data-act="in" data-id="'+it.id+'">↑ Entrada</button>' +
           '<button class="btn btn-out" data-act="out" data-id="'+it.id+'">↓ Saída</button>' +
-          '<button class="btn btn-edit" data-act="edit" data-id="'+it.id+'">✎</button>' +
+          '<button class="btn btn-edit" data-act="edit" data-id="'+it.id+'">'+ic("pencil")+'</button>' +
         '</div>' + usageActions +
         '<div class="item-actions">' +
           '<button class="btn btn-in" data-act="retorno_emprestimo" data-id="'+it.id+'">↩ Devolveu empréstimo (restaurante)</button>' +
@@ -2082,13 +2143,13 @@
       '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
       (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
       (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
-      (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">👤 Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
-        (m.comprovanteUniforme ? '<br><button type="button" onclick="verAnexoClick(this, \''+escapeHtml(m.comprovanteUniforme)+'\')" style="margin-top:4px;background:var(--sand-100);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;">📷 Ver comprovante</button>' : '') : '') +
+      (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">'+ic("user")+' Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
+        (m.comprovanteUniforme ? '<br><button type="button" onclick="verAnexoClick(this, \''+escapeHtml(m.comprovanteUniforme)+'\')" style="margin-top:4px;background:var(--sand-100);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;">'+ic("camera")+' Ver comprovante</button>' : '') : '') +
       '</div><div style="display:flex;align-items:center;gap:8px;">' +
       '<div class="move-date">'+fmtDate(m.date)+'</div>' +
       (podeMexer ? (
-        (podeEditar("estoque") ? '<button type="button" class="move-edit-btn" data-id="'+m.id+'" title="Editar" style="background:none;border:none;font-size:15px;padding:2px;">✏️</button>' : '') +
-        (podeExcluir("estoque") ? '<button type="button" class="move-del-btn" data-id="'+m.id+'" title="Excluir" style="background:none;border:none;font-size:15px;padding:2px;">🗑️</button>' : '')
+        (podeEditar("estoque") ? '<button type="button" class="move-edit-btn" data-id="'+m.id+'" title="Editar" style="background:none;border:none;font-size:15px;padding:2px;">'+ic("pencil")+'</button>' : '') +
+        (podeExcluir("estoque") ? '<button type="button" class="move-del-btn" data-id="'+m.id+'" title="Excluir" style="background:none;border:none;font-size:15px;padding:2px;">'+ic("trash")+'</button>' : '')
       ) : '') +
       '</div></div>';
   }
@@ -2305,7 +2366,7 @@
       html += '<div class="card">';
       html += '<div class="section-title" style="margin-top:0;display:flex;justify-content:space-between;align-items:center;">' +
         '<span>'+fmtDate(s.date)+'</span>' +
-        (podeExcluir("estoque") ? '<button class="btn-edit" data-del-session="'+s.id+'" title="Excluir esta contagem" style="font-size:15px;">🗑️</button>' : '') +
+        (podeExcluir("estoque") ? '<button class="btn-edit" data-del-session="'+s.id+'" title="Excluir esta contagem" style="font-size:15px;">'+ic("trash")+'</button>' : '') +
       '</div>';
       s.entries.forEach(function(e){
         var item = state.estoque.items.find(function(i){ return i.id === e.itemId; });
@@ -2343,12 +2404,12 @@
   function buildReportText(){
     var now = new Date();
     var lines = [];
-    lines.push("📦 RELATÓRIO DE ESTOQUE — Bagua Bangalôs");
+    lines.push(""+ic('box')+" RELATÓRIO DE ESTOQUE — Bagua Bangalôs");
     lines.push(now.toLocaleDateString("pt-BR") + " " + now.toLocaleTimeString("pt-BR",{hour:'2-digit',minute:'2-digit'}));
     lines.push("");
     var low = allLowItems();
     if(low.length > 0){
-      lines.push("⚠️ ABAIXO DO MÍNIMO ("+low.length+"):");
+      lines.push(""+ic('warning')+" ABAIXO DO MÍNIMO ("+low.length+"):");
       low.forEach(function(it){
         var supplier = supplierById(it.supplierId);
         var line = "• "+it.name+": "+fmtQty(it.qty)+" "+it.unit+" (mín. "+fmtQty(it.min)+")";
@@ -2360,7 +2421,7 @@
       });
       lines.push("");
     } else {
-      lines.push("✅ Nenhum item abaixo do mínimo.");
+      lines.push(""+ic('check')+" Nenhum item abaixo do mínimo.");
       lines.push("");
     }
     CATEGORIES.forEach(function(cat){
@@ -2368,7 +2429,7 @@
       if(list.length === 0) return;
       lines.push(CATEGORY_LABEL[cat].toUpperCase()+":");
       list.forEach(function(it){
-        var mark = isLow(it) ? " ⚠️" : "";
+        var mark = isLow(it) ? " "+ic('warning')+"" : "";
         if(it.trackUsage){
           var linhaUsado = (it.category === "Uniformes") ? (" · usado "+fmtQty(it.qtyUsado)+" "+it.unit) : "";
           lines.push("  "+it.name+": guardado "+fmtQty(it.qty)+" "+it.unit+" · em uso "+fmtQty(it.qtyEmUso)+" "+it.unit+linhaUsado+mark);
@@ -2434,8 +2495,8 @@
         '<button class="share-btn wa" id="sendWa">Enviar por WhatsApp</button>' +
         '<button class="share-btn mail" id="sendMail">Enviar por Email</button>' +
       '</div>' +
-      '<button type="button" class="link-btn" id="reportSupplierManager">🚚 Gerenciar fornecedores</button>' +
-      '<button type="button" class="link-btn" id="reportHospedinSync">🔗 Sincronizar com Hospedin</button>' +
+      '<button type="button" class="link-btn" id="reportSupplierManager">'+ic("truck")+' Gerenciar fornecedores</button>' +
+      '<button type="button" class="link-btn" id="reportHospedinSync">'+ic("link")+' Sincronizar com Hospedin</button>' +
       '<div id="purchaseSuggestSection"></div>' +
       '<div id="pedidosCompraSection" style="margin-top:22px;"></div>';
     document.getElementById("reportText").textContent = text;
@@ -2463,7 +2524,7 @@
     var el = document.getElementById("pedidosCompraSection");
     if(!el) return;
     var pendentes = (state.estoque.pedidosCompra||[]).filter(function(p){ return p.status === "pendente"; });
-    var html = '<div class="section-title" style="margin-top:0;">📦 Pedidos de compra</div>';
+    var html = '<div class="section-title" style="margin-top:0;">'+ic("box")+' Pedidos de compra</div>';
     html += '<p class="count-intro">Registre o que você pediu ao fornecedor. Quando chegar, confirme aqui e a entrada já é lançada sozinha.</p>';
     if(pendentes.length === 0){
       html += '<div class="empty">Nenhum pedido em aberto.</div>';
@@ -2476,7 +2537,7 @@
         if(p.observacao) html += '<p class="item-meta" style="margin-bottom:6px;">'+escapeHtml(p.observacao)+'</p>';
         if(p.foto) html += '<img src="'+p.foto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:120px;object-fit:cover;border-radius:9px;display:block;margin-bottom:8px;cursor:pointer;">';
         html += '<p class="item-meta" style="margin-bottom:8px;">pedido em '+fmtDate(p.criadoEm)+' por '+escapeHtml(nomeStaff(p.criadoPor))+'</p>' +
-          '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">✓ Chegou</button>' +
+          '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("check")+' Chegou</button>' +
         '</div>';
       });
       html += '</div>';
@@ -2504,7 +2565,7 @@
           '<div id="pedidoFotoPreviewWrap" style="display:none;margin-bottom:8px;">' +
             '<img id="pedidoFotoPreview" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;">' +
           '</div>' +
-          '<button type="button" id="pedidoFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:14px;">📷 Anexar foto</button>' +
+          '<button type="button" id="pedidoFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:14px;">'+ic("camera")+' Anexar foto</button>' +
           '<input type="file" id="pedidoFotoInput" accept="image/*" style="display:none;">' +
           '<label>Itens pedidos</label>' +
           '<div id="pedidoItensLista"></div>' +
@@ -2519,7 +2580,7 @@
           '<textarea id="pedidoObservacao" placeholder="Ex: pedido feito com o fornecedor X, prazo de 3 dias"></textarea>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="pedidoCancel">Cancelar</button>' +
-            '<button type="button" class="btn-primary" id="pedidoConfirm">✓ Registrar pedido</button>' +
+            '<button type="button" class="btn-primary" id="pedidoConfirm">'+ic("check")+' Registrar pedido</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -2554,7 +2615,7 @@
       div.innerHTML =
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
           '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;flex:1;">'+escapeHtml(nome)+'</p>' +
-          '<button type="button" class="pedidoRemover" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">✕</button>' +
+          '<button type="button" class="pedidoRemover" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">'+ic("close")+'</button>' +
         '</div>' +
         '<div class="qty-stepper" style="margin-bottom:0;">' +
           '<button type="button" class="pedidoMinus">−</button>' +
@@ -2620,7 +2681,7 @@
           '</div>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="receberCancel">Cancelar</button>' +
-            '<button type="button" class="btn-primary" id="receberConfirm">✓ Confirmar recebimento</button>' +
+            '<button type="button" class="btn-primary" id="receberConfirm">'+ic("check")+' Confirmar recebimento</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -2679,11 +2740,11 @@
     var servidor = state.estoque.ultimaSincronizacaoServidor;
     var syncBadge = "";
     if(servidor && servidor.quando && servidor.ok){
-      syncBadge = '<p style="font-size:12px;color:var(--teal-700);font-weight:700;margin:-4px 0 10px;">🤖 Sincronizado automaticamente às '+fmtSyncTime(new Date(servidor.quando).getTime())+'</p>';
+      syncBadge = '<p style="font-size:12px;color:var(--teal-700);font-weight:700;margin:-4px 0 10px;">'+ic("gear")+' Sincronizado automaticamente às '+fmtSyncTime(new Date(servidor.quando).getTime())+'</p>';
     } else if(servidor && servidor.quando && !servidor.ok){
-      syncBadge = '<p style="font-size:12px;color:var(--red-600);font-weight:700;margin:-4px 0 10px;">⚠️ A sincronização automática falhou às '+fmtSyncTime(new Date(servidor.quando).getTime())+'</p>';
+      syncBadge = '<p style="font-size:12px;color:var(--red-600);font-weight:700;margin:-4px 0 10px;">'+ic("warning")+' A sincronização automática falhou às '+fmtSyncTime(new Date(servidor.quando).getTime())+'</p>';
     } else {
-      syncBadge = '<p style="font-size:12px;color:var(--amber-600);font-weight:700;margin:-4px 0 10px;">⚠️ Sincronização automática ainda não rodou</p>';
+      syncBadge = '<p style="font-size:12px;color:var(--amber-600);font-weight:700;margin:-4px 0 10px;">'+ic("warning")+' Sincronização automática ainda não rodou</p>';
     }
     var html = '<div class="section-title">Sugestão de compra (ocupação Hospedin)</div>' + syncBadge;
 
@@ -3294,7 +3355,7 @@
     grid.innerHTML = abastecerFotosPendentes.map(function(foto, i){
       return '<div style="position:relative;">' +
         '<img src="'+foto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;display:block;">' +
-        '<button type="button" class="abastecerFotoRemover" data-idx="'+i+'" style="position:absolute;top:-6px;right:-6px;background:var(--red-600);color:#fff;border:none;border-radius:999px;width:22px;height:22px;font-size:13px;line-height:1;font-weight:700;">✕</button>' +
+        '<button type="button" class="abastecerFotoRemover" data-idx="'+i+'" style="position:absolute;top:-6px;right:-6px;background:var(--red-600);color:#fff;border:none;border-radius:999px;width:22px;height:22px;font-size:13px;line-height:1;font-weight:700;">'+ic("close")+'</button>' +
       '</div>';
     }).join("");
     grid.querySelectorAll(".abastecerFotoRemover").forEach(function(btn){
@@ -3350,7 +3411,7 @@
         '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;flex:1;">'+escapeHtml(nome)+
           (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque — não vai descontar)</span>') +
         '</p>' +
-        '<button type="button" class="abastecerRemover" data-idx="'+idx+'" title="Remover item" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">✕</button>' +
+        '<button type="button" class="abastecerRemover" data-idx="'+idx+'" title="Remover item" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">'+ic("close")+'</button>' +
       '</div>' +
       '<div class="qty-stepper" style="margin-bottom:8px;">' +
         '<button type="button" class="abastecerMinus" data-idx="'+idx+'">−</button>' +
@@ -3612,7 +3673,7 @@
           '<p class="supplier-row-name">'+escapeHtml(s.name)+'</p>' +
           '<p class="supplier-row-meta">'+(meta.length?escapeHtml(meta.join(" · ")):"sem dias de pedido definidos")+'</p>' +
         '</div>' +
-        '<button type="button" class="supplier-row-edit" data-sid="'+s.id+'">✎</button>' +
+        '<button type="button" class="supplier-row-edit" data-sid="'+s.id+'">'+ic("pencil")+'</button>' +
       '</div>';
     });
     container.innerHTML = html;
@@ -3740,13 +3801,13 @@
     var servidorHtml = "";
     if(servidor && servidor.quando){
       if(servidor.ok){
-        servidorHtml = '<div class="sync-status-line"><span>🤖 Última sincronização automática (servidor)</span><b>'+fmtSyncTime(new Date(servidor.quando).getTime())+'</b></div>';
+        servidorHtml = '<div class="sync-status-line"><span>'+ic("gear")+' Última sincronização automática (servidor)</span><b>'+fmtSyncTime(new Date(servidor.quando).getTime())+'</b></div>';
       } else {
-        servidorHtml = '<div class="sync-status-line"><span style="color:var(--red-600);">🤖 Última tentativa automática falhou</span><b style="color:var(--red-600);">'+fmtSyncTime(new Date(servidor.quando).getTime())+'</b></div>' +
+        servidorHtml = '<div class="sync-status-line"><span style="color:var(--red-600);">'+ic("gear")+' Última tentativa automática falhou</span><b style="color:var(--red-600);">'+fmtSyncTime(new Date(servidor.quando).getTime())+'</b></div>' +
           '<p style="font-size:12px;color:var(--red-600);margin:2px 0 0;">'+escapeHtml(servidor.error||"erro desconhecido")+'</p>';
       }
     } else {
-      servidorHtml = '<div class="sync-status-line"><span>🤖 Sincronização automática</span><b style="color:var(--amber-600);">nunca rodou ainda</b></div>';
+      servidorHtml = '<div class="sync-status-line"><span>'+ic("gear")+' Sincronização automática</span><b style="color:var(--amber-600);">nunca rodou ainda</b></div>';
     }
     if(!hd){
       el.innerHTML = servidorHtml + "Ainda não sincronizado neste dispositivo.";
@@ -3904,7 +3965,7 @@
       if(p.photo) html += '<div style="width:100%;height:140px;border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--sand-100);"><img src="'+p.photo+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>';
       html += '<p class="item-name" style="margin:0 0 4px;">'+escapeHtml(p.title)+'</p>';
       if(preview) html += '<p class="item-meta" style="white-space:pre-wrap;">'+preview+'</p>';
-      if(p.fileName) html += '<p class="item-meta" style="margin-top:6px;">📎 '+escapeHtml(p.fileName)+'</p>';
+      if(p.fileName) html += '<p class="item-meta" style="margin-top:6px;">'+ic("paperclip")+' '+escapeHtml(p.fileName)+'</p>';
       if(p.videoUrl) html += '<p class="item-meta" style="margin-top:6px;"><a href="'+escapeHtml(p.videoUrl)+'" target="_blank" rel="noopener" class="video-link-proc" style="color:var(--teal-700);font-weight:700;text-decoration:none;">▶ Assistir vídeo</a></p>';
       html += '</div>';
     });
@@ -4099,14 +4160,14 @@
       h += '</div>';
       return h;
     }
-    var html = '<div class="section-title" style="margin-top:0;">🚦 Onde posso ir agora</div>';
-    html += bloco('✅ PODE IR', 'var(--teal-700)', dados.podeIr, 'Nenhuma acomodação liberada agora.');
-    html += bloco('⚠️ PODE IR — TEM HÓSPEDE, BATA NA PORTA', 'var(--amber-600)', dados.podeIrComHospede, 'Nenhuma.');
-    html += bloco('🔒 AINDA NÃO PODE IR', 'var(--red-600)', dados.aguarde, 'Nenhuma pendência de liberação.');
+    var html = '<div class="section-title" style="margin-top:0;">'+ic("statusBars")+' Onde posso ir agora</div>';
+    html += bloco(''+ic("check")+' PODE IR', 'var(--teal-700)', dados.podeIr, 'Nenhuma acomodação liberada agora.');
+    html += bloco(''+ic("warning")+' PODE IR — TEM HÓSPEDE, BATA NA PORTA', 'var(--amber-600)', dados.podeIrComHospede, 'Nenhuma.');
+    html += bloco(''+ic("lockClosed")+' AINDA NÃO PODE IR', 'var(--red-600)', dados.aguarde, 'Nenhuma pendência de liberação.');
     return html;
   }
 
-  var PRIORIDADE_INFO = {alta:{cor:"var(--red-600)", label:"🔴 Alta"}, media:{cor:"var(--amber-600)", label:"🟡 Média"}, baixa:{cor:"var(--teal-700)", label:"🟢 Baixa"}};
+  var PRIORIDADE_INFO = {alta:{cor:"var(--red-600)", label:""+ic('dotRed')+" Alta"}, media:{cor:"var(--amber-600)", label:""+ic('dotAmber')+" Média"}, baixa:{cor:"var(--teal-700)", label:""+ic('dotGreen')+" Baixa"}};
   var PRIORIDADE_ORDEM = {alta:0, media:1, baixa:2};
 
   function renderManutencoes(){
@@ -4127,20 +4188,20 @@
     if(list.length === 0){
       html += '<div class="empty">'+(manutencaoSubView==="pendentes" ? 'Nenhuma pendência. Toque em "+" para registrar uma.' : 'Nenhuma manutenção concluída ainda.')+'</div>';
     } else {
-      var lixoManut = podeExcluir("manutencao") ? '<button class="btn-edit" data-act="excluir" data-id="{ID}" title="Excluir">🗑️</button>' : '';
+      var lixoManut = podeExcluir("manutencao") ? '<button class="btn-edit" data-act="excluir" data-id="{ID}" title="Excluir">'+ic("trash")+'</button>' : '';
       list.forEach(function(m){
         var pInfo = PRIORIDADE_INFO[m.prioridade] || PRIORIDADE_INFO.media;
         html += '<div class="card manut-card" data-id="'+m.id+'" style="border-left:4px solid '+pInfo.cor+';">' +
           '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+pInfo.cor+';margin-bottom:4px;">'+pInfo.label+'</span>' +
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
-        if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">👤 '+escapeHtml(m.responsavel)+'</p>';
+        if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("user")+' '+escapeHtml(m.responsavel)+'</p>';
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
         if(m.status === "pendente"){
           html += '<p class="item-meta">aberta em '+fmtDate(m.createdAt)+'</p>' +
             '<div class="item-actions"><button class="btn btn-in" data-act="iniciarManut" data-id="'+m.id+'">▶ Iniciar</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
         } else if(m.status === "em_andamento"){
           html += '<p class="item-meta">iniciada há '+fmtDuration(minutesAgo(m.iniciadoEm||m.createdAt))+'</p>' +
-            '<div class="item-actions"><button class="btn btn-in" data-act="resolve" data-id="'+m.id+'">✓ Concluir</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
+            '<div class="item-actions"><button class="btn btn-in" data-act="resolve" data-id="'+m.id+'">'+ic("check")+' Concluir</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
         } else {
           if(m.resolutionNote) html += '<p class="item-meta" style="margin-bottom:4px;"><em>'+escapeHtml(m.resolutionNote)+'</em></p>';
           html += '<p class="item-meta">concluída em '+fmtDate(m.resolvedAt)+'</p>' +
@@ -4223,9 +4284,9 @@
     return !!prox && prox <= Date.now();
   }
   function equipamentoStatusInfo(e){
-    if(e.status === "em_conserto") return {cor:"var(--amber-600)", label:"🔧 Em conserto"};
-    if(isEquipamentoVencido(e)) return {cor:"var(--red-600)", label:"🔴 Manutenção vencida"};
-    return {cor:"var(--teal-700)", label:"🟢 Em uso"};
+    if(e.status === "em_conserto") return {cor:"var(--amber-600)", label:""+ic('wrench')+" Em conserto"};
+    if(isEquipamentoVencido(e)) return {cor:"var(--red-600)", label:""+ic('dotRed')+" Manutenção vencida"};
+    return {cor:"var(--teal-700)", label:""+ic('dotGreen')+" Em uso"};
   }
 
   function renderEquipamentos(){
@@ -4246,7 +4307,7 @@
         html += '<div class="card equip-card" data-id="'+e.id+'" style="border-left:4px solid '+info.cor+';">' +
           '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+info.cor+';margin-bottom:4px;">'+info.label+'</span>' +
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(e.nome)+(e.tipo?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(e.tipo)+'</span>':'')+'</p>';
-        if(e.local) html += '<p class="item-meta">📍 '+escapeHtml(e.local)+'</p>';
+        if(e.local) html += '<p class="item-meta">'+ic("pin")+' '+escapeHtml(e.local)+'</p>';
         if(prox) html += '<p class="item-meta">próxima manutenção: '+fmtDateOnly(prox)+(isEquipamentoVencido(e)?' (vencida)':'')+'</p>';
         html += '</div>';
       });
@@ -4265,7 +4326,7 @@
     var eventos = state.equipamentoEventos.filter(function(ev){ return ev.equipamentoId===equipamentoId; })
       .sort(function(a,b){ return b.data - a.data; });
     if(eventos.length === 0){ wrap.innerHTML = '<p class="item-meta">Nenhum evento registrado ainda.</p>'; return; }
-    var TIPO_EV_LABEL = {enviado:"🔧 Enviado para conserto", retornou:"↩ Voltou do conserto", manutencao:"✓ Manutenção realizada"};
+    var TIPO_EV_LABEL = {enviado:""+ic('wrench')+" Enviado para conserto", retornou:"↩ Voltou do conserto", manutencao:""+ic('check')+" Manutenção realizada"};
     var h = "";
     eventos.forEach(function(ev, i){
       h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:8px;margin-top:8px;':'')+'">' +
@@ -4583,7 +4644,7 @@
 
   // ---------- Gestão de turnos e atividades (só admin, dentro da aba Checklist de Turno) ----------
   function renderTurnoManagementHtml(){
-    var html = '<div class="section-title" style="margin-top:0;">🕒 Turnos e atividades (gestão)</div>';
+    var html = '<div class="section-title" style="margin-top:0;">'+ic("clock")+' Turnos e atividades (gestão)</div>';
     html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Cada turno tem seu horário de início e sua lista de atividades. Atividades "hora fixa" só liberam pra marcar dentro da janela definida. Só administradores veem esta parte.</p>';
     html += '<div class="card">';
     var turnosOrdenados = state.turnos.slice().sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
@@ -4595,7 +4656,7 @@
       html += '<div class="turno-admin-block" data-turno-id="'+t.id+'" style="'+(ti>0?'border-top:1px solid var(--line);padding-top:12px;margin-top:12px;':'')+'">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;">' +
         '<p style="margin:0;font-size:15px;font-weight:800;">'+escapeHtml(t.nome)+'</p>' +
-        '<button type="button" class="btn-edit" data-act="excluir-turno" data-id="'+t.id+'" title="Excluir turno">🗑️</button>' +
+        '<button type="button" class="btn-edit" data-act="excluir-turno" data-id="'+t.id+'" title="Excluir turno">'+ic("trash")+'</button>' +
       '</div>';
       html += '<p class="item-meta" style="margin-bottom:8px;">início às '+escapeHtml(t.horaInicio)+(t.horaFim?(' · término às '+escapeHtml(t.horaFim)+' (avisa se passar 30min sem concluir)'):' · sem horário de término cadastrado (não avisa atraso)')+'</p>';
       if(ativs.length === 0){
@@ -4606,7 +4667,7 @@
           a.tipo === "recorrente" ? ("a cada "+a.intervaloMinutos+"min, "+escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "livre";
         html += '<div class="qty-row" style="padding:6px 0;">' +
           '<span class="qty-name">'+escapeHtml(a.titulo)+' <span style="color:var(--ink-400);font-size:11.5px;font-weight:600;">('+horarioLbl+' · '+escapeHtml(diasSemanaLabel(a.diasSemana))+')</span></span>' +
-          '<button type="button" class="btn-edit" data-act="excluir-atividade" data-id="'+a.id+'" title="Remover">🗑️</button>' +
+          '<button type="button" class="btn-edit" data-act="excluir-atividade" data-id="'+a.id+'" title="Remover">'+ic("trash")+'</button>' +
         '</div>';
       });
       html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;">' +
@@ -4802,7 +4863,7 @@
       if(Date.now() > limiteMs){
         var atrasoMin = Math.floor((Date.now()-limiteMs)/60000);
         html += '<div class="card" style="margin-bottom:14px;border:2px solid var(--red-600);background:#fdf0f0;">' +
-          '<p style="margin:0;color:var(--red-600);font-weight:800;font-size:13.5px;">⚠️ Esse turno deveria ter terminado às '+escapeHtml(turno.horaFim)+' e ainda não foi concluído — já passou '+atrasoMin+' min.</p>' +
+          '<p style="margin:0;color:var(--red-600);font-weight:800;font-size:13.5px;">'+ic("warning")+' Esse turno deveria ter terminado às '+escapeHtml(turno.horaFim)+' e ainda não foi concluído — já passou '+atrasoMin+' min.</p>' +
         '</div>';
       }
     }
@@ -4818,21 +4879,21 @@
       html += '<div class="card" data-id="'+a.id+'" style="border-left:4px solid '+corBorda+';">';
       html += '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(a.titulo)+'</p>';
       var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "a qualquer hora";
-      html += '<p class="item-meta">🕐 '+horarioLbl+(a.diasSemana&&a.diasSemana.length?(' · 📅 '+escapeHtml(diasSemanaLabel(a.diasSemana))):'')+'</p>';
+      html += '<p class="item-meta">'+ic("clock")+' '+horarioLbl+(a.diasSemana&&a.diasSemana.length?(' · '+ic("calendar")+' '+escapeHtml(diasSemanaLabel(a.diasSemana))):'')+'</p>';
       if(est.fase === "bloqueado"){
-        html += '<p class="item-meta">🔒 libera às '+fmtHM(est.libera)+'</p>';
+        html += '<p class="item-meta">'+ic("lockClosed")+' libera às '+fmtHM(est.libera)+'</p>';
       } else if(est.fase === "feito"){
-        html += '<p class="item-meta">✅ Feito'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+'</p>';
+        html += '<p class="item-meta">'+ic("check")+' Feito'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+'</p>';
       } else if(est.fase === "feito_atrasado"){
-        html += '<p class="item-meta">🟡 Feito com atraso'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
+        html += '<p class="item-meta">'+ic("dotAmber")+' Feito com atraso'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
       } else if(est.fase === "nao_feito"){
-        html += '<p class="item-meta">❌ Não realizado'+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
+        html += '<p class="item-meta">'+ic("close")+' Não realizado'+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
       } else {
         if(est.fase === "vencido") html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ o horário passou — registre o que houve</p>';
         html += '<div class="item-actions">';
-        if(est.podeMarcarFeito) html += '<button class="btn btn-in" data-act="feito" data-id="'+a.id+'">✓ Feito</button>';
-        if(est.podeMarcarAtrasado) html += '<button class="btn btn-in" data-act="atrasado" data-id="'+a.id+'">✓ Feito (atrasado)</button>';
-        if(est.podeMarcarNaoFeito) html += '<button class="btn btn-out" data-act="naofeito" data-id="'+a.id+'">✗ Não realizado</button>';
+        if(est.podeMarcarFeito) html += '<button class="btn btn-in" data-act="feito" data-id="'+a.id+'">'+ic("check")+' Feito</button>';
+        if(est.podeMarcarAtrasado) html += '<button class="btn btn-in" data-act="atrasado" data-id="'+a.id+'">'+ic("check")+' Feito (atrasado)</button>';
+        if(est.podeMarcarNaoFeito) html += '<button class="btn btn-out" data-act="naofeito" data-id="'+a.id+'">'+ic("close")+' Não realizado</button>';
         html += '</div>';
         html += '<div class="motivo-wrap" data-motivo-for="'+a.id+'" data-kind="" style="display:none;margin-top:8px;">' +
           '<textarea class="motivo-input" placeholder="Observação…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>' +
@@ -4845,13 +4906,13 @@
       var slots = slotsRecorrente(a);
       html += '<div class="card" data-id="'+a.id+'">';
       html += '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(a.titulo)+'</p>';
-      html += '<p class="item-meta">🔁 a cada '+a.intervaloMinutos+' min, das '+escapeHtml(a.horaInicio||"")+' às '+escapeHtml(a.horaFim||"")+(a.diasSemana&&a.diasSemana.length?(' · 📅 '+escapeHtml(diasSemanaLabel(a.diasSemana))):'')+'</p>';
+      html += '<p class="item-meta">'+ic("repeat")+' a cada '+a.intervaloMinutos+' min, das '+escapeHtml(a.horaInicio||"")+' às '+escapeHtml(a.horaFim||"")+(a.diasSemana&&a.diasSemana.length?(' · '+ic("calendar")+' '+escapeHtml(diasSemanaLabel(a.diasSemana))):'')+'</p>';
       html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">';
       slots.forEach(function(slot){
         var item = itemExecucaoSlot(execucao.id, a.id, slot);
         var est = estadoAtividade(a, execucao, item, slot);
         var cor = est.fase==="feito" ? "var(--teal-700)" : est.fase==="feito_atrasado" ? "var(--amber-600)" : est.fase==="nao_feito" ? "var(--red-600)" : est.fase==="vencido" ? "var(--amber-600)" : est.fase==="bloqueado" ? "var(--ink-400)" : "var(--teal-700)";
-        var marca = est.fase==="feito" ? "✅" : est.fase==="feito_atrasado" ? "🟡" : est.fase==="nao_feito" ? "❌" : est.fase==="vencido" ? "⏰" : est.fase==="liberado" ? "🟢" : "🔒";
+        var marca = est.fase==="feito" ? ""+ic('check')+"" : est.fase==="feito_atrasado" ? ""+ic('dotAmber')+"" : est.fase==="nao_feito" ? ""+ic('close')+"" : est.fase==="vencido" ? "⏰" : est.fase==="liberado" ? ""+ic('dotGreen')+"" : ""+ic('lockClosed')+"";
         var clicavel = est.fase==="liberado" || est.fase==="vencido";
         html += '<button type="button" class="slot-pill" '+(clicavel?('data-slot-act="1" data-id="'+a.id+'" data-slot="'+slot+'"'):"disabled")+' style="padding:6px 9px;border-radius:20px;border:1px solid '+cor+';background:'+(clicavel?"#fff":"var(--sand-50)")+';color:'+cor+';font-family:inherit;font-size:12px;font-weight:700;">'+marca+' '+slot+'</button>';
       });
@@ -4862,7 +4923,7 @@
 
     var pendenciasHerdadas = state.turnoAtividadeExecucoes.filter(function(x){ return x.repassadoTurnoId===turno.id && x.status==="pendente"; });
     if(pendenciasHerdadas.length > 0){
-      html += '<div class="section-title">📥 Pendências do turno anterior</div>';
+      html += '<div class="section-title">'+ic("download")+' Pendências do turno anterior</div>';
       pendenciasHerdadas.forEach(function(item){
         var ativOrig = state.turnoAtividades.find(function(a){ return a.id===item.turnoAtividadeId; });
         var execOrig = state.turnoExecucoes.find(function(e){ return e.id===item.turnoExecucaoId; });
@@ -4871,8 +4932,8 @@
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(ativOrig?ativOrig.titulo:"Atividade")+(item.slotHora?(' — '+escapeHtml(item.slotHora)):'')+'</p>' +
           '<p class="item-meta">herdado de '+(turnoOrig?escapeHtml(turnoOrig.nome):"—")+(execOrig?(' — '+fmtDateOnly(dateAtLocalTime(execOrig.data,"00:00").getTime())):'')+'</p>' +
           '<div class="item-actions">' +
-            '<button class="btn btn-in" data-herdado-act="feito" data-item-id="'+item.id+'">✓ Feito</button>' +
-            '<button class="btn btn-out" data-herdado-act="naofeito" data-item-id="'+item.id+'">✗ Não realizado</button>' +
+            '<button class="btn btn-in" data-herdado-act="feito" data-item-id="'+item.id+'">'+ic("check")+' Feito</button>' +
+            '<button class="btn btn-out" data-herdado-act="naofeito" data-item-id="'+item.id+'">'+ic("close")+' Não realizado</button>' +
           '</div>' +
           '<div class="motivo-wrap" data-motivo-herdado-for="'+item.id+'" style="display:none;margin-top:8px;">' +
             '<textarea class="motivo-input" placeholder="Motivo…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>' +
@@ -4885,11 +4946,11 @@
     var jaConcluido = !!execucao.concluidoEm;
     html += '<div class="card" style="margin-top:14px;background:var(--sand-50);">';
     if(jaConcluido){
-      html += '<p style="margin:0;font-size:14px;font-weight:700;">✅ Turno concluído às '+fmtDate(execucao.concluidoEm).split(" ")[1]+(execucao.concluidoPor?(' por '+escapeHtml(execucao.concluidoPor)):'')+'</p>';
+      html += '<p style="margin:0;font-size:14px;font-weight:700;">'+ic("check")+' Turno concluído às '+fmtDate(execucao.concluidoEm).split(" ")[1]+(execucao.concluidoPor?(' por '+escapeHtml(execucao.concluidoPor)):'')+'</p>';
       if(execucao.observacaoPendencias) html += '<p class="item-meta" style="margin-top:6px;">'+escapeHtml(execucao.observacaoPendencias)+'</p>';
     } else {
       var bloqueadoPorHerdadas = pendenciasHerdadas.length > 0;
-      html += '<button type="button" id="concluirTurnoBtn" '+(bloqueadoPorHerdadas?"disabled":"")+' style="display:block;width:100%;background:'+(bloqueadoPorHerdadas?"var(--ink-400)":"var(--teal-900)")+';color:#fff;border:none;border-radius:10px;padding:13px;font-family:inherit;font-size:14.5px;font-weight:700;">🏁 Concluir turno</button>';
+      html += '<button type="button" id="concluirTurnoBtn" '+(bloqueadoPorHerdadas?"disabled":"")+' style="display:block;width:100%;background:'+(bloqueadoPorHerdadas?"var(--ink-400)":"var(--teal-900)")+';color:#fff;border:none;border-radius:10px;padding:13px;font-family:inherit;font-size:14.5px;font-weight:700;">'+ic("flag")+' Concluir turno</button>';
       if(bloqueadoPorHerdadas) html += '<p class="item-meta" style="margin-top:6px;">Resolva as pendências do turno anterior antes de concluir o seu.</p>';
       html += '<div id="concluirTurnoObsWrap" style="display:none;margin-top:10px;">' +
         '<p class="item-meta" style="margin-bottom:6px;">Atividades ainda pendentes — descreva o que falta pro próximo turno:</p>' +
@@ -4940,9 +5001,9 @@
         var est = estadoAtividade(atividade, execucao, item, slot);
         var wrap = main.querySelector('.slot-action-wrap[data-slot-action-for="'+atividadeId+'"]');
         var acHtml = '<p class="item-meta" style="margin-bottom:6px;">Horário '+slot+'</p><div class="item-actions">';
-        if(est.podeMarcarFeito) acHtml += '<button type="button" class="btn btn-in" data-slot-confirm="feito">✓ Feito</button>';
-        if(est.podeMarcarAtrasado) acHtml += '<button type="button" class="btn btn-in" data-slot-confirm="atrasado">✓ Feito (atrasado)</button>';
-        acHtml += '<button type="button" class="btn btn-out" data-slot-confirm="naofeito">✗ Não realizado</button>';
+        if(est.podeMarcarFeito) acHtml += '<button type="button" class="btn btn-in" data-slot-confirm="feito">'+ic("check")+' Feito</button>';
+        if(est.podeMarcarAtrasado) acHtml += '<button type="button" class="btn btn-in" data-slot-confirm="atrasado">'+ic("check")+' Feito (atrasado)</button>';
+        acHtml += '<button type="button" class="btn btn-out" data-slot-confirm="naofeito">'+ic("close")+' Não realizado</button>';
         acHtml += '</div><textarea class="motivo-input" placeholder="Observação (obrigatório só pro não realizado)…" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>';
         wrap.innerHTML = acHtml;
         wrap.style.display = "block";
@@ -5524,10 +5585,10 @@
 
   // ---------- Limpeza (pedidos de hóspede + tarefas do dia) ----------
   var TIPO_LABEL = {limpeza:"Arrumação do quarto", frigobar:"Frigobar & cesta de doces", lavagem:"Preparo do quarto", ventilacao:"Fechar acomodação", roupa_cama:"Troca de roupa de cama", sauna:"Ligar a sauna", lenha:"Reposição de lenha"};
-  var TIPO_ICON = {limpeza:"🧹", frigobar:"🥤", lavagem:"🛏️", ventilacao:"💨", roupa_cama:"🧺", sauna:"🧖", lenha:"🪵"};
+  var TIPO_ICON = {limpeza:""+ic('broom')+"", frigobar:""+ic('cup')+"", lavagem:""+ic('bed')+"", ventilacao:""+ic('wind')+"", roupa_cama:""+ic('basket')+"", sauna:""+ic('droplet')+"", lenha:""+ic('flame')+""};
   var TIPOS_RECEPCAO_ONLY = {frigobar:true, sauna:true, lenha:true};
   function isRecepcaoOnly(tipo){ return !!TIPOS_RECEPCAO_ONLY[tipo]; }
-  var STATUS_DOT = {bloqueada:"🔒", pendente:"🔴", em_andamento:"🟡", concluido:"🟢"};
+  var STATUS_DOT = {bloqueada:""+ic('lockClosed')+"", pendente:""+ic('dotRed')+"", em_andamento:""+ic('dotAmber')+"", concluido:""+ic('dotGreen')+""};
   var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
 
@@ -5576,20 +5637,20 @@
         .sort(function(a,b){ return b.criadoEm-a.criadoEm; })[0];
 
       html += '<div class="card" style="text-align:center;padding:26px 18px;">';
-      html += '<div style="font-size:40px;margin-bottom:8px;">🧹</div>';
+      html += '<div style="font-size:40px;margin-bottom:8px;">'+ic("broom")+'</div>';
       html += '<p style="margin:0 0 4px;font-size:18px;font-weight:800;">'+escapeHtml(aco.nome)+'</p>';
       if(!tarefa){
         html += '<p class="item-meta" style="margin-top:10px;">Não há nenhuma limpeza pendente cadastrada pra essa acomodação agora.</p>';
       } else if(!podeAgirSolicitacao(tarefa)){
         html += '<p class="item-meta" style="margin-top:10px;">Sua conta não tem permissão pra marcar limpeza. Peça pro administrador liberar o módulo Limpeza pra você.</p>';
       } else if(tarefa.status === "bloqueada"){
-        html += '<p class="item-meta" style="margin-top:10px;color:var(--amber-600);font-weight:700;">🔒 Essa acomodação ainda está bloqueada pra limpeza (aguardando a recepção liberar).</p>';
+        html += '<p class="item-meta" style="margin-top:10px;color:var(--amber-600);font-weight:700;">'+ic("lockClosed")+' Essa acomodação ainda está bloqueada pra limpeza (aguardando a recepção liberar).</p>';
       } else if(tarefa.status === "em_andamento"){
-        html += '<p class="item-meta" style="margin:10px 0 16px;">🟡 Limpeza em andamento'+(tarefa.iniciadoEm?(', iniciada às '+fmtDate(tarefa.iniciadoEm).split(" ")[1]):'')+(tarefa.iniciadoPor?(' por '+escapeHtml(nomeStaff(tarefa.iniciadoPor))):'')+'. Terminou?</p>';
-        html += '<button type="button" id="scanConcluirBtn" class="btn-primary" style="width:100%;padding:14px;font-size:15px;" data-tarefa-id="'+tarefa.id+'">✓ Concluir limpeza aqui</button>';
+        html += '<p class="item-meta" style="margin:10px 0 16px;">'+ic("dotAmber")+' Limpeza em andamento'+(tarefa.iniciadoEm?(', iniciada às '+fmtDate(tarefa.iniciadoEm).split(" ")[1]):'')+(tarefa.iniciadoPor?(' por '+escapeHtml(nomeStaff(tarefa.iniciadoPor))):'')+'. Terminou?</p>';
+        html += '<button type="button" id="scanConcluirBtn" class="btn-primary" style="width:100%;padding:14px;font-size:15px;" data-tarefa-id="'+tarefa.id+'">'+ic("check")+' Concluir limpeza aqui</button>';
       } else {
         html += '<p class="item-meta" style="margin:10px 0 16px;">Confirma que você está nessa acomodação agora e vai começar a limpeza?</p>';
-        html += '<button type="button" id="scanIniciarBtn" class="btn-primary" style="width:100%;padding:14px;font-size:15px;" data-tarefa-id="'+tarefa.id+'">✓ Iniciar limpeza aqui</button>';
+        html += '<button type="button" id="scanIniciarBtn" class="btn-primary" style="width:100%;padding:14px;font-size:15px;" data-tarefa-id="'+tarefa.id+'">'+ic("check")+' Iniciar limpeza aqui</button>';
       }
       html += '</div>';
     }
@@ -5609,7 +5670,7 @@
           renderScanLimpeza();
         }catch(err){
           console.error(err); showToast("Erro ao confirmar — tente de novo");
-          iniciarBtn.disabled = false; iniciarBtn.textContent = "✓ Iniciar limpeza aqui";
+          iniciarBtn.disabled = false; iniciarBtn.innerHTML = ""+ic('check')+" Iniciar limpeza aqui";
         }
       };
     }
@@ -5626,7 +5687,7 @@
           renderScanLimpeza();
         }catch(err){
           console.error(err); showToast("Erro ao confirmar — tente de novo");
-          concluirBtn.disabled = false; concluirBtn.textContent = "✓ Concluir limpeza aqui";
+          concluirBtn.disabled = false; concluirBtn.innerHTML = ""+ic('check')+" Concluir limpeza aqui";
         }
       };
     }
@@ -5765,10 +5826,10 @@
       '</div>';
     }
     if(s.incluiTrocaRoupaCama){
-      html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🧺 Também trocar roupa de cama (dia '+s.diaEstadiaRoupaCama+')</p>';
+      html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("basket")+' Também trocar roupa de cama (dia '+s.diaEstadiaRoupaCama+')</p>';
     }
     if(s.jacuzziConcluidaEm){
-      html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🛁 Jacuzzi feita por '+escapeHtml(nomeStaff(s.jacuzziConcluidaPor))+'</p>';
+      html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("bath")+' Jacuzzi feita por '+escapeHtml(nomeStaff(s.jacuzziConcluidaPor))+'</p>';
       if(s.jacuzziFoto) html += '<img src="'+s.jacuzziFoto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;margin:6px 0;cursor:pointer;" alt="Foto da jacuzzi">';
     }
     var mostrarInfoHospede = (s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1) ||
@@ -5782,10 +5843,10 @@
           var partes = [];
           if(info.adultos) partes.push(info.adultos + (info.adultos===1?" adulto":" adultos"));
           if(info.criancas) partes.push(info.criancas + (info.criancas===1?" criança":" crianças"));
-          html += '<p class="item-meta" style="font-weight:600;">👥 '+totalHospedes+(totalHospedes===1?" hóspede":" hóspedes")+' ('+partes.join(", ")+')</p>';
+          html += '<p class="item-meta" style="font-weight:600;">'+ic("user")+' '+totalHospedes+(totalHospedes===1?" hóspede":" hóspedes")+' ('+partes.join(", ")+')</p>';
         }
         if(info.observacao){
-          html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">📝 '+escapeHtml(info.observacao)+'</p>';
+          html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">'+ic("doc")+' '+escapeHtml(info.observacao)+'</p>';
         }
       }
     }
@@ -5793,47 +5854,47 @@
       var faltantes = itensFaltantesParaCheckout(s.acomodacaoId);
       if(faltantes.length){
         var faltantesTxt = faltantes.map(function(it){ return escapeHtml(it.nome); }).join(", ");
-        html += '<p class="item-meta" style="color:var(--red-600);font-weight:700;">⚠️ Ficou em falta durante a estadia: '+faltantesTxt+'</p>';
+        html += '<p class="item-meta" style="color:var(--red-600);font-weight:700;">'+ic("warning")+' Ficou em falta durante a estadia: '+faltantesTxt+'</p>';
       }
     }
-    if(s.origem === "hospede") html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">📱 Solicitado pelo hóspede (link)</p>';
-    else if(s.criadoPor) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">👤 Solicitado pela conta de '+escapeHtml(nomeStaff(s.criadoPor))+' (equipe)</p>';
-    else if(s.origem === "sistema") html += '<p class="item-meta">🔧 Gerado automaticamente pelo sistema</p>';
-    if(s.liberadoPor) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🔓 Liberado pela conta de '+escapeHtml(nomeStaff(s.liberadoPor))+' (equipe)</p>';
+    if(s.origem === "hospede") html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("phone")+' Solicitado pelo hóspede (link)</p>';
+    else if(s.criadoPor) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("user")+' Solicitado pela conta de '+escapeHtml(nomeStaff(s.criadoPor))+' (equipe)</p>';
+    else if(s.origem === "sistema") html += '<p class="item-meta">'+ic("wrench")+' Gerado automaticamente pelo sistema</p>';
+    if(s.liberadoPor) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("lockOpen")+' Liberado pela conta de '+escapeHtml(nomeStaff(s.liberadoPor))+' (equipe)</p>';
     if(s.status === "bloqueada"){
-      html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">🔒 Aguardando recepção liberar</p>';
+      html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">'+ic("lockClosed")+' Aguardando recepção liberar</p>';
     } else if(s.status === "pendente"){
       var m = minutesAgo(inicioEfetivoEspera(s));
       if(s.tipo === "ventilacao"){
         html += '<p class="item-meta">aberta por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(m)+'</p>';
       } else {
         var atraso = m >= 30;
-        html += '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?"⚠️ ":"")+'esperando há '+fmtDuration(m)+'</p>';
+        html += '<p class="item-meta" style="'+(atraso?"color:var(--red-600);font-weight:700;":"")+'">'+(atraso?""+ic('warning')+" ":"")+'esperando há '+fmtDuration(m)+'</p>';
       }
     } else if(s.status === "em_andamento"){
-      html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+(s.iniciadoViaQr?' · <span style="color:var(--teal-700);font-weight:700;">📷 confirmado por QR code na acomodação</span>':'')+'</p>';
+      html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+(s.iniciadoViaQr?' · <span style="color:var(--teal-700);font-weight:700;">'+ic("camera")+' confirmado por QR code na acomodação</span>':'')+'</p>';
     } else {
       var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
       var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "sauna" ? "ligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
       html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
     }
     var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") ? "recepcao" : "limpeza";
-    var lixoHtml = podeExcluir(moduloExclusao) ? '<button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">🗑️</button>' : '';
+    var lixoHtml = podeExcluir(moduloExclusao) ? '<button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">'+ic("trash")+'</button>' : '';
     if(podeAgirSolicitacao(s)){
       if(s.status === "bloqueada"){
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">🔓 Liberar</button>'+lixoHtml+'</div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">'+ic("lockOpen")+' Liberar</button>'+lixoHtml+'</div>';
       } else if(s.status === "pendente"){
         var acaoLabel = "▶ Iniciar", acaoAct = "iniciar";
-        if(s.tipo === "frigobar"){ acaoLabel = "✓ Abasteceu"; acaoAct = "finalizar"; }
-        else if(s.tipo === "ventilacao"){ acaoLabel = "✓ Fechou"; acaoAct = "finalizar"; }
-        else if(s.tipo === "roupa_cama"){ acaoLabel = "✓ Trocou"; acaoAct = "finalizar"; }
-        else if(s.tipo === "sauna"){ acaoLabel = "✓ Ligada"; acaoAct = "finalizar"; }
-        else if(s.tipo === "lenha"){ acaoLabel = "✓ Reposta"; acaoAct = "finalizar"; }
+        if(s.tipo === "frigobar"){ acaoLabel = ""+ic('check')+" Abasteceu"; acaoAct = "finalizar"; }
+        else if(s.tipo === "ventilacao"){ acaoLabel = ""+ic('check')+" Fechou"; acaoAct = "finalizar"; }
+        else if(s.tipo === "roupa_cama"){ acaoLabel = ""+ic('check')+" Trocou"; acaoAct = "finalizar"; }
+        else if(s.tipo === "sauna"){ acaoLabel = ""+ic('check')+" Ligada"; acaoAct = "finalizar"; }
+        else if(s.tipo === "lenha"){ acaoLabel = ""+ic('check')+" Reposta"; acaoAct = "finalizar"; }
         var editarItensHtml = (s.tipo === "frigobar" && podeEditar("estoque")) ?
-          '<button class="btn btn-out" data-act="editarItensPedido" data-id="'+s.id+'">✏️ Editar itens</button>' : '';
+          '<button class="btn btn-out" data-act="editarItensPedido" data-id="'+s.id+'">'+ic("pencil")+' Editar itens</button>' : '';
         html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+editarItensHtml+lixoHtml+'</div>';
       } else if(s.status === "em_andamento"){
-        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">✓ Finalizar</button>'+lixoHtml+'</div>';
+        html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">'+ic("check")+' Finalizar</button>'+lixoHtml+'</div>';
       } else if(lixoHtml){
         html += '<div class="item-actions">'+lixoHtml+'</div>';
       }
@@ -6276,17 +6337,17 @@
           var devendoRoupaCama = acomodacoesDevendoRoupaCamaHoje();
           placeholders.forEach(function(id){
             h += '<div class="card manut-card" style="background:var(--sand-100);opacity:.85;">' +
-              '<p class="item-name" style="margin:0 0 3px;">🔒 🧹 Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(id))+'</span></p>' +
+              '<p class="item-name" style="margin:0 0 3px;">'+ic("lockClosed")+' '+ic("broom")+' Possível limpeza <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(acomodacaoNome(id))+'</span></p>' +
               '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Hóspede ainda não solicitou</p>';
             if(devendoRoupaCama[id] != null){
-              h += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">🧺 Trocar roupa de cama (dia '+devendoRoupaCama[id]+')</p>';
+              h += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("basket")+' Trocar roupa de cama (dia '+devendoRoupaCama[id]+')</p>';
             }
             var infoPlaceholder = hospedeAtualInfo(id);
             if(infoPlaceholder && infoPlaceholder.observacao){
-              h += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">📝 '+escapeHtml(infoPlaceholder.observacao)+'</p>';
+              h += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">'+ic("doc")+' '+escapeHtml(infoPlaceholder.observacao)+'</p>';
             }
             if(podeEditar("limpeza")){
-              h += '<div class="item-actions"><button class="btn btn-out" data-recusa-id="'+id+'">✓ Hóspede não quer limpeza</button></div>';
+              h += '<div class="item-actions"><button class="btn btn-out" data-recusa-id="'+id+'">'+ic("check")+' Hóspede não quer limpeza</button></div>';
             }
             h += '</div>';
           });
@@ -6295,10 +6356,10 @@
         return h;
       }
 
-      html += secao("🛎️ Check-in", "checkin");
-      html += secao("🚪 Checkout", "checkout");
-      html += secao("🧹 Manutenção", "manutencao");
-      html += secao("💨 Ventilação", "ventilacao");
+      html += secao(""+ic('login')+" Check-in", "checkin");
+      html += secao(""+ic('logout')+" Checkout", "checkout");
+      html += secao(""+ic('broom')+" Manutenção", "manutencao");
+      html += secao(""+ic('wind')+" Ventilação", "ventilacao");
 
       if(abertos.length === 0 && placeholders.length === 0){
         html += '<div class="empty">Nenhum pedido em aberto.</div>';
@@ -6380,7 +6441,7 @@
 
     if(manutPendHospede > 0){
       html += '<div class="card" style="background:var(--amber-100);border-color:transparent;">' +
-        '<p style="margin:0;font-size:13.5px;font-weight:700;color:var(--amber-600);">🔧 '+manutPendHospede+(manutPendHospede===1?' pedido de reparo':' pedidos de reparo')+' aberto(s) pelos hóspedes — ver aba Manutenções</p>' +
+        '<p style="margin:0;font-size:13.5px;font-weight:700;color:var(--amber-600);">'+ic("wrench")+' '+manutPendHospede+(manutPendHospede===1?' pedido de reparo':' pedidos de reparo')+' aberto(s) pelos hóspedes — ver aba Manutenções</p>' +
       '</div>';
     }
 
@@ -6395,10 +6456,10 @@
       return h;
     }
 
-    html += renderGrupo("🔒 Bloqueadas — aguardando você liberar", bloqueadas);
-    html += renderGrupo("🔴 Aguardando", pendentes);
-    html += renderGrupo("🟡 Em andamento", andamento);
-    html += renderGrupo("🟢 Concluídos hoje", concluidosHoje);
+    html += renderGrupo(""+ic('lockClosed')+" Bloqueadas — aguardando você liberar", bloqueadas);
+    html += renderGrupo(""+ic('dotRed')+" Aguardando", pendentes);
+    html += renderGrupo(""+ic('dotAmber')+" Em andamento", andamento);
+    html += renderGrupo(""+ic('dotGreen')+" Concluídos hoje", concluidosHoje);
     return html;
   }
 
@@ -6412,7 +6473,7 @@
       .sort(function(a,b){ return b.concluidoEm - a.concluidoEm; });
     var html = '<div style="margin-bottom:16px;">' +
       '<button type="button" id="novoAbastecimentoAvulsoBtn" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:10px;">+ Criar abastecimento avulso</button>' +
-      '<button type="button" id="importarExtratoBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">📄 Importar extrato do Hospedin (PDF)</button>' +
+      '<button type="button" id="importarExtratoBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("doc")+' Importar extrato do Hospedin (PDF)</button>' +
       '<input type="file" id="importarExtratoInput" accept="application/pdf" style="display:none;">' +
     '</div>';
     html += '<div class="seg-toggle">' +
@@ -6446,7 +6507,7 @@
       return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-nome-item="'+escapeHtml(nome)+'">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
           '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;flex:1;">'+escapeHtml(nome)+'</p>' +
-          '<button type="button" class="editItensRemover" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">✕</button>' +
+          '<button type="button" class="editItensRemover" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">'+ic("close")+'</button>' +
         '</div>' +
         '<div class="qty-stepper" style="margin-bottom:0;">' +
           '<button type="button" class="editItensMinus">−</button>' +
@@ -6476,7 +6537,7 @@
           '</div>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="editItensCancel">Cancelar</button>' +
-            '<button type="button" class="btn-primary" id="editItensSalvar">✓ Salvar alterações</button>' +
+            '<button type="button" class="btn-primary" id="editItensSalvar">'+ic("check")+' Salvar alterações</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -6550,7 +6611,7 @@
           '</div>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="avulsoCancel">Cancelar</button>' +
-            '<button type="button" class="btn-primary" id="avulsoConfirm">✓ Criar pedido de abastecimento</button>' +
+            '<button type="button" class="btn-primary" id="avulsoConfirm">'+ic("check")+' Criar pedido de abastecimento</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -6804,7 +6865,7 @@
           '<div id="reExtratoItensLista">' + montarItensHtml(revisaoExtratoAcomodacaoId) + '</div>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="reExtratoCancel">Cancelar</button>' +
-            '<button type="button" class="btn-primary" id="reExtratoConfirm">✓ Criar pedido de abastecimento</button>' +
+            '<button type="button" class="btn-primary" id="reExtratoConfirm">'+ic("check")+' Criar pedido de abastecimento</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -6881,11 +6942,11 @@
       if(s.jacuzziConcluidaEm) return; // já foi feita, some da lista
       var nome = acomodacaoNome(s.acomodacaoId);
       if(s.tipo === "lavagem" && s.contexto === "checkin" && s.status !== "concluido"){
-        (s.status === "bloqueada" ? naoPode : pode).push({id:s.id, nome:nome, tag:"🛎️ CHECK-IN", cor:"var(--teal-700)", motivo:s.status==="bloqueada"?"Aguardando liberação":null});
+        (s.status === "bloqueada" ? naoPode : pode).push({id:s.id, nome:nome, tag:""+ic('login')+" CHECK-IN", cor:"var(--teal-700)", motivo:s.status==="bloqueada"?"Aguardando liberação":null});
       } else if(s.tipo === "lavagem" && (s.contexto === "checkout" || s.contexto === "checkin_checkout") && s.status !== "concluido"){
-        (s.status === "bloqueada" ? naoPode : pode).push({id:s.id, nome:nome, tag:"🚪 CHECKOUT", cor:"var(--teal-900)", motivo:s.status==="bloqueada"?"Aguardando a recepção confirmar que o hóspede já saiu":null});
+        (s.status === "bloqueada" ? naoPode : pode).push({id:s.id, nome:nome, tag:""+ic('logout')+" CHECKOUT", cor:"var(--teal-900)", motivo:s.status==="bloqueada"?"Aguardando a recepção confirmar que o hóspede já saiu":null});
       } else if(s.tipo === "limpeza" && s.contexto === "estadia" && s.status !== "concluido"){
-        pode.push({id:s.id, nome:nome, tag:"🧹 LIMPEZA SOLICITADA", cor:"var(--amber-600)", motivo:null});
+        pode.push({id:s.id, nome:nome, tag:""+ic('broom')+" LIMPEZA SOLICITADA", cor:"var(--amber-600)", motivo:null});
       }
     });
     var porNome = function(a,b){ return a.nome.localeCompare(b.nome, "pt-BR"); };
@@ -6898,35 +6959,35 @@
   function renderServicoGeral(){
     var main = document.getElementById("servicoGeralView");
     var html = '<div class="seg-toggle">' +
-      '<button data-sgsub="jacuzzi" class="'+(servicoGeralSubView==="jacuzzi"?"active":"")+'">🛁 Jacuzzi</button>' +
-      '<button data-sgsub="predial" class="'+(servicoGeralSubView==="predial"?"active":"")+'">🔧 Manutenção Predial</button>' +
+      '<button data-sgsub="jacuzzi" class="'+(servicoGeralSubView==="jacuzzi"?"active":"")+'">'+ic("bath")+' Jacuzzi</button>' +
+      '<button data-sgsub="predial" class="'+(servicoGeralSubView==="predial"?"active":"")+'">'+ic("wrench")+' Manutenção Predial</button>' +
     '</div>';
 
     function cardItem(item, podeIr, mostrarFoto){
       var h = '<div class="card" style="margin-bottom:10px;">' +
         '<span style="display:inline-block;font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;margin-bottom:8px;color:#fff;background:'+item.cor+';">'+item.tag+'</span>' +
         '<p style="margin:0 0 6px;font-size:17px;font-weight:800;">'+escapeHtml(item.nome)+'</p>' +
-        '<p style="margin:0 0 10px;font-size:15px;font-weight:800;color:'+(podeIr?"var(--teal-700)":"var(--red-600)")+';">'+(podeIr?"✅ PODE IR":"🔒 NÃO PODE IR")+'</p>';
+        '<p style="margin:0 0 10px;font-size:15px;font-weight:800;color:'+(podeIr?"var(--teal-700)":"var(--red-600)")+';">'+(podeIr?""+ic('check')+" PODE IR":""+ic('lockClosed')+" NÃO PODE IR")+'</p>';
       if(item.motivo) h += '<p class="item-meta" style="margin-bottom:10px;">'+escapeHtml(item.motivo)+'</p>';
       if(podeIr && mostrarFoto){
         var fotoAtual = servicoGeralFotosPendentes[item.id];
         h += '<div id="sgFotoPreviewWrap_'+item.id+'" style="'+(fotoAtual?'':'display:none;')+'margin-bottom:8px;">' +
           '<img id="sgFotoPreview_'+item.id+'" src="'+(fotoAtual||'')+'" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;">' +
         '</div>' +
-        '<button type="button" class="sg-foto-btn" data-id="'+item.id+'" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:8px;">📷 '+(fotoAtual?'Trocar foto':'Tirar foto da jacuzzi')+'</button>' +
+        '<button type="button" class="sg-foto-btn" data-id="'+item.id+'" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:8px;">'+ic("camera")+' '+(fotoAtual?'Trocar foto':'Tirar foto da jacuzzi')+'</button>' +
         '<input type="file" class="sg-foto-input" data-id="'+item.id+'" accept="image/*" capture="environment" style="display:none;">';
       }
-      if(podeIr) h += '<button type="button" class="sg-concluir-btn" data-id="'+item.id+'" data-tipo="'+(servicoGeralSubView==="jacuzzi"?"jacuzzi":"predial")+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:14.5px;font-weight:700;">✓ Concluir</button>';
-      else h += '<div style="background:var(--sand-200);color:var(--ink-400);border-radius:9px;padding:11px;text-align:center;font-size:13px;font-weight:700;">🔒 Aguarde a liberação</div>';
+      if(podeIr) h += '<button type="button" class="sg-concluir-btn" data-id="'+item.id+'" data-tipo="'+(servicoGeralSubView==="jacuzzi"?"jacuzzi":"predial")+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:14.5px;font-weight:700;">'+ic("check")+' Concluir</button>';
+      else h += '<div style="background:var(--sand-200);color:var(--ink-400);border-radius:9px;padding:11px;text-align:center;font-size:13px;font-weight:700;">'+ic("lockClosed")+' Aguarde a liberação</div>';
       h += '</div>';
       return h;
     }
 
     if(servicoGeralSubView === "jacuzzi"){
       var jac = computeJacuzziTarefas();
-      html += '<p class="section-title" style="color:var(--teal-700);">✅ PODE</p>';
+      html += '<p class="section-title" style="color:var(--teal-700);">'+ic("check")+' PODE</p>';
       html += jac.pode.length ? jac.pode.map(function(it){ return cardItem(it, true, true); }).join("") : '<div class="empty">Nenhuma jacuzzi liberada agora.</div>';
-      html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">🔒 NÃO PODE</p>';
+      html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">'+ic("lockClosed")+' NÃO PODE</p>';
       html += jac.naoPode.length ? jac.naoPode.map(function(it){ return cardItem(it, false, false); }).join("") : '<div class="empty">Nenhuma pendência de liberação.</div>';
     } else {
       var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; }).sort(function(a,b){
@@ -6934,7 +6995,7 @@
         var pb = PRIORIDADE_ORDEM[b.prioridade]!=null ? PRIORIDADE_ORDEM[b.prioridade] : 1;
         return pa - pb;
       });
-      html += '<p class="section-title" style="color:var(--teal-700);">✅ PODE</p>';
+      html += '<p class="section-title" style="color:var(--teal-700);">'+ic("check")+' PODE</p>';
       if(pend.length === 0){
         html += '<div class="empty">Nenhuma manutenção pendente agora.</div>';
       } else {
@@ -6943,7 +7004,7 @@
           html += cardItem({id:m.id, nome:m.title+(m.local?(" — "+m.local):""), tag:pInfo.label+" · CONSERTO", cor:pInfo.cor, motivo:m.description||null}, true, false);
         });
       }
-      html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">🔒 NÃO PODE</p>';
+      html += '<p class="section-title" style="color:var(--red-600);margin-top:18px;">'+ic("lockClosed")+' NÃO PODE</p>';
       html += '<div class="empty">Nenhuma pendência de liberação.</div>';
     }
 
@@ -6969,7 +7030,7 @@
           document.getElementById("sgFotoPreview_"+id).src = dataUrl;
           document.getElementById("sgFotoPreviewWrap_"+id).style.display = "block";
           var btn = main.querySelector('.sg-foto-btn[data-id="'+id+'"]');
-          if(btn) btn.textContent = "📷 Trocar foto";
+          if(btn) btn.innerHTML = ""+ic('camera')+" Trocar foto";
         });
       });
     });
@@ -7056,17 +7117,17 @@
     var podeGerenciar = podeEditar("recepcao") || (currentUser && currentUser.role === "admin");
 
     var html = '<div class="seg-toggle">' +
-      '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">🧹 Limpeza</button>' +
-      '<button data-rsub="abastecimento" class="'+(recepcaoSubView==="abastecimento"?"active":"")+'">🧊 Abastecimento</button>' +
-      '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">➕ Avulsos</button>' +
-      '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">📷 QR Code</button>' +
+      '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza</button>' +
+      '<button data-rsub="abastecimento" class="'+(recepcaoSubView==="abastecimento"?"active":"")+'">'+ic("cube")+' Abastecimento</button>' +
+      '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">'+ic("plus")+' Avulsos</button>' +
+      '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
     '</div>';
 
     if(recepcaoSubView === "limpeza"){
       var prontas = computeAcomodacoesProntasParaEntrada();
       var aguardando = computeAguardandoAbastecimento();
       var aguardandoRevisao = computeAguardandoRevisao();
-      html += '<div class="section-title" style="margin-top:0;">✅ Prontas para entrada</div>';
+      html += '<div class="section-title" style="margin-top:0;">'+ic("check")+' Prontas para entrada</div>';
       html += '<p class="count-intro">Check-ins de hoje com limpeza, abastecimento e revisão já concluídos — a acomodação pode receber o hóspede.</p>';
       if(prontas.length === 0){
         html += '<div class="empty">Nenhuma pronta ainda.</div>';
@@ -7074,7 +7135,7 @@
         html += '<div class="card">';
         prontas.forEach(function(s, i){
           html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
-            '<p style="margin:0 0 3px;font-size:14.5px;font-weight:700;">🏡 '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
+            '<p style="margin:0 0 3px;font-size:14.5px;font-weight:700;">'+ic("home")+' '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
             '<p class="item-meta">limpa por '+escapeHtml(nomeStaff(s.concluidoPor))+' às '+fmtDate(s.concluidoEm)+'</p>' +
             '<p class="item-meta">revisada por '+escapeHtml(nomeStaff(s.revisaoConcluidaPor))+' às '+fmtDate(s.revisaoConcluidaEm)+'</p>' +
           '</div>';
@@ -7087,20 +7148,20 @@
         html += '<div class="card">';
         aguardando.forEach(function(s, i){
           html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
-            '<p style="margin:0;font-size:14.5px;font-weight:700;">🏡 '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
+            '<p style="margin:0;font-size:14.5px;font-weight:700;">'+ic("home")+' '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
           '</div>';
         });
         html += '</div>';
       }
 
       if(aguardandoRevisao.length > 0){
-        html += '<div class="section-title" style="margin-top:18px;color:var(--teal-700);">🔍 Aguardando revisão</div>';
+        html += '<div class="section-title" style="margin-top:18px;color:var(--teal-700);">'+ic("search")+' Aguardando revisão</div>';
         html += '<p class="count-intro">Já limpa e abastecida — falta alguém da equipe conferir pessoalmente antes de liberar.</p>';
         html += '<div class="card">';
         aguardandoRevisao.forEach(function(s, i){
           html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
-            '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">🏡 '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
-            '<button type="button" class="marcarRevisaoBtn" data-id="'+s.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">✓ Revisão feita — está tudo ok</button>' +
+            '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+ic("home")+' '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
+            '<button type="button" class="marcarRevisaoBtn" data-id="'+s.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("check")+' Revisão feita — está tudo ok</button>' +
           '</div>';
         });
         html += '</div>';
@@ -7115,7 +7176,7 @@
         .sort(function(a,b){ return b.concluidoEm - a.concluidoEm; });
       html += '<div style="margin-bottom:16px;">' +
         '<button type="button" id="novoAbastecimentoAvulsoBtnRecepcao" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:10px;">+ Criar abastecimento avulso</button>' +
-        '<button type="button" id="importarExtratoBtnRecepcao" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">📄 Importar extrato do Hospedin (PDF)</button>' +
+        '<button type="button" id="importarExtratoBtnRecepcao" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("doc")+' Importar extrato do Hospedin (PDF)</button>' +
         '<input type="file" id="importarExtratoInputRecepcao" accept="application/pdf" style="display:none;">' +
       '</div>';
       html += '<div class="seg-toggle">' +
@@ -7137,7 +7198,7 @@
       if(podeGerenciar){
         var todasAtivas = state.acomodacoes.filter(function(a){ return a.ativo; })
           .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
-        html += '<div class="section-title" style="margin-top:0;">🧺 Adicionar lavagem avulsa</div>';
+        html += '<div class="section-title" style="margin-top:0;">'+ic("basket")+' Adicionar lavagem avulsa</div>';
         html += '<p class="count-intro">Pra quando o Hospedin estiver desatualizado e faltar um check-in/checkout no sistema. Mostra todas as acomodações, não só as que o Hospedin marca como ocupadas.</p>';
         html += '<div class="card">' +
           '<select id="lavagemAvulsaSelect" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
@@ -7149,21 +7210,21 @@
           '<option value="checkout">Checkout</option>' +
           '<option value="checkin_checkout">Check-in + Checkout (mesmo dia)</option>' +
           '</select>' +
-          '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="lavagemAvulsaBtn" style="flex:1;">🧺 Adicionar lavagem</button></div>' +
+          '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="lavagemAvulsaBtn" style="flex:1;">'+ic("basket")+' Adicionar lavagem</button></div>' +
         '</div>';
 
-        html += '<div class="section-title" style="margin-top:22px;">🧹 Adicionar limpeza avulsa</div>';
+        html += '<div class="section-title" style="margin-top:22px;">'+ic("broom")+' Adicionar limpeza avulsa</div>';
         html += '<p class="count-intro">Pra quando o hóspede pedir direto na recepção, ou o Hospedin estiver desatualizado. Mostra todas as acomodações — não tem restrição de horário aqui.</p>';
         html += '<div class="card">' +
           '<select id="limpezaRecepcaoSelect" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
           '<option value="">Selecionar acomodação…</option>' +
           todasAtivas.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
           '</select>' +
-          '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="solicitarLimpezaRecepcaoBtn" style="flex:1;">🧹 Solicitar limpeza</button></div>' +
+          '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="solicitarLimpezaRecepcaoBtn" style="flex:1;">'+ic("broom")+' Solicitar limpeza</button></div>' +
         '</div>';
 
         var elegiveis = acomodacoesElegiveisVentilacao();
-        html += '<div class="section-title" style="margin-top:22px;">💨 Abrir acomodação para ventilação</div>';
+        html += '<div class="section-title" style="margin-top:22px;">'+ic("wind")+' Abrir acomodação para ventilação</div>';
         html += '<p class="count-intro">Só aparecem acomodações vazias, sem hóspede e sem check-in previsto pra hoje.</p>';
         if(elegiveis.length === 0){
           html += '<div class="empty">Nenhuma acomodação vazia disponível agora.</div>';
@@ -7173,7 +7234,7 @@
             '<option value="">Selecionar acomodação vazia…</option>' +
             elegiveis.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
             '</select>' +
-            '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="abrirVentilacaoBtn" style="flex:1;">💨 Abrir para ventilação</button></div>' +
+            '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="abrirVentilacaoBtn" style="flex:1;">'+ic("wind")+' Abrir para ventilação</button></div>' +
           '</div>';
         }
       } else {
@@ -7381,9 +7442,9 @@
     var main = document.getElementById("supervisaoView");
     var html = buildPainelHtml();
     html += '<div class="seg-toggle" style="margin-top:18px;">' +
-      '<button data-stopo="limpeza" class="'+(supervisaoTopo==="limpeza"?"active":"")+'">🧹 Limpeza</button>' +
-      '<button data-stopo="estoque" class="'+(supervisaoTopo==="estoque"?"active":"")+'">📦 Estoque</button>' +
-      '<button data-stopo="manutencao" class="'+(supervisaoTopo==="manutencao"?"active":"")+'">🔧 Manutenção</button>' +
+      '<button data-stopo="limpeza" class="'+(supervisaoTopo==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza</button>' +
+      '<button data-stopo="estoque" class="'+(supervisaoTopo==="estoque"?"active":"")+'">'+ic("box")+' Estoque</button>' +
+      '<button data-stopo="manutencao" class="'+(supervisaoTopo==="manutencao"?"active":"")+'">'+ic("wrench")+' Manutenção</button>' +
     '</div>';
     html += '<div id="supervisaoTopoContent"></div>';
     main.innerHTML = html;
@@ -7416,15 +7477,15 @@
         var icon = TIPO_ICON[s.tipo] || "•";
         var label = TIPO_LABEL[s.tipo] || s.tipo;
         var dur = (s.criadoEm && s.concluidoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-        var origemTxt = s.origem === "hospede" ? "📱 solicitado pelo hóspede (link)" :
-          (s.criadoPor ? "👤 solicitado por "+escapeHtml(nomeStaff(s.criadoPor)) :
-          (s.origem === "sistema" ? "🔧 gerado pelo sistema" : null));
+        var origemTxt = s.origem === "hospede" ? ""+ic('phone')+" solicitado pelo hóspede (link)" :
+          (s.criadoPor ? ""+ic('user')+" solicitado por "+escapeHtml(nomeStaff(s.criadoPor)) :
+          (s.origem === "sistema" ? ""+ic('wrench')+" gerado pelo sistema" : null));
         html += '<div class="move-row">' +
           '<div>'+icon+' <strong>'+escapeHtml(label)+'</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId)) +
           (dur!=null ? ('<br><span style="color:var(--ink-400);font-size:12px;">levou '+fmtDuration(dur)+'</span>') : '') +
           (origemTxt ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+origemTxt+'</span>') : '') +
-          (s.liberadoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">🔓 liberado por '+escapeHtml(nomeStaff(s.liberadoPor))+'</span>') : '') +
-          (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">✓ concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '') +
+          (s.liberadoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+ic("lockOpen")+' liberado por '+escapeHtml(nomeStaff(s.liberadoPor))+'</span>') : '') +
+          (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+ic("check")+' concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '') +
           '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
       });
       html += '</div>';
@@ -7433,7 +7494,7 @@
     var sinceExcl = parseInt(supervisaoPeriod,10) ? (Date.now() - parseInt(supervisaoPeriod,10)*24*3600*1000) : 0;
     var excluidos = (state.solicitacoesExcluidas||[]).filter(function(s){ return s.excluidoEm && s.excluidoEm >= sinceExcl && tiposLimpeza.indexOf(s.tipo) > -1; })
       .sort(function(a,b){ return (b.excluidoEm||0)-(a.excluidoEm||0); });
-    html += '<div class="section-title" style="margin-top:22px;color:var(--red-600);">🗑️ Excluídos</div>';
+    html += '<div class="section-title" style="margin-top:22px;color:var(--red-600);">'+ic("trash")+' Excluídos</div>';
     if(excluidos.length === 0){
       html += '<div class="empty">Nenhum pedido excluído neste período.</div>';
     } else {
@@ -7441,14 +7502,14 @@
       excluidos.forEach(function(s, i){
         var icon = TIPO_ICON[s.tipo] || "•";
         var label = TIPO_LABEL[s.tipo] || s.tipo;
-        var origemTxt = s.origem === "hospede" ? "📱 solicitado pelo hóspede (link)" :
-          (s.criadoPor ? "👤 solicitado por "+escapeHtml(nomeStaff(s.criadoPor)) :
-          (s.origem === "sistema" ? "🔧 gerado pelo sistema" : null));
+        var origemTxt = s.origem === "hospede" ? ""+ic('phone')+" solicitado pelo hóspede (link)" :
+          (s.criadoPor ? ""+ic('user')+" solicitado por "+escapeHtml(nomeStaff(s.criadoPor)) :
+          (s.origem === "sistema" ? ""+ic('wrench')+" gerado pelo sistema" : null));
         html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
           '<div>'+icon+' <strong>'+escapeHtml(label)+'</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId)) +
           '<br><span style="color:var(--ink-400);font-size:12px;">pedido em '+fmtDate(s.criadoEm)+'</span>' +
           (origemTxt ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+origemTxt+'</span>') : '') +
-          '<br><span style="color:var(--red-600);font-size:12px;font-weight:700;">🗑️ excluído por '+escapeHtml(nomeStaff(s.excluidoPor))+' em '+fmtDate(s.excluidoEm)+'</span>' +
+          '<br><span style="color:var(--red-600);font-size:12px;font-weight:700;">'+ic("trash")+' excluído por '+escapeHtml(nomeStaff(s.excluidoPor))+' em '+fmtDate(s.excluidoEm)+'</span>' +
           '</div></div>';
       });
       html += '</div>';
@@ -7463,8 +7524,8 @@
       tempos.forEach(function(r, i){
         html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
           '<p style="margin:0 0 4px;font-size:14px;font-weight:700;">'+escapeHtml(r.nome)+'</p>' +
-          '<p class="item-meta">🧺 Lavagem: '+(r.lavagemMedia!=null ? ('<b>'+fmtDuration(r.lavagemMedia)+'</b> · '+r.lavagemN+' concluída(s)') : 'sem dados')+'</p>' +
-          '<p class="item-meta">🔧 Manutenção: '+(r.manutencaoMedia!=null ? ('<b>'+fmtDuration(r.manutencaoMedia)+'</b> · '+r.manutencaoN+' concluída(s)') : 'sem dados')+'</p>' +
+          '<p class="item-meta">'+ic("basket")+' Lavagem: '+(r.lavagemMedia!=null ? ('<b>'+fmtDuration(r.lavagemMedia)+'</b> · '+r.lavagemN+' concluída(s)') : 'sem dados')+'</p>' +
+          '<p class="item-meta">'+ic("wrench")+' Manutenção: '+(r.manutencaoMedia!=null ? ('<b>'+fmtDuration(r.manutencaoMedia)+'</b> · '+r.manutencaoN+' concluída(s)') : 'sem dados')+'</p>' +
         '</div>';
       });
       html += '</div>';
@@ -7510,8 +7571,8 @@
           '<button class="share-btn wa" id="sendWa">Enviar por WhatsApp</button>' +
           '<button class="share-btn mail" id="sendMail">Enviar por Email</button>' +
         '</div>' +
-        '<button type="button" class="link-btn" id="reportSupplierManager">🚚 Gerenciar fornecedores</button>' +
-        '<button type="button" class="link-btn" id="reportHospedinSync">🔗 Sincronizar com Hospedin</button>' +
+        '<button type="button" class="link-btn" id="reportSupplierManager">'+ic("truck")+' Gerenciar fornecedores</button>' +
+        '<button type="button" class="link-btn" id="reportHospedinSync">'+ic("link")+' Sincronizar com Hospedin</button>' +
         '<div id="purchaseSuggestSection"></div>' +
         '<div id="pedidosCompraSection" style="margin-top:22px;"></div>'
       ) : '');
@@ -7532,9 +7593,9 @@
         var hh = '<div class="card">';
         histSolic.items.forEach(function(s){
           var dur = (s.criadoEm && s.concluidoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-          hh += '<div class="move-row"><div>🥤 <strong>Abastecimento</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId))+
+          hh += '<div class="move-row"><div>'+ic("cup")+' <strong>Abastecimento</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId))+
             (dur!=null ? ('<br><span style="color:var(--ink-400);font-size:12px;">levou '+fmtDuration(dur)+'</span>') : '')+
-            (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">✓ concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '')+
+            (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+ic("check")+' concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '')+
             '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
         });
         hh += '</div>';
@@ -7604,8 +7665,8 @@
       concluidas.forEach(function(m, i){
         var dur = (m.iniciadoEm && m.resolvedAt) ? Math.floor((m.resolvedAt-m.iniciadoEm)/60000) : null;
         html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
-          '<p style="margin:0 0 3px;font-size:14px;font-weight:700;">🔧 '+escapeHtml(m.title)+(m.local?(' — '+escapeHtml(m.local)):'')+'</p>' +
-          (m.responsavel ? '<p class="item-meta">👤 '+escapeHtml(m.responsavel)+'</p>' : '') +
+          '<p style="margin:0 0 3px;font-size:14px;font-weight:700;">'+ic("wrench")+' '+escapeHtml(m.title)+(m.local?(' — '+escapeHtml(m.local)):'')+'</p>' +
+          (m.responsavel ? '<p class="item-meta">'+ic("user")+' '+escapeHtml(m.responsavel)+'</p>' : '') +
           (dur!=null ? '<p class="item-meta">levou '+fmtDuration(dur)+'</p>' : '') +
           '<p class="item-meta">concluída em '+fmtDate(m.resolvedAt)+'</p>' +
         '</div>';
@@ -7664,7 +7725,7 @@
     return baseAppUrl() + "?scan=" + encodeURIComponent(acomodacaoId);
   }
   function renderQrAcomodacoesHtml(){
-    var html = '<div class="section-title" style="margin-top:22px;">📷 QR Code das acomodações (check-in de limpeza)</div>';
+    var html = '<div class="section-title" style="margin-top:22px;">'+ic("camera")+' QR Code das acomodações (check-in de limpeza)</div>';
     html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Imprima e cole um QR desses em cada acomodação — é fixo, sempre o mesmo, não muda a cada limpeza, e cada acomodação tem o seu próprio (nunca o mesmo código em duas acomodações diferentes). A camareira aponta a câmera do celular pra ele e abre direto a tela de check-in daquela acomodação, ou aperta "Iniciar"/"Finalizar" numa tarefa de lavagem ou manutenção dentro do app — nos dois casos, ela tem que escanear esse QR com a câmera ao vivo pra confirmar que está ali, tanto pra iniciar quanto pra concluir. Só funciona se ela estiver logada no app com permissão em Limpeza.</p>';
     if(!state.acomodacoes || state.acomodacoes.length === 0){
       html += '<div class="empty">Nenhuma acomodação cadastrada ainda.</div>';
@@ -7681,7 +7742,7 @@
       '</div>';
     });
     html += '</div></div>';
-    html += '<button type="button" id="imprimirQrsBtn" style="display:block;width:100%;margin-top:10px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">🖨️ Imprimir todos os QR Codes</button>';
+    html += '<button type="button" id="imprimirQrsBtn" style="display:block;width:100%;margin-top:10px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("printer")+' Imprimir todos os QR Codes</button>';
     return html;
   }
 
@@ -7696,7 +7757,7 @@
       main.innerHTML = '<div class="empty">Erro ao carregar usuários — tente de novo.</div>';
       return;
     }
-    var html = '<div class="section-title" style="margin-top:0;">📧 Relatório semanal por email</div>';
+    var html = '<div class="section-title" style="margin-top:0;">'+ic("mail")+' Relatório semanal por email</div>';
     html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Todo segunda de manhã, um resumo automático de todas as abas é enviado pra esses emails.</p>';
     html += '<div class="card">';
     if(relatorioEmailsCache.length === 0){
@@ -7705,7 +7766,7 @@
       relatorioEmailsCache.forEach(function(r){
         html += '<div class="qty-row" data-remail-id="'+r.id+'" style="padding:8px 0;">' +
           '<span class="qty-name">'+escapeHtml(r.email)+'</span>' +
-          '<button type="button" class="btn-edit" data-act="remover-email" data-id="'+r.id+'" title="Remover">🗑️</button>' +
+          '<button type="button" class="btn-edit" data-act="remover-email" data-id="'+r.id+'" title="Remover">'+ic("trash")+'</button>' +
         '</div>';
       });
     }
@@ -7713,7 +7774,7 @@
       '<input type="email" id="novoRelatorioEmail" placeholder="email@exemplo.com" style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);">' +
       '<button type="button" id="adicionarRelatorioEmailBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-700);color:#fff;border:none;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Adicionar</button>' +
     '</div>';
-    html += '<button type="button" id="enviarRelatorioAgoraBtn" style="display:block;width:100%;margin-top:12px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">📧 Enviar relatório agora</button>';
+    html += '<button type="button" id="enviarRelatorioAgoraBtn" style="display:block;width:100%;margin-top:12px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("mail")+' Enviar relatório agora</button>';
     html += '</div>';
 
     html += '<p style="color:var(--ink-600);font-size:12.5px;margin:22px 0 -8px;">Os QR Codes das acomodações agora ficam na aba <strong>Recepção</strong>. A gestão de turnos e atividades do checklist fica na própria aba <strong>Checklist de Turno</strong>.</p>';
@@ -7812,7 +7873,7 @@
           showToast("Erro ao enviar — confere se a Edge Function 'relatorio-semanal' está publicada");
         }finally{
           enviarAgoraBtn.disabled = false;
-          enviarAgoraBtn.textContent = "📧 Enviar relatório agora";
+          enviarAgoraBtn.innerHTML = ""+ic('mail')+" Enviar relatório agora";
         }
       };
     }
@@ -8092,7 +8153,7 @@
     return '<div class="admin-user-card" data-hid="'+h.id+'">' +
       '<div class="admin-user-name">'+escapeHtml(h.nome||"(sem nome)")+'</div>' +
       '<div class="admin-user-email">'+(h.cpf?("CPF "+formatCpf(h.cpf)):"")+(h.passaporte?(" · Passaporte "+escapeHtml(h.passaporte)):"")+'</div>' +
-      (h.fotos.length ? '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">📎 '+h.fotos.length+' foto(s) já registrada(s) — não precisa fotografar de novo.</p>' : '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">Nenhuma foto registrada ainda.</p>') +
+      (h.fotos.length ? '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">'+ic("paperclip")+' '+h.fotos.length+' foto(s) já registrada(s) — não precisa fotografar de novo.</p>' : '<p style="font-size:12.5px;color:var(--ink-600);margin:6px 0 8px;">Nenhuma foto registrada ainda.</p>') +
       (h.observacoes ? '<p style="font-size:12.5px;color:var(--ink-700);margin:0 0 8px;">'+escapeHtml(h.observacoes)+'</p>' : '') +
       '<button type="button" class="admin-role-btn" data-view-hid="'+h.id+'">Ver / editar</button>' +
     '</div>';
