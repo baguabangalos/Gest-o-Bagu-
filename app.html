@@ -5440,7 +5440,7 @@
   function renderEquipeSetor(body){
     var isAdmin = currentUser && currentUser.role === "admin";
     var staff = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; }).slice().sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||""); });
-    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Define quem é Recepção, Manutenção, Limpeza ou Guarda. Isso decide quem aparece nas abas Horários e Folga (só Recepção e Manutenção), quem aparece na aba Guarda (só Guarda) e quem pode ter turno fixo no Checklist de Turno (só Recepção).</p>';
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Define quem é Recepção, Manutenção, Limpeza ou Guarda. Isso decide quem aparece nas abas Horários e Folga (só Recepção e Manutenção), quem aparece na aba Guarda (só Guarda) e quem pode ter turno fixo no Checklist de Turno (Recepção ou Guarda).</p>';
     if(!isAdmin){
       html += '<p class="item-meta" style="margin:0 0 12px;">Só administradores podem alterar o setor de cada pessoa.</p>';
     }
@@ -5995,12 +5995,12 @@
     var transf = computeTransferenciasHoje();
 
     var idsComTarefa = {};
-    var codigoParaTarefa = {}; // searchable_code da reserva -> solicitação já existente hoje
+    var tarefaHojePorAcomodacao = {};
     var idsComLimpezaRenovacaoHoje = {};
     state.solicitacoes.forEach(function(s){
       if(s.tipo === "lavagem" && s.criadoEm >= hojeInicio.getTime()){
         idsComTarefa[s.acomodacaoId] = true;
-        if(s.searchableCode) codigoParaTarefa[s.searchableCode] = s;
+        tarefaHojePorAcomodacao[s.acomodacaoId] = s;
       }
       if(s.tipo === "limpeza" && s.contexto === "estadia" && s.origem === "sistema" && s.criadoEm >= hojeInicio.getTime()){
         idsComLimpezaRenovacaoHoje[s.acomodacaoId] = true;
@@ -6028,22 +6028,15 @@
 
       var contexto = (info.checkin && info.checkout) ? "checkin_checkout" : (info.checkin ? "checkin" : "checkout");
 
-      // Se já existe uma tarefa de hoje pra essa MESMA reserva (mesmo
-      // searchable_code), mas em outra acomodação, é upgrade/mudança de
-      // quarto — move a tarefa existente em vez de criar uma nova, pra não
-      // sobrar tarefa duplicada na acomodação antiga.
-      var tarefaExistente = info.searchableCode ? codigoParaTarefa[info.searchableCode] : null;
-      if(tarefaExistente && tarefaExistente.acomodacaoId !== id){
-        try{
-          var statusNovo = (contexto === "checkin") ? "pendente" : "bloqueada";
-          var atualizada = await dbUpdate("solicitacoes_acomodacao", tarefaExistente.id,
-            {acomodacao_id:id, contexto:contexto, status:statusNovo}, mapSolicitacaoFromRow);
-          var idx = state.solicitacoes.findIndex(function(x){ return x.id===tarefaExistente.id; });
-          if(idx>-1) state.solicitacoes[idx] = atualizada;
-          idsComTarefa[id] = true;
-        }catch(err){ console.error("Erro ao mover tarefa de lavagem pra nova acomodação:", err); }
-        continue;
-      }
+      // Importante: mesmo quando a mesma reserva (mesmo searchable_code)
+      // aparece hoje em duas acomodações diferentes — uma com checkout, a
+      // outra com checkin — NÃO movemos/apagamos a tarefa da acomodação
+      // antiga pra dentro da nova. O hóspede ainda está fisicamente na
+      // acomodação antiga e precisa aparecer lá como checkout (bloqueada,
+      // aguardando a recepção liberar quando ele sair). A tarefa da
+      // acomodação nova é sempre criada à parte, como um checkin com
+      // "Transferência de [acomodação antiga]" (calculado abaixo por
+      // CPF/passaporte, o que já cobre esse caso mesmo com o mesmo código).
 
       // Transferência de outra acomodação (upgrade/troca de quarto,
       // mesmo CPF/passaporte, mas reservas separadas)
@@ -6057,6 +6050,31 @@
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
       }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
+    }
+
+    // Reconciliação: às vezes o checkout de uma acomodação só aparece no
+    // sync do Hospedin depois que a tarefa de hoje já tinha sido criada só
+    // como check-in (ex: o quarto recebe uma transferência e, na mesma
+    // acomodação, tem outro hóspede saindo hoje também). Sem isso, a tarefa
+    // ficava travada como check-in simples, "pendente" (já liberada), sem
+    // nunca avisar que também precisa esperar esse checkout. Corrige o
+    // contexto e volta a tarefa pra "bloqueada" — mas só se ainda não foi
+    // iniciada nem concluída, pra não mexer em trabalho que já começou.
+    var idsParaReconciliar = Object.keys(acomodacoesHoje).filter(function(id){ return idsComTarefa[id]; });
+    for(var j=0;j<idsParaReconciliar.length;j++){
+      var idR = idsParaReconciliar[j];
+      var infoR = acomodacoesHoje[idR];
+      var tarefaR = tarefaHojePorAcomodacao[idR];
+      if(!tarefaR || tarefaR.status === "em_andamento" || tarefaR.status === "concluido") continue;
+      var jaTemCheckout = tarefaR.contexto === "checkout" || tarefaR.contexto === "checkin_checkout";
+      if(infoR.checkout && !jaTemCheckout){
+        var contextoCorrigido = infoR.checkin ? "checkin_checkout" : "checkout";
+        try{
+          var atualizadaR = await dbUpdate("solicitacoes_acomodacao", tarefaR.id, {contexto:contextoCorrigido, status:"bloqueada"}, mapSolicitacaoFromRow);
+          var idxR = state.solicitacoes.findIndex(function(x){ return x.id===tarefaR.id; });
+          if(idxR>-1) state.solicitacoes[idxR] = atualizadaR;
+        }catch(err){ console.error("Erro ao corrigir tarefa de lavagem com checkout que apareceu depois:", err); }
+      }
     }
   }
 
@@ -7620,7 +7638,7 @@
       html += '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>';
       html += '<p class="item-meta" style="margin:0 0 10px;">Setor: '+(EQUIPE_LABEL[u.equipe]||"não definido")+' — mude em Equipe → Setor.</p>';
       if(u.role !== "admin"){
-        if(u.equipe === "recepcao"){
+        if(u.equipe === "recepcao" || u.equipe === "guarda"){
           html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno(s) fixo(s) (checklist)</label>';
           html += '<div class="turno-fixo-checks" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">';
           state.turnos.forEach(function(t){
