@@ -209,10 +209,27 @@
   .proc-editor:focus{outline:2px solid var(--teal-700);outline-offset:-1px;}
   .proc-editor:empty:before{content:attr(data-placeholder);color:var(--ink-400);}
   .proc-editor img,.proc-leitura-conteudo img{max-width:100%;border-radius:8px;display:block;margin:10px 0;}
+  /* Tamanho e alinhamento da foto dentro do texto do procedimento — clica na
+     foto no editor pra escolher (pedido da Yara, pra poder deixar a foto
+     menor e do lado do texto, tipo um documento com foto + descrição). */
+  .proc-editor img.pimg-s,.proc-leitura-conteudo img.pimg-s{width:33%;}
+  .proc-editor img.pimg-m,.proc-leitura-conteudo img.pimg-m{width:50%;}
+  .proc-editor img.pimg-l,.proc-leitura-conteudo img.pimg-l{width:100%;}
+  .proc-editor img.pimg-left,.proc-leitura-conteudo img.pimg-left{float:left;margin:4px 14px 10px 0;}
+  .proc-editor img.pimg-right,.proc-leitura-conteudo img.pimg-right{float:right;margin:4px 0 10px 14px;}
+  .proc-editor img.pimg-center,.proc-leitura-conteudo img.pimg-center{float:none;display:block;margin:10px auto;}
+  .proc-editor img.proc-img-selected{outline:2px dashed var(--teal-700);outline-offset:2px;cursor:pointer;}
+  .proc-editor img{cursor:pointer;}
+  .proc-img-toolbar{position:fixed;z-index:9999;display:none;gap:3px;background:var(--ink-900,#232323);padding:5px;border-radius:9px;box-shadow:0 4px 14px rgba(0,0,0,.28);}
+  .proc-img-toolbar button{border:none;background:rgba(255,255,255,.14);color:#fff;font-size:12px;font-weight:700;padding:7px 10px;border-radius:6px;cursor:pointer;line-height:1;font-family:inherit;}
+  .proc-img-toolbar button.active{background:var(--teal-700);}
+  .proc-img-toolbar button:hover{background:rgba(255,255,255,.26);}
+  .proc-img-toolbar .proc-img-sep{width:1px;background:rgba(255,255,255,.2);margin:2px 2px;}
   .proc-editor h3,.proc-leitura-conteudo h3{margin:16px 0 6px;font-size:18px;}
   .proc-editor ul,.proc-leitura-conteudo ul,.proc-editor ol,.proc-leitura-conteudo ol{padding-left:22px;margin:8px 0;}
   .proc-editor a,.proc-leitura-conteudo a{color:var(--teal-700);}
   .proc-leitura-conteudo{font-size:15.5px;line-height:1.7;color:var(--ink-900);}
+  .proc-leitura-conteudo:after,.proc-editor:after{content:"";display:table;clear:both;}
   .proc-leitura-conteudo p{margin:0 0 12px;}
   .qty-stepper{display:flex;align-items:center;gap:10px;}
   .qty-stepper button{
@@ -698,6 +715,18 @@
         <button type="button" class="proc-ed-btn" id="prInserirLinkBtn" title="Inserir link">+ Link</button>
       </div>
       <div id="pr_text_editor" class="proc-editor" contenteditable="true" data-placeholder="Descreva o passo a passo…"></div>
+      <p class="count-intro" style="margin:4px 0 0;">Dica: depois de inserir uma foto, toque nela pra escolher o tamanho e se ela fica do lado do texto ou embaixo.</p>
+      <div id="procImgToolbar" class="proc-img-toolbar">
+        <button type="button" data-imgcmd="size" data-imgval="pimg-s" title="Foto pequena">P</button>
+        <button type="button" data-imgcmd="size" data-imgval="pimg-m" title="Foto média">M</button>
+        <button type="button" data-imgcmd="size" data-imgval="pimg-l" title="Foto grande (largura toda)">G</button>
+        <span class="proc-img-sep"></span>
+        <button type="button" data-imgcmd="align" data-imgval="pimg-left" title="Foto do lado esquerdo, texto ao redor">⟵ lado</button>
+        <button type="button" data-imgcmd="align" data-imgval="pimg-center" title="Foto centralizada, sozinha na linha">centro</button>
+        <button type="button" data-imgcmd="align" data-imgval="pimg-right" title="Foto do lado direito, texto ao redor">lado ⟶</button>
+        <span class="proc-img-sep"></span>
+        <button type="button" data-imgcmd="remove" title="Remover esta foto">remover</button>
+      </div>
       <input type="file" id="pr_text_img" accept="image/*" style="display:none;">
       <label>Foto de capa (opcional)</label>
       <div class="photo-preview-wrap" id="prPhotoPicker">
@@ -4217,9 +4246,10 @@
     document.getElementById("pr_photo").value = "";
     setProcPhotoUI(p ? p.photo : null);
     document.getElementById("procedimentoDelete").style.display = p ? "block" : "none";
+    procImgEsconderToolbar();
     procedimentoOverlay.classList.add("open");
   }
-  function closeProcedimentoSheet(){ procedimentoOverlay.classList.remove("open"); editingProcedimentoId = null; }
+  function closeProcedimentoSheet(){ procImgEsconderToolbar(); procedimentoOverlay.classList.remove("open"); editingProcedimentoId = null; }
 
   // Tela de leitura do procedimento — abre como uma folha completa, com o
   // conteúdo formatado (texto rico) igual foi criado, sem o aperto da versão
@@ -4281,6 +4311,74 @@
       document.execCommand("insertImage", false, dataUrl);
     });
   });
+  // Seleção/ajuste de foto dentro do texto do procedimento — clica na foto
+  // pra abrir uma barrinha e escolher tamanho (P/M/G) e se ela fica do lado
+  // do texto (esquerda/direita, com o texto passando ao redor) ou sozinha
+  // centralizada/embaixo. Sem isso a foto inserida sempre ficava em
+  // largura total, empilhada — pedido da Yara era poder deixar ela menor e
+  // do lado, tipo um documento de referência com foto + descrição.
+  var procImgToolbar = document.getElementById("procImgToolbar");
+  var selectedProcImg = null;
+  function procImgAtualizarBotoesAtivos(){
+    if(!selectedProcImg) return;
+    procImgToolbar.querySelectorAll("button[data-imgval]").forEach(function(b){
+      b.classList.toggle("active", selectedProcImg.classList.contains(b.getAttribute("data-imgval")));
+    });
+  }
+  function procImgPosicionarToolbar(img){
+    var r = img.getBoundingClientRect();
+    var top = r.top - 46;
+    if(top < 8) top = Math.min(r.bottom + 8, window.innerHeight - 46);
+    var left = Math.min(Math.max(r.left, 8), window.innerWidth - 300);
+    procImgToolbar.style.top = top + "px";
+    procImgToolbar.style.left = left + "px";
+    procImgToolbar.style.display = "flex";
+  }
+  function procImgSelecionar(img){
+    if(selectedProcImg) selectedProcImg.classList.remove("proc-img-selected");
+    selectedProcImg = img;
+    img.classList.add("proc-img-selected");
+    procImgPosicionarToolbar(img);
+    procImgAtualizarBotoesAtivos();
+  }
+  function procImgEsconderToolbar(){
+    if(selectedProcImg) selectedProcImg.classList.remove("proc-img-selected");
+    selectedProcImg = null;
+    procImgToolbar.style.display = "none";
+  }
+  procTextEditor.addEventListener("click", function(e){
+    var img = e.target.closest && e.target.closest("img");
+    if(img && procTextEditor.contains(img)) procImgSelecionar(img);
+    else procImgEsconderToolbar();
+  });
+  procImgToolbar.querySelectorAll("button[data-imgcmd]").forEach(function(btn){
+    btn.onmousedown = function(e){ e.preventDefault(); }; // não perde a foto selecionada
+    btn.onclick = function(){
+      if(!selectedProcImg) return;
+      var cmd = btn.getAttribute("data-imgcmd"), val = btn.getAttribute("data-imgval");
+      if(cmd === "size"){
+        selectedProcImg.classList.remove("pimg-s","pimg-m","pimg-l");
+        selectedProcImg.classList.add(val);
+      } else if(cmd === "align"){
+        selectedProcImg.classList.remove("pimg-left","pimg-right","pimg-center");
+        selectedProcImg.classList.add(val);
+        if(val !== "pimg-center" && !selectedProcImg.classList.contains("pimg-s") && !selectedProcImg.classList.contains("pimg-m") && !selectedProcImg.classList.contains("pimg-l")){
+          selectedProcImg.classList.add("pimg-m"); // do lado sem tamanho escolhido ainda: usa médio, senão não sobra espaço pro texto
+        }
+      } else if(cmd === "remove"){
+        selectedProcImg.remove();
+        procImgEsconderToolbar();
+        return;
+      }
+      procImgAtualizarBotoesAtivos();
+    };
+  });
+  document.addEventListener("click", function(e){
+    if(!selectedProcImg) return;
+    if(procImgToolbar.contains(e.target) || e.target === selectedProcImg) return;
+    procImgEsconderToolbar();
+  });
+
   document.getElementById("prInserirLinkBtn").onmousedown = function(e){ e.preventDefault(); };
   document.getElementById("prInserirLinkBtn").onclick = function(){
     var url = window.prompt("Link (https://...)");
@@ -4348,6 +4446,7 @@
   document.getElementById("procedimentoForm").addEventListener("submit", async function(e){
     e.preventDefault();
     if(!podeEditar("procedimentos")){ showToast("Você não tem permissão para editar procedimentos"); return; }
+    procImgEsconderToolbar(); // tira a seleção/contorno da foto antes de salvar o HTML
     var title = document.getElementById("pr_title").value.trim();
     var text = sanitizeProcHtml(document.getElementById("pr_text_editor").innerHTML);
     if(!htmlToPlainText(text)) text = ""; // editor "vazio" pode deixar um <br> sozinho
