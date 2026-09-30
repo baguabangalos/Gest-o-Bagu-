@@ -960,7 +960,8 @@
   }
   function mapTurnoAtividadeFromRow(r){
     return {id:r.id, turnoId:r.turno_id, titulo:r.titulo, tipo:r.tipo||"livre", horaInicio:r.hora_inicio, horaFim:r.hora_fim,
-      intervaloMinutos:r.intervalo_minutos||null, ordem:r.ordem, diasSemana:r.dias_semana||[], observacao:r.observacao||null};
+      intervaloMinutos:r.intervalo_minutos||null, ordem:r.ordem, diasSemana:r.dias_semana||[], observacao:r.observacao||null,
+      vinculoAtividadeId:r.vinculo_atividade_id||null};
   }
   var DIAS_SEMANA_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   function atividadeAplicaNoDia(atividade, dataStr){
@@ -971,6 +972,43 @@
   function diasSemanaLabel(diasSemana){
     if(!diasSemana || diasSemana.length===0) return "todo dia";
     return diasSemana.slice().sort().map(function(d){ return DIAS_SEMANA_LABELS[d]; }).join(", ");
+  }
+  // Normaliza título pra comparação (sem acento, minúsculo, sem espaços
+  // extras) — usado pra reconhecer automaticamente a "mesma atividade"
+  // cadastrada em mais de um turno.
+  function tituloNormalizado(titulo){
+    return (titulo||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().trim().replace(/\s+/g," ");
+  }
+  // Atividades "irmãs": mesma atividade cadastrada em outro(s) turno(s),
+  // reconhecida automaticamente (mesmo título normalizado + mesmo horário
+  // de início) OU por vínculo manual (vinculoAtividadeId apontando uma
+  // pra outra, nos dois sentidos).
+  function atividadesIrmas(atividade){
+    if(!atividade) return [];
+    var tituloN = tituloNormalizado(atividade.titulo);
+    return state.turnoAtividades.filter(function(o){
+      if(o.id === atividade.id || o.turnoId === atividade.turnoId) return false;
+      var mesmoTituloEHorario = tituloNormalizado(o.titulo) === tituloN && (o.horaInicio||null) === (atividade.horaInicio||null);
+      var vinculada = (o.vinculoAtividadeId === atividade.id) || (atividade.vinculoAtividadeId === o.id);
+      return mesmoTituloEHorario || vinculada;
+    });
+  }
+  // Monta as <option> do seletor "é a mesma atividade de..." — lista as
+  // atividades de TODOS os outros turnos, pra vincular manualmente duas
+  // que tenham títulos diferentes mas sejam o mesmo serviço.
+  function vinculoOptionsHtml(excludeTurnoId, selectedId){
+    var html = '<option value="">— nenhuma (não é compartilhada, ou já bate pelo título+horário) —</option>';
+    state.turnos.slice().sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); }).forEach(function(t){
+      if(t.id === excludeTurnoId) return;
+      var ativs = state.turnoAtividades.filter(function(a){ return a.turnoId===t.id; });
+      if(ativs.length===0) return;
+      html += '<optgroup label="'+escapeHtml(t.nome)+'">';
+      ativs.forEach(function(a){
+        html += '<option value="'+a.id+'"'+(selectedId===a.id?" selected":"")+'>'+escapeHtml(a.titulo)+(a.horaInicio?(" ("+escapeHtml(a.horaInicio)+")"):"")+'</option>';
+      });
+      html += '</optgroup>';
+    });
+    return html;
   }
   function mapEscalaSemanalFromRow(r){
     return {id:r.id, userId:r.user_id, diaSemana:r.dia_semana, tipo:r.tipo||"folga", horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null};
@@ -1054,7 +1092,11 @@
       revisaoConcluidaEm:(r.revisao_concluida_em?new Date(r.revisao_concluida_em).getTime():null), revisaoConcluidaPor:r.revisao_concluida_por,
       transferenciaDe:r.transferencia_de||null, iniciadoViaQr:!!r.iniciado_via_qr, observacao:r.observacao||null,
       criadoPorNome:r.criado_por_nome||null, atualizadoPor:r.atualizado_por||null,
-      atualizadoPorNome:r.atualizado_por_nome||null, atualizadoEm:(r.atualizado_em?new Date(r.atualizado_em).getTime():null)};
+      atualizadoPorNome:r.atualizado_por_nome||null, atualizadoEm:(r.atualizado_em?new Date(r.atualizado_em).getTime():null),
+      saunaProximoCheckEm:(r.sauna_proximo_check_em?new Date(r.sauna_proximo_check_em).getTime():null),
+      saunaNotificadoEm:(r.sauna_notificado_em?new Date(r.sauna_notificado_em).getTime():null),
+      saunaUltimaChecagemEm:(r.sauna_ultima_checagem_em?new Date(r.sauna_ultima_checagem_em).getTime():null),
+      saunaUltimaChecagemPor:r.sauna_ultima_checagem_por||null, saunaUltimaChecagemPorNome:r.sauna_ultima_checagem_por_nome||null};
   }
 
   // ---------- Helpers genéricos de leitura/escrita ----------
@@ -1488,9 +1530,11 @@
     document.getElementById("appShell").style.display = "";
     document.getElementById("userBadge").textContent = currentUser.nome + (currentUser.role==="admin" ? " · admin" : "");
     state = await loadAllFromSupabase();
-    if(currentUser.role === "admin" || podeVer("limpeza") || podeVer("recepcao")){
-      await garantirTarefasLavagemHoje();
-    }
+    // A criação das tarefas de "Preparo do quarto" do dia não depende mais
+    // de alguém abrir o app — roda sozinha no servidor (Edge Function
+    // "gerar-tarefas-lavagem" + agendamento), sempre a partir das 7h da
+    // manhã, com ajustes a cada 30min. Ver garantirTarefasLavagemHoje mais
+    // abaixo — não é mais chamada daqui de propósito.
     renderApp();
     setupRealtimeNotifications();
     if(currentUser.role === "admin" || podeEditar("checklist_turno")){
@@ -4821,6 +4865,61 @@
     }
   }
 
+  // Igual ao ensureTurnoExecucaoAtual, mas pra uma data de ciclo específica
+  // (não necessariamente "hoje") e sem o efeito colateral de mandar o
+  // e-mail do turno anterior — usado só pra propagar uma atividade marcada
+  // num turno pro(s) turno(s) "irmão(s)" no mesmo dia.
+  async function ensureTurnoExecucaoParaData(turno, data){
+    var existente = state.turnoExecucoes.find(function(e){ return e.turnoId===turno.id && e.data===data; });
+    if(existente) return existente;
+    try{
+      var nova = await dbInsert("turno_execucoes", {id:uid(), turno_id:turno.id, data:data}, mapTurnoExecucaoFromRow);
+      state.turnoExecucoes.push(nova);
+      return nova;
+    }catch(err){
+      console.error(err);
+      var res2 = await sb.from("turno_execucoes").select("*").eq("turno_id", turno.id).eq("data", data).maybeSingle();
+      if(res2.data){
+        var mapped = mapTurnoExecucaoFromRow(res2.data);
+        if(!state.turnoExecucoes.some(function(e){ return e.id===mapped.id; })) state.turnoExecucoes.push(mapped);
+        return mapped;
+      }
+      throw err;
+    }
+  }
+
+  // Marca a mesma atividade como "feita" nos turnos irmãos (mesmo título +
+  // horário, ou vínculo manual) — pra quem já fez não precisar repetir.
+  // Silenciosa: erro num turno irmão não deve travar a marcação principal.
+  async function propagarAtividadeParaOutrosTurnos(atividade, execucao, status, motivo, atrasado, slotHora){
+    if(status !== "feito") return;
+    var irmas = atividadesIrmas(atividade);
+    for(var i=0; i<irmas.length; i++){
+      var irma = irmas[i];
+      try{
+        var turnoIrmao = state.turnos.find(function(t){ return t.id===irma.turnoId; });
+        if(!turnoIrmao) continue;
+        var execIrmao = await ensureTurnoExecucaoParaData(turnoIrmao, execucao.data);
+        var existente = slotHora ? itemExecucaoSlot(execIrmao.id, irma.id, slotHora) : atividadeExecucaoFor(execIrmao.id, irma.id);
+        if(existente && existente.status === "feito") continue; // já feita lá, não sobrescreve
+        var payload = {status:status, motivo:(motivo||null), atrasado: !!atrasado, marcado_em:new Date().toISOString(),
+          marcado_por:(currentUser?currentUser.nome:null)+" (via "+ (state.turnos.find(function(t){return t.id===atividade.turnoId;})||{}).nome +")"};
+        if(existente){
+          var upd = await dbUpdate("turno_atividade_execucoes", existente.id, payload, mapTurnoAtividadeExecucaoFromRow);
+          var idx = state.turnoAtividadeExecucoes.findIndex(function(x){ return x.id===existente.id; });
+          if(idx>-1) state.turnoAtividadeExecucoes[idx] = upd;
+        } else {
+          payload.id = uid(); payload.turno_execucao_id = execIrmao.id; payload.turno_atividade_id = irma.id;
+          if(slotHora) payload.slot_hora = slotHora;
+          var nova = await dbInsert("turno_atividade_execucoes", payload, mapTurnoAtividadeExecucaoFromRow);
+          state.turnoAtividadeExecucoes.push(nova);
+        }
+      }catch(err){
+        console.error("Erro ao propagar atividade pro turno irmão", err);
+      }
+    }
+  }
+
   function atividadeExecucaoFor(execucaoId, atividadeId){
     return state.turnoAtividadeExecucoes.find(function(x){ return x.turnoExecucaoId===execucaoId && x.turnoAtividadeId===atividadeId && !x.slotHora; });
   }
@@ -4936,6 +5035,10 @@
         '</div>' +
       '</div>';
       html += '<textarea class="nova-atividade-obs" rows="2" placeholder="Observação (opcional) — instrução que aparece toda vez que essa atividade repetir" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;"></textarea>';
+      html += '<label class="item-meta" style="display:block;margin-top:6px;">É a mesma atividade de outro turno? (opcional, só se o título for diferente)' +
+        '<select class="nova-atividade-vinculo" style="width:100%;margin-top:2px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:12.5px;">' +
+        vinculoOptionsHtml(t.id, null) +
+        '</select></label>';
       html += '</div>';
     });
     html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;'+(turnosOrdenados.length>0?'border-top:1px solid var(--line);padding-top:14px;':'')+'align-items:center;">' +
@@ -5033,8 +5136,10 @@
           var ordemAtual = state.turnoAtividades.filter(function(a){ return a.turnoId===turnoId; }).length;
           var diasSemana = Array.prototype.slice.call(block.querySelectorAll(".nova-atividade-dia:checked")).map(function(cb){ return parseInt(cb.value,10); });
           var obsTxt = block.querySelector(".nova-atividade-obs").value.trim();
+          var vinculoSel = block.querySelector(".nova-atividade-vinculo");
+          var vinculoId = vinculoSel && vinculoSel.value ? vinculoSel.value : null;
           try{
-            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana, observacao:(obsTxt||null)}, mapTurnoAtividadeFromRow);
+            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId}, mapTurnoAtividadeFromRow);
             state.turnoAtividades.push(nova);
             showToast("Atividade adicionada"); renderChecklistTurno();
           }catch(err){
@@ -5075,6 +5180,10 @@
           '</div>' +
           '<label>Observação (opcional)</label>' +
           '<textarea id="eaObs" rows="2" style="width:100%;padding:10px 12px;margin-bottom:4px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;">'+escapeHtml(a.observacao||"")+'</textarea>' +
+          '<label style="margin-top:6px;">É a mesma atividade de outro turno? (opcional, só se o título for diferente)</label>' +
+          '<select id="eaVinculo" style="width:100%;padding:10px 12px;margin-bottom:4px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:12.5px;background:var(--sand-50);">' +
+          vinculoOptionsHtml(a.turnoId, a.vinculoAtividadeId) +
+          '</select>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="eaCancel">Cancelar</button>' +
             '<button type="button" class="btn-primary" id="eaSalvar">'+ic("check")+' Salvar</button>' +
@@ -5110,9 +5219,11 @@
       }
       var diasSemana = Array.prototype.slice.call(overlay.querySelectorAll(".eaDia:checked")).map(function(cb){ return parseInt(cb.value,10); });
       var obsTxt = document.getElementById("eaObs").value.trim();
+      var vinculoSel = document.getElementById("eaVinculo");
+      var vinculoId = vinculoSel && vinculoSel.value ? vinculoSel.value : null;
       var btn = document.getElementById("eaSalvar"); btn.disabled = true;
       try{
-        var atualizada = await dbUpdate("turno_atividades", a.id, {titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, dias_semana:diasSemana, observacao:(obsTxt||null)}, mapTurnoAtividadeFromRow);
+        var atualizada = await dbUpdate("turno_atividades", a.id, {titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId}, mapTurnoAtividadeFromRow);
         var idx = state.turnoAtividades.findIndex(function(x){ return x.id===a.id; });
         if(idx>-1) state.turnoAtividades[idx] = atualizada;
         overlay.remove();
@@ -5470,6 +5581,8 @@
         var nova = await dbInsert("turno_atividade_execucoes", payload, mapTurnoAtividadeExecucaoFromRow);
         state.turnoAtividadeExecucoes.push(nova);
       }
+      var atividadeObj = state.turnoAtividades.find(function(a){ return a.id===atividadeId; });
+      if(atividadeObj) await propagarAtividadeParaOutrosTurnos(atividadeObj, execucao, status, motivo, atrasado, slotHora);
       showToast(status==="feito" ? (atrasado ? "Marcado como feito (atrasado)" : "Marcado como feito") : "Registrado como não realizado");
       renderApp();
     }catch(err){
@@ -5924,8 +6037,8 @@
   var TIPO_ICON = {limpeza:""+ic('broom')+"", frigobar:""+ic('cup')+"", lavagem:""+ic('bed')+"", ventilacao:""+ic('wind')+"", roupa_cama:""+ic('basket')+"", sauna:""+ic('droplet')+"", lenha:""+ic('flame')+""};
   var TIPOS_RECEPCAO_ONLY = {frigobar:true, sauna:true, lenha:true};
   function isRecepcaoOnly(tipo){ return !!TIPOS_RECEPCAO_ONLY[tipo]; }
-  var STATUS_DOT = {bloqueada:""+ic('lockClosed')+"", pendente:""+ic('dotRed')+"", em_andamento:""+ic('dotAmber')+"", concluido:""+ic('dotGreen')+""};
-  var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído"};
+  var STATUS_DOT = {bloqueada:""+ic('lockClosed')+"", pendente:""+ic('dotRed')+"", em_andamento:""+ic('dotAmber')+"", concluido:""+ic('dotGreen')+"", monitorando:""+ic('dotAmber')+""};
+  var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído", monitorando:"Sauna ligada — monitorando"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
 
   function acomodacaoNome(id){
@@ -6212,9 +6325,14 @@
       }
     } else if(s.status === "em_andamento"){
       html += '<p class="item-meta">iniciado por '+escapeHtml(nomeStaff(s.iniciadoPor))+' · há '+fmtDuration(minutesAgo(s.iniciadoEm||s.criadoEm))+(s.iniciadoViaQr?' · <span style="color:var(--teal-700);font-weight:700;">'+ic("camera")+' confirmado por QR code na acomodação</span>':'')+'</p>';
+    } else if(s.status === "monitorando"){
+      var ligadaPorTxt = s.saunaUltimaChecagemPorNome || nomeStaff(s.iniciadoPor||s.concluidoPor);
+      var faltam = s.saunaProximoCheckEm ? Math.round((s.saunaProximoCheckEm - Date.now())/60000) : null;
+      html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">'+ic("droplet")+' ligada por '+escapeHtml(ligadaPorTxt||"—")+
+        (faltam!=null ? (faltam>0 ? (' · checar em '+faltam+' min') : ' · já passou da hora de checar') : '') + '</p>';
     } else {
       var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "sauna" ? "ligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
+      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "sauna" ? "desligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
       html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
     }
     if(currentUser && currentUser.role === "admin"){
@@ -6242,6 +6360,9 @@
         html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+editarItensHtml+obsHtml+histHtml+lixoHtml+'</div>';
       } else if(s.status === "em_andamento"){
         html += '<div class="item-actions"><button class="btn btn-in" data-act="finalizar" data-id="'+s.id+'">'+ic("check")+' Finalizar</button>'+obsHtml+histHtml+lixoHtml+'</div>';
+      } else if(s.status === "monitorando"){
+        html += '<div class="item-actions"><button class="btn btn-out" data-act="saunaAindaEmUso" data-id="'+s.id+'">'+ic("clock")+' Ainda em uso</button>'+
+          '<button class="btn btn-in" data-act="saunaDesliguei" data-id="'+s.id+'">'+ic("check")+' Desliguei</button>'+obsHtml+histHtml+lixoHtml+'</div>';
       } else if(obsHtml || lixoHtml){
         html += '<div class="item-actions">'+obsHtml+histHtml+lixoHtml+'</div>';
       }
@@ -6317,6 +6438,35 @@
             showToast("Liberado para a limpeza"); renderApp();
           } else if(act === "finalizar" && s.tipo === "frigobar"){
             abrirAbastecerSheet(s);
+          } else if(act === "finalizar" && s.tipo === "sauna"){
+            // Sauna ligada não fecha na hora — entra em monitoramento por 1h,
+            // depois disso a recepção é avisada pra checar/desligar.
+            var proximoCheck = new Date(Date.now() + 60*60*1000).toISOString();
+            var sSauna = await dbUpdate("solicitacoes_acomodacao", id, {status:"monitorando",
+              sauna_proximo_check_em: proximoCheck, sauna_notificado_em: null,
+              sauna_ultima_checagem_em: new Date().toISOString(),
+              sauna_ultima_checagem_por: (currentUser?currentUser.id:null),
+              sauna_ultima_checagem_por_nome: (currentUser?currentUser.nome:null)}, mapSolicitacaoFromRow);
+            var idxSauna = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idxSauna>-1) state.solicitacoes[idxSauna] = sSauna;
+            showToast("Sauna ligada — em 1h a recepção é avisada pra checar"); renderApp();
+          } else if(act === "saunaAindaEmUso"){
+            var proximoCheck2 = new Date(Date.now() + 60*60*1000).toISOString();
+            var sS2 = await dbUpdate("solicitacoes_acomodacao", id, {
+              sauna_proximo_check_em: proximoCheck2, sauna_notificado_em: null,
+              sauna_ultima_checagem_em: new Date().toISOString(),
+              sauna_ultima_checagem_por: (currentUser?currentUser.id:null),
+              sauna_ultima_checagem_por_nome: (currentUser?currentUser.nome:null)}, mapSolicitacaoFromRow);
+            var idxS2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idxS2>-1) state.solicitacoes[idxS2] = sS2;
+            showToast("Certo — checamos de novo em 1h"); renderApp();
+          } else if(act === "saunaDesliguei"){
+            var sS3 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido",
+              concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null),
+              sauna_proximo_check_em: null, sauna_notificado_em: null}, mapSolicitacaoFromRow);
+            var idxS3 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
+            if(idxS3>-1) state.solicitacoes[idxS3] = sS3;
+            showToast("Sauna desligada"); renderApp();
           } else if(act === "finalizar"){
             if(s.tipo === "lavagem" || s.tipo === "limpeza"){
               abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarFinalizarSolicitacao(id); });
@@ -6409,6 +6559,10 @@
     return {mesmoQuartoIds:mesmoQuartoIds, transferenciasPorAcomodacaoCheckin:transferenciasPorAcomodacaoCheckin};
   }
 
+  // Não é mais chamada automaticamente (ver bootApp) — a criação das
+  // tarefas do dia agora roda no servidor (Edge Function
+  // "gerar-tarefas-lavagem" + pg_cron), pra não depender de quem abre o
+  // app e nunca duplicar. Função mantida aqui só como referência.
   async function garantirTarefasLavagemHoje(){
     if(!state.estoque.hospedinOcupacao || state.estoque.hospedinOcupacao.length === 0) return;
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
@@ -6442,7 +6596,14 @@
             var payloadManut = {id:uid(), acomodacao_id:id, tipo:"limpeza", contexto:"estadia", origem:"sistema", status:"pendente"};
             var sManut = await dbInsert("solicitacoes_acomodacao", payloadManut, mapSolicitacaoFromRow);
             state.solicitacoes.unshift(sManut);
-          }catch(err){ console.error("Erro ao criar limpeza de renovação (mesmo quarto):", err); }
+          }catch(err){
+            // Duas pessoas abrindo o app ao mesmo tempo podiam gerar a
+            // mesma tarefa duas vezes (cada uma via "ainda não existe" antes
+            // da outra terminar de criar). O índice único no banco barra a
+            // segunda tentativa — aqui é só ignorar sem erro, é esperado.
+            if(err && err.code === "23505"){ console.log("Tarefa de renovação já criada por outra sessão, ignorando duplicata."); }
+            else console.error("Erro ao criar limpeza de renovação (mesmo quarto):", err);
+          }
         }
         continue;
       }
@@ -6470,7 +6631,14 @@
           searchable_code:info.searchableCode||null, transferencia_de:transferenciaDeNome};
         var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
         state.solicitacoes.unshift(s);
-      }catch(err){ console.error("Erro ao criar tarefa de lavagem:", err); }
+      }catch(err){
+        // Mesma proteção contra duas sessões criando a mesma tarefa de
+        // lavagem ao mesmo tempo — o índice único no banco (acomodação +
+        // tipo + dia) garante que só uma vinga; a outra cai aqui e é
+        // ignorada de propósito, sem toast de erro pro usuário.
+        if(err && err.code === "23505"){ console.log("Tarefa de lavagem já criada por outra sessão, ignorando duplicata."); }
+        else console.error("Erro ao criar tarefa de lavagem:", err);
+      }
     }
 
     // Reconciliação: às vezes o checkout de uma acomodação só aparece no
@@ -7586,6 +7754,20 @@
           html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
         });
       }
+
+      // Sauna: pedidos aguardando ligar + as que já estão ligadas e em
+      // monitoramento (esperando 1h pra checar/desligar) — antes não
+      // aparecia em lugar nenhum da Recepção.
+      var saunaPend = state.solicitacoes.filter(function(s){ return s.tipo === "sauna" && s.status === "pendente"; });
+      var saunaMonit = state.solicitacoes.filter(function(s){ return s.tipo === "sauna" && s.status === "monitorando"; })
+        .sort(function(a,b){ return (a.saunaProximoCheckEm||0) - (b.saunaProximoCheckEm||0); });
+      if(saunaPend.length || saunaMonit.length){
+        html += '<div class="section-title" style="margin-top:18px;">'+ic("droplet")+' Sauna</div>';
+        saunaPend.concat(saunaMonit).forEach(function(s){
+          var atrasada = s.status === "monitorando" && s.saunaProximoCheckEm && Date.now() >= s.saunaProximoCheckEm;
+          html += '<div class="card manut-card"'+(atrasada?' style="border:2px solid var(--amber-600);background:var(--amber-50,#fff7e6);"':'')+'>' + renderSolicitacaoCard(s) + '</div>';
+        });
+      }
       html += buildPainelHtml(true);
     }
 
@@ -7618,6 +7800,16 @@
           '</select>' +
           '<textarea id="limpezaRecepcaoObs" rows="2" placeholder="Observação (opcional) — ex: camas separadas" style="width:100%;padding:10px 12px;margin-top:8px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);resize:vertical;"></textarea>' +
           '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="solicitarLimpezaRecepcaoBtn" style="flex:1;">'+ic("broom")+' Solicitar limpeza</button></div>' +
+        '</div>';
+
+        html += '<div class="section-title" style="margin-top:22px;">'+ic("droplet")+' Registrar sauna ligada (avulso)</div>';
+        html += '<p class="count-intro">Pra quando a recepção liga a sauna sem o hóspede ter pedido pelo aplicativo. Já entra em monitoramento — em 1h avisa pra checar/desligar.</p>';
+        html += '<div class="card">' +
+          '<select id="saunaAvulsaSelect" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
+          '<option value="">Selecionar acomodação…</option>' +
+          todasAtivas.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
+          '</select>' +
+          '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="saunaAvulsaBtn" style="flex:1;">'+ic("droplet")+' Sauna ligada</button></div>' +
         '</div>';
 
         var elegiveis = acomodacoesElegiveisVentilacao();
@@ -7726,6 +7918,33 @@
         }catch(err){
           console.error(err); showToast("Erro ao solicitar");
           solicitarLimpezaBtn.disabled = false;
+        }
+      };
+    }
+
+    var saunaAvulsaBtn = main.querySelector("#saunaAvulsaBtn");
+    if(saunaAvulsaBtn){
+      saunaAvulsaBtn.onclick = async function(){
+        var sel = document.getElementById("saunaAvulsaSelect");
+        var acomodacaoId = sel.value;
+        if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
+        saunaAvulsaBtn.disabled = true;
+        try{
+          var proximoCheck = new Date(Date.now() + 60*60*1000).toISOString();
+          var payload = {id:uid(), acomodacao_id:acomodacaoId, tipo:"sauna", origem:"equipe", status:"monitorando",
+            criado_por:(currentUser?currentUser.id:null),
+            sauna_proximo_check_em: proximoCheck,
+            sauna_ultima_checagem_em: new Date().toISOString(),
+            sauna_ultima_checagem_por: (currentUser?currentUser.id:null),
+            sauna_ultima_checagem_por_nome: (currentUser?currentUser.nome:null)};
+          var s = await dbInsert("solicitacoes_acomodacao", payload, mapSolicitacaoFromRow);
+          state.solicitacoes.unshift(s);
+          showToast("Sauna registrada como ligada — em 1h avisamos pra checar");
+          renderApp();
+        }catch(err){
+          console.error(err); showToast("Erro ao registrar");
+        }finally{
+          saunaAvulsaBtn.disabled = false;
         }
       };
     }
