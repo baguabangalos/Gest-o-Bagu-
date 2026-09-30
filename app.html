@@ -1680,6 +1680,11 @@
   function icDot(color){
     return '<svg width="10" height="10" viewBox="0 0 24 24" style="vertical-align:1px;margin-right:6px;flex-shrink:0;"><circle cx="12" cy="12" r="9" style="fill:'+color+'"/></svg>';
   }
+  // Bolinha maior, usada no status de cada acomodação liberada pra limpeza
+  // (pedido da Yara pra ficar mais fácil de ver de longe/num relance).
+  function icDotBig(color){
+    return '<svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-3px;margin-right:7px;flex-shrink:0;"><circle cx="12" cy="12" r="9" style="fill:'+color+'"/></svg>';
+  }
   function ic(name){
     if(name==="dotRed") return icDot("var(--red-600)");
     if(name==="dotAmber") return icDot("var(--amber-600)");
@@ -6037,7 +6042,7 @@
   var TIPO_ICON = {limpeza:""+ic('broom')+"", frigobar:""+ic('cup')+"", lavagem:""+ic('bed')+"", ventilacao:""+ic('wind')+"", roupa_cama:""+ic('basket')+"", sauna:""+ic('droplet')+"", lenha:""+ic('flame')+""};
   var TIPOS_RECEPCAO_ONLY = {frigobar:true, sauna:true, lenha:true};
   function isRecepcaoOnly(tipo){ return !!TIPOS_RECEPCAO_ONLY[tipo]; }
-  var STATUS_DOT = {bloqueada:""+ic('lockClosed')+"", pendente:""+ic('dotRed')+"", em_andamento:""+ic('dotAmber')+"", concluido:""+ic('dotGreen')+"", monitorando:""+ic('dotAmber')+""};
+  var STATUS_DOT = {bloqueada:""+ic('lockClosed')+"", pendente:icDotBig("var(--red-600)"), em_andamento:icDotBig("var(--amber-600)"), concluido:icDotBig("var(--teal-700)"), monitorando:icDotBig("var(--amber-600)")};
   var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído", monitorando:"Sauna ligada — monitorando"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
 
