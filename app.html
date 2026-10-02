@@ -884,18 +884,31 @@
   // megabytes, e como essas tabelas são recarregadas inteiras toda vez que
   // o app abre, o consumo de "egress" do Supabase explodia (o mesmo dado
   // pesado sendo baixado de novo, por todo mundo, o tempo todo).
-  // Agora essas fotos vão pro Supabase Storage (bucket "app-anexos"), e só
-  // guardamos um caminho curto (texto) na coluna. A imagem só é baixada de
-  // fato quando alguém efetivamente clica pra ver.
-  var ANEXOS_BUCKET = "app-anexos";
+  // Agora essas fotos vão pro Cloudflare R2 (que não cobra nada pra baixar
+  // dados), e só guardamos um caminho curto (texto) na coluna. A imagem só
+  // é baixada de fato quando alguém efetivamente clica pra ver, através de
+  // uma URL assinada que a Edge Function "r2-storage" gera na hora.
+  var R2_STORAGE_FUNCTION_URL = SUPABASE_URL + "/functions/v1/r2-storage";
   var _signedUrlCache = {}; // path -> {url, expiraEm}
+  async function chamarR2Storage(payload){
+    var resp = await fetch(R2_STORAGE_FUNCTION_URL, {
+      method: "POST",
+      headers: {"Content-Type":"application/json", "apikey": SUPABASE_ANON_KEY, "Authorization": "Bearer " + SUPABASE_ANON_KEY},
+      body: JSON.stringify(payload)
+    });
+    var json = await resp.json().catch(function(){ return {ok:false, error:"Resposta inválida do servidor."}; });
+    if(!resp.ok || !json.ok) throw new Error((json && json.error) || ("Falha na operação de armazenamento (status "+resp.status+")."));
+    return json;
+  }
   async function uploadAnexoParaStorage(dataUrl, prefixo){
     if(!dataUrl || typeof dataUrl !== "string" || dataUrl.indexOf("data:") !== 0) return dataUrl || null;
     var blob = await (await fetch(dataUrl)).blob();
     var ext = (blob.type && blob.type.indexOf("png") > -1) ? "png" : (blob.type && blob.type.indexOf("pdf") > -1 ? "pdf" : "jpg");
     var path = prefixo + "/" + Date.now() + "-" + Math.random().toString(36).slice(2,8) + "." + ext;
-    var up = await sb.storage.from(ANEXOS_BUCKET).upload(path, blob, {contentType: blob.type || "image/jpeg"});
-    if(up.error) throw up.error;
+    var contentType = blob.type || "image/jpeg";
+    var presign = await chamarR2Storage({action:"upload", path:path, contentType:contentType});
+    var putResp = await fetch(presign.url, {method:"PUT", headers:{"Content-Type":contentType}, body: blob});
+    if(!putResp.ok) throw new Error("Falha ao subir arquivo (status "+putResp.status+").");
     return path; // guardamos só o caminho, não a URL (a URL assinada expira)
   }
   // Recebe um caminho de storage (ou, por compatibilidade com dados antigos
@@ -905,10 +918,11 @@
     if(pathOuDataUrl.indexOf("data:") === 0 || pathOuDataUrl.indexOf("http") === 0) return pathOuDataUrl;
     var cached = _signedUrlCache[pathOuDataUrl];
     if(cached && cached.expiraEm > Date.now()) return cached.url;
-    var signed = await sb.storage.from(ANEXOS_BUCKET).createSignedUrl(pathOuDataUrl, 3600);
-    if(signed.error){ console.error(signed.error); return ""; }
-    _signedUrlCache[pathOuDataUrl] = {url: signed.data.signedUrl, expiraEm: Date.now() + 55*60*1000};
-    return signed.data.signedUrl;
+    try{
+      var json = await chamarR2Storage({action:"view", path:pathOuDataUrl});
+      _signedUrlCache[pathOuDataUrl] = {url: json.url, expiraEm: Date.now() + 55*60*1000};
+      return json.url;
+    }catch(err){ console.error(err); return ""; }
   }
   // Botão "ver foto" que só busca a imagem quando clicado, em vez de
   // carregar todas as fotos de uma lista inteira de uma vez.
@@ -916,6 +930,50 @@
     var url = await resolverUrlAnexo(path);
     if(url) abrirFotoViewer(url); else showToast("Não foi possível carregar a foto");
   };
+  // Resolve automaticamente qualquer <img data-anexo-path="..."> que aparecer
+  // em qualquer lugar da tela, sem precisar espalhar "await" por cada função
+  // de render (algumas são chamadas de vários lugares diferentes). Também
+  // resolve [data-anexo-href] (links de download) da mesma forma.
+  var _resolvendoAnexosNaTela = false;
+  function resolverAnexosNaTela(){
+    if(_resolvendoAnexosNaTela) return;
+    _resolvendoAnexosNaTela = true;
+    requestAnimationFrame(async function(){
+      _resolvendoAnexosNaTela = false;
+      var imgs = document.querySelectorAll("img[data-anexo-path]");
+      for(var i=0;i<imgs.length;i++){
+        var img = imgs[i];
+        var path = img.getAttribute("data-anexo-path");
+        img.removeAttribute("data-anexo-path");
+        resolverUrlAnexo(path).then(function(img){ return function(url){ if(url) img.src = url; }; }(img));
+      }
+      var links = document.querySelectorAll("[data-anexo-href]");
+      for(var j=0;j<links.length;j++){
+        var el = links[j];
+        var p = el.getAttribute("data-anexo-href");
+        el.removeAttribute("data-anexo-href");
+        resolverUrlAnexo(p).then(function(el){ return function(url){ if(url) el.setAttribute("href", url); }; }(el));
+      }
+    });
+  }
+  new MutationObserver(resolverAnexosNaTela).observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:["data-anexo-path","data-anexo-href"]});
+  // Sobe, para dentro do R2, qualquer imagem embutida como base64 dentro de
+  // um HTML (ex.: texto de procedimento com imagens coladas no meio do
+  // texto). Troca o src pela referência resolvível data-anexo-path.
+  async function processarImagensInlineProcedimento(html){
+    var div = document.createElement("div");
+    div.innerHTML = html || "";
+    var imgs = Array.prototype.slice.call(div.querySelectorAll("img[src^='data:']"));
+    for(var i=0;i<imgs.length;i++){
+      var img = imgs[i];
+      try{
+        var path = await uploadAnexoParaStorage(img.getAttribute("src"), "procedimentos-inline");
+        img.setAttribute("data-anexo-path", path);
+        img.removeAttribute("src");
+      }catch(err){ console.error("Falha ao subir imagem do procedimento:", err); }
+    }
+    return div.innerHTML;
+  }
 
   // Detecta quando a pessoa clica no link de "esqueci minha senha" do e-mail
   sb.auth.onAuthStateChange(function(event, session){
@@ -1637,7 +1695,8 @@
     var placeholder = document.getElementById("photoPlaceholder");
     var removeBtn = document.getElementById("photoRemove");
     if(pendingPhoto){
-      img.src = pendingPhoto;
+      if(pendingPhoto.indexOf("data:") === 0 || pendingPhoto.indexOf("http") === 0){ img.src = pendingPhoto; }
+      else { img.setAttribute("data-anexo-path", pendingPhoto); }
       img.style.display = "block";
       placeholder.style.display = "none";
       removeBtn.style.display = "block";
@@ -2320,7 +2379,7 @@
         '</div>' : '';
       card.innerHTML =
         '<div class="item-row">' +
-          '<div class="item-thumb">' + (it.photo ? '<img src="'+it.photo+'" alt="">' : '<span class="item-thumb-ph">'+ic("box")+'</span>') + '</div>' +
+          '<div class="item-thumb">' + (it.photo ? '<img data-anexo-path="'+escapeHtml(it.photo)+'" alt="">' : '<span class="item-thumb-ph">'+ic("box")+'</span>') + '</div>' +
           '<div class="item-main">' +
             '<p class="item-name">'+escapeHtml(it.name)+'</p>' +
             '<p class="item-meta">'+metaText+'</p>' +
@@ -2775,7 +2834,7 @@
         html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
           '<p style="margin:0 0 4px;font-size:14px;font-weight:700;">'+itensTxt+'</p>';
         if(p.observacao) html += '<p class="item-meta" style="margin-bottom:6px;">'+escapeHtml(p.observacao)+'</p>';
-        if(p.foto) html += '<img src="'+p.foto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:120px;object-fit:cover;border-radius:9px;display:block;margin-bottom:8px;cursor:pointer;">';
+        if(p.foto) html += '<img data-anexo-path="'+escapeHtml(p.foto)+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:120px;object-fit:cover;border-radius:9px;display:block;margin-bottom:8px;cursor:pointer;">';
         html += '<p class="item-meta" style="margin-bottom:8px;">pedido em '+fmtDate(p.criadoEm)+' por '+escapeHtml(nomeStaff(p.criadoPor))+'</p>' +
           '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("check")+' Chegou</button>' +
         '</div>';
@@ -2882,7 +2941,8 @@
       if(itens.length === 0){ showToast("Adicione pelo menos um item"); return; }
       var btn = document.getElementById("pedidoConfirm"); btn.disabled = true;
       try{
-        var payload = {id:uid(), itens:itens, foto:pedidoCompraFotoPendente,
+        var fotoParaSalvar = await uploadAnexoParaStorage(pedidoCompraFotoPendente, "pedidos-compra");
+        var payload = {id:uid(), itens:itens, foto:fotoParaSalvar,
           observacao:document.getElementById("pedidoObservacao").value.trim()||null,
           status:"pendente", criado_por:(currentUser?currentUser.id:null)};
         var p = await dbInsert("pedidos_compra", payload, mapPedidoCompraFromRow);
@@ -3210,10 +3270,11 @@
     var qtyUsado = trackUsage ? (parseFloat(document.getElementById("f_qtyUsado").value) || 0) : 0;
     if(!name || isNaN(qty) || isNaN(min)) return;
 
-    var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:pendingPhoto,
-      supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null};
     var submitBtn = e.target.querySelector('button[type="submit"]'); if(submitBtn) submitBtn.disabled = true;
     try{
+      var photoParaSalvar = await uploadAnexoParaStorage(pendingPhoto, "items");
+      var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:photoParaSalvar,
+        supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null};
       if(editingItemId){
         payload.editado_por = currentUser ? currentUser.id : null;
         payload.editado_em = new Date().toISOString();
@@ -3762,8 +3823,9 @@
           state.estoque.movements.unshift(movExtra);
         }
       }
+      var fotosAbastecimentoParaSalvar = abastecerFotosPendentes.length ? await Promise.all(abastecerFotosPendentes.map(function(f){ return uploadAnexoParaStorage(f, "abastecimento"); })) : null;
       var payload = {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null),
-        itens_faltando: faltando.length ? faltando : null, fotos_abastecimento: abastecerFotosPendentes.length ? abastecerFotosPendentes : null, itens: itensFinais};
+        itens_faltando: faltando.length ? faltando : null, fotos_abastecimento: fotosAbastecimentoParaSalvar, itens: itensFinais};
       var s2 = await dbUpdate("solicitacoes_acomodacao", s.id, payload, mapSolicitacaoFromRow);
       var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
       if(idx2>-1) state.solicitacoes[idx2] = s2;
@@ -4203,7 +4265,7 @@
       var plainText = htmlToPlainText(p.text);
       var preview = plainText ? escapeHtml(plainText.length > 140 ? plainText.slice(0,140)+"…" : plainText) : "";
       html += '<div class="card proc-card" data-id="'+p.id+'">';
-      if(p.photo) html += '<div style="width:100%;height:140px;border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--sand-100);"><img src="'+p.photo+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>';
+      if(p.photo) html += '<div style="width:100%;height:140px;border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--sand-100);"><img data-anexo-path="'+escapeHtml(p.photo)+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>';
       html += '<p class="item-name" style="margin:0 0 4px;">'+escapeHtml(p.title)+'</p>';
       if(preview) html += '<p class="item-meta" style="white-space:pre-wrap;">'+preview+'</p>';
       if(p.fileName) html += '<p class="item-meta" style="margin-top:6px;">'+ic("paperclip")+' '+escapeHtml(p.fileName)+'</p>';
@@ -4229,7 +4291,9 @@
     var placeholder = document.getElementById("prPhotoPlaceholder");
     var removeBtn = document.getElementById("prPhotoRemove");
     if(pendingProcPhoto){
-      img.src = pendingProcPhoto; img.style.display="block"; placeholder.style.display="none";
+      if(pendingProcPhoto.indexOf("data:") === 0 || pendingProcPhoto.indexOf("http") === 0){ img.src = pendingProcPhoto; }
+      else { img.setAttribute("data-anexo-path", pendingProcPhoto); }
+      img.style.display="block"; placeholder.style.display="none";
       removeBtn.style.display="block"; wrap.classList.add("has-photo");
     } else {
       img.style.display="none"; img.src=""; placeholder.style.display="block";
@@ -4243,7 +4307,9 @@
     if(pendingProcFile){
       info.style.display="block"; info.textContent = "Anexado: " + pendingProcFile.name;
       removeBtn.style.display="block";
-      openLink.style.display="block"; openLink.href = pendingProcFile.data; openLink.setAttribute("download", pendingProcFile.name);
+      openLink.style.display="block"; openLink.setAttribute("download", pendingProcFile.name);
+      if(pendingProcFile.data && (pendingProcFile.data.indexOf("data:") === 0 || pendingProcFile.data.indexOf("http") === 0)){ openLink.href = pendingProcFile.data; openLink.removeAttribute("data-anexo-href"); }
+      else { openLink.setAttribute("data-anexo-href", pendingProcFile.data); openLink.href = "#"; }
     } else {
       info.style.display="none"; removeBtn.style.display="none"; openLink.style.display="none";
     }
@@ -4278,11 +4344,11 @@
             '<button type="button" id="procLeituraFechar" style="background:none;border:none;padding:4px;color:var(--ink-600);cursor:pointer;">'+ic("close")+'</button>' +
             (podeEd ? '<button type="button" id="procLeituraEditar" class="btn-edit" title="Editar">'+ic("pencil")+' Editar</button>' : '') +
           '</div>' +
-          (p.photo ? '<div style="width:100%;max-height:260px;border-radius:14px;overflow:hidden;margin-bottom:14px;background:var(--sand-100);"><img src="'+p.photo+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>' : '') +
+          (p.photo ? '<div style="width:100%;max-height:260px;border-radius:14px;overflow:hidden;margin-bottom:14px;background:var(--sand-100);"><img data-anexo-path="'+escapeHtml(p.photo)+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>' : '') +
           '<h1 style="font-size:21px;margin:0 0 14px;">'+escapeHtml(p.title)+'</h1>' +
           '<div class="proc-leitura-conteudo">'+(p.text||'<p style="color:var(--ink-400);">Sem texto.</p>')+'</div>' +
           (p.videoUrl ? '<p style="margin-top:18px;"><a href="'+escapeHtml(p.videoUrl)+'" target="_blank" rel="noopener" style="color:var(--teal-700);font-weight:700;text-decoration:none;">'+ic("login")+' Assistir vídeo</a></p>' : '') +
-          (p.fileName ? '<p style="margin-top:10px;"><a href="'+escapeHtml(p.fileData)+'" download="'+escapeHtml(p.fileName)+'" style="color:var(--teal-700);font-weight:700;text-decoration:none;">'+ic("paperclip")+' '+escapeHtml(p.fileName)+'</a></p>' : '') +
+          (p.fileName ? '<p style="margin-top:10px;"><a data-anexo-href="'+escapeHtml(p.fileData)+'" href="#" download="'+escapeHtml(p.fileName)+'" style="color:var(--teal-700);font-weight:700;text-decoration:none;">'+ic("paperclip")+' '+escapeHtml(p.fileName)+'</a></p>' : '') +
           '<div style="margin-top:22px;padding-top:12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-400);">' +
             (p.criadoPorNome ? '<p style="margin:0 0 3px;">Criado por '+escapeHtml(p.criadoPorNome)+' em '+fmtDate(p.createdAt)+'</p>' : '<p style="margin:0 0 3px;">Criado em '+fmtDate(p.createdAt)+'</p>') +
             (p.atualizadoEm ? '<p style="margin:0 0 8px;">Última atualização por '+escapeHtml(p.atualizadoPorNome||"—")+' em '+fmtDate(p.atualizadoEm)+'</p>' : '') +
@@ -4467,10 +4533,14 @@
     if(!htmlToPlainText(text)) text = ""; // editor "vazio" pode deixar um <br> sozinho
     var videoUrl = document.getElementById("pr_videoUrl").value.trim();
     if(!title) return;
-    var payload = {title:title, text_content:text, photo:pendingProcPhoto, video_url:videoUrl||null,
-      file_name: pendingProcFile ? pendingProcFile.name : null,
-      file_data: pendingProcFile ? pendingProcFile.data : null};
+    var submitBtnProc = e.target.querySelector('button[type="submit"]'); if(submitBtnProc) submitBtnProc.disabled = true;
     try{
+      text = await processarImagensInlineProcedimento(text);
+      var photoParaSalvarProc = await uploadAnexoParaStorage(pendingProcPhoto, "procedimentos-capa");
+      var fileDataParaSalvar = pendingProcFile ? await uploadAnexoParaStorage(pendingProcFile.data, "procedimentos-anexo") : null;
+      var payload = {title:title, text_content:text, photo:photoParaSalvarProc, video_url:videoUrl||null,
+        file_name: pendingProcFile ? pendingProcFile.name : null,
+        file_data: fileDataParaSalvar};
       if(editingProcedimentoId){
         var p1 = await dbUpdate("procedimentos", editingProcedimentoId, payload, mapProcedimentoFromRow);
         var idx1 = state.procedimentos.findIndex(function(x){ return x.id===editingProcedimentoId; });
@@ -4486,6 +4556,8 @@
       renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao salvar procedimento");
+    }finally{
+      if(submitBtnProc) submitBtnProc.disabled = false;
     }
   });
 
@@ -6392,7 +6464,7 @@
     if(s.fotosAbastecimento && s.fotosAbastecimento.length){
       html += '<div style="display:grid;grid-template-columns:repeat('+Math.min(s.fotosAbastecimento.length,3)+',1fr);gap:5px;margin:6px 0;">' +
         s.fotosAbastecimento.map(function(foto){
-          return '<img src="'+foto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;height:70px;object-fit:cover;border-radius:8px;cursor:pointer;display:block;" alt="Foto do abastecimento">';
+          return '<img data-anexo-path="'+escapeHtml(foto)+'" onclick="abrirFotoViewer(this.src)" style="width:100%;height:70px;object-fit:cover;border-radius:8px;cursor:pointer;display:block;" alt="Foto do abastecimento">';
         }).join("") +
       '</div>';
     }
@@ -6401,7 +6473,7 @@
     }
     if(s.jacuzziConcluidaEm){
       html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("bath")+' Jacuzzi feita por '+escapeHtml(nomeStaff(s.jacuzziConcluidaPor))+'</p>';
-      if(s.jacuzziFoto) html += '<img src="'+s.jacuzziFoto+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;margin:6px 0;cursor:pointer;" alt="Foto da jacuzzi">';
+      if(s.jacuzziFoto) html += '<img data-anexo-path="'+escapeHtml(s.jacuzziFoto)+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:140px;object-fit:cover;border-radius:10px;display:block;margin:6px 0;cursor:pointer;" alt="Foto da jacuzzi">';
     }
     var mostrarInfoHospede = (s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkin") > -1) ||
       (s.tipo === "limpeza" && s.contexto === "estadia") ||
@@ -7724,7 +7796,7 @@
         try{
           if(tipo === "jacuzzi"){
             var payload = {jacuzzi_concluida_em:new Date().toISOString(), jacuzzi_concluida_por:(currentUser?currentUser.id:null)};
-            if(servicoGeralFotosPendentes[id]) payload.jacuzzi_foto = servicoGeralFotosPendentes[id];
+            if(servicoGeralFotosPendentes[id]) payload.jacuzzi_foto = await uploadAnexoParaStorage(servicoGeralFotosPendentes[id], "jacuzzi");
             var s = await dbUpdate("solicitacoes_acomodacao", id, payload, mapSolicitacaoFromRow);
             var idx = state.solicitacoes.findIndex(function(x){ return x.id===id; });
             if(idx>-1) state.solicitacoes[idx] = s;
@@ -7800,7 +7872,7 @@
 
     var html = '<div class="seg-toggle">' +
       '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza</button>' +
-      '<button data-rsub="abastecimento" class="'+(recepcaoSubView==="abastecimento"?"active":"")+'">'+ic("cube")+' Abastecimento</button>' +
+      '<button data-rsub="abastecimento" class="'+(recepcaoSubView==="abastecimento"?"active":"")+'">'+ic("cube")+' Solicitações</button>' +
       '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">'+ic("plus")+' Avulsos</button>' +
       '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
     '</div>';
@@ -7885,6 +7957,18 @@
         saunaPend.concat(saunaMonit).forEach(function(s){
           var atrasada = s.status === "monitorando" && s.saunaProximoCheckEm && Date.now() >= s.saunaProximoCheckEm;
           html += '<div class="card manut-card"'+(atrasada?' style="border:2px solid var(--amber-600);background:var(--amber-50,#fff7e6);"':'')+'>' + renderSolicitacaoCard(s) + '</div>';
+        });
+      }
+
+      // Lenha: pedidos de reposição (feitos pela equipe ou pelo hóspede via
+      // link) — antes tinha o tipo no sistema mas não aparecia em lugar
+      // nenhum da tela, então ninguém via o pedido pra poder repor.
+      var lenhaPend = state.solicitacoes.filter(function(s){ return s.tipo === "lenha" && s.status !== "concluido"; })
+        .sort(function(a,b){ return (a.criadoEm||0) - (b.criadoEm||0); });
+      if(lenhaPend.length){
+        html += '<div class="section-title" style="margin-top:18px;">'+ic("flame")+' Lenha</div>';
+        lenhaPend.forEach(function(s){
+          html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
         });
       }
       html += buildPainelHtml(true);
