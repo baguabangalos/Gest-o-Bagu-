@@ -1575,8 +1575,23 @@
     }
   }
 
+  // Recarregar tudo do zero (inclusive fotos em base64 de procedimentos,
+  // manutenções e solicitações) toda vez que o celular é desbloqueado ou o
+  // app volta pra tela gasta muito egress do Supabase — multiplicado por
+  // todo mundo da equipe, em todo turno, isso estourou a cota gratuita.
+  // As mudanças mais importantes (novo pedido de hóspede, nova manutenção)
+  // já chegam na hora via realtime (ver setupRealtimeNotifications), então
+  // esse recarregamento completo aqui é só uma rede de segurança para o
+  // resto dos dados — não precisa rodar a cada troca de tela, só de vez em
+  // quando. Por isso: no mínimo 5 minutos entre uma recarga completa e
+  // outra por causa de voltar à tela.
+  var ULTIMO_RELOAD_VISIBILIDADE = Date.now();
+  var INTERVALO_MIN_RELOAD_VISIBILIDADE = 5 * 60 * 1000; // 5 minutos
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState === "visible" && currentUser){
+      var agora = Date.now();
+      if(agora - ULTIMO_RELOAD_VISIBILIDADE < INTERVALO_MIN_RELOAD_VISIBILIDADE) return;
+      ULTIMO_RELOAD_VISIBILIDADE = agora;
       loadAllFromSupabase().then(function(s){ state = s; renderApp(); });
     }
   });
