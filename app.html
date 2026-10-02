@@ -7138,7 +7138,7 @@
       if(!esconderLimpeza) return true;
       return !tiposLimpeza[s.tipo];
     }
-    var bloqueadas = state.solicitacoes.filter(function(s){ return s.status==="bloqueada"; }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
+    var bloqueadas = state.solicitacoes.filter(function(s){ return s.status==="bloqueada" && relevante(s); }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
     var pendentes = state.solicitacoes.filter(function(s){ return s.status==="pendente" && relevante(s); }).sort(function(a,b){ return a.criadoEm-b.criadoEm; });
     var andamento = state.solicitacoes.filter(function(s){ return s.status==="em_andamento" && relevante(s); }).sort(function(a,b){ return (a.iniciadoEm||a.criadoEm)-(b.iniciadoEm||b.criadoEm); });
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
@@ -7924,15 +7924,15 @@
 
     else if(recepcaoSubView === "abastecimento"){
       var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-      var pend = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "pendente"; })
+      // Só os pedidos de frigobar que o próprio hóspede fez (pelo link ou
+      // automaticamente no check-in) ficam aqui. Os criados avulso pela
+      // equipe, ou importados do extrato do Hospedin, ficam só na aba
+      // "Abastecimento" (separada) — pra não duplicar em dois lugares.
+      function ehAbastecimentoDeHospede(s){ return s.origem !== "equipe" && s.origem !== "hospedin_extrato"; }
+      var pend = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "pendente" && ehAbastecimentoDeHospede(s); })
         .sort(function(a,b){ return acomodacaoNome(a.acomodacaoId).localeCompare(acomodacaoNome(b.acomodacaoId), "pt-BR"); });
-      var feitos = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "concluido" && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
+      var feitos = state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "concluido" && ehAbastecimentoDeHospede(s) && s.concluidoEm && s.concluidoEm >= hojeInicio.getTime(); })
         .sort(function(a,b){ return b.concluidoEm - a.concluidoEm; });
-      html += '<div style="margin-bottom:16px;">' +
-        '<button type="button" id="novoAbastecimentoAvulsoBtnRecepcao" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:10px;">+ Criar abastecimento avulso</button>' +
-        '<button type="button" id="importarExtratoBtnRecepcao" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("doc")+' Importar extrato do Hospedin (PDF)</button>' +
-        '<input type="file" id="importarExtratoInputRecepcao" accept="application/pdf" style="display:none;">' +
-      '</div>';
       html += '<div class="seg-toggle">' +
         '<button data-asubR="pendentes" class="'+(abastecimentoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
         '<button data-asubR="feitos" class="'+(abastecimentoSubView==="feitos"?"active":"")+'">Abastecidos hoje</button>' +
@@ -7971,7 +7971,6 @@
           html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
         });
       }
-      html += buildPainelHtml(true);
     }
 
     else if(recepcaoSubView === "avulsos"){
@@ -8064,18 +8063,11 @@
       };
     });
 
-    // --- Abastecimento ---
+    // --- Abastecimento (só o toggle Pendentes/Abastecidos hoje — criar
+    // abastecimento avulso e importar extrato ficam só na aba Abastecimento) ---
     main.querySelectorAll("[data-asubR]").forEach(function(b){
       b.onclick = function(){ abastecimentoSubView = b.getAttribute("data-asubR"); renderRecepcao(); };
     });
-    var novoAbastAvulsoBtnR = main.querySelector("#novoAbastecimentoAvulsoBtnRecepcao");
-    if(novoAbastAvulsoBtnR) novoAbastAvulsoBtnR.onclick = abrirNovoAbastecimentoAvulsoSheet;
-    var importarExtratoBtnR = main.querySelector("#importarExtratoBtnRecepcao");
-    var importarExtratoInputR = main.querySelector("#importarExtratoInputRecepcao");
-    if(importarExtratoBtnR && importarExtratoInputR){
-      importarExtratoBtnR.onclick = function(){ importarExtratoInputR.click(); };
-      importarExtratoInputR.addEventListener("change", handleImportarExtrato);
-    }
 
     // --- Avulsos ---
     var lavagemAvulsaBtn = main.querySelector("#lavagemAvulsaBtn");
