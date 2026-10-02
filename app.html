@@ -4646,6 +4646,15 @@
   var PRIORIDADE_INFO = {alta:{cor:"var(--red-600)", label:""+ic('dotRed')+" Alta"}, media:{cor:"var(--amber-600)", label:""+ic('dotAmber')+" Média"}, baixa:{cor:"var(--teal-700)", label:""+ic('dotGreen')+" Baixa"}};
   var PRIORIDADE_ORDEM = {alta:0, media:1, baixa:2};
 
+  // Problemas recorrentes que a equipe de limpeza costuma encontrar ao
+  // finalizar uma acomodação — aparecem como opções rápidas no sheet de
+  // "Problema na acomodação" (além do campo de texto livre pra qualquer
+  // outro problema que não esteja nessa lista).
+  var PROBLEMAS_RECORRENTES = [
+    "Trocar taça", "Repor taça e copo", "TV não conecta", "Trancar o cofre",
+    "Repor controle remoto", "Chuveiro/água quente com problema", "Ar-condicionado com problema"
+  ];
+
   function renderManutencoes(){
     var main = document.getElementById("manutencoesView");
     var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; }).sort(function(a,b){
@@ -6560,6 +6569,9 @@
     } else if(obsHtml || lixoHtml){
       html += '<div class="item-actions">'+obsHtml+histHtml+lixoHtml+'</div>';
     }
+    if((s.tipo === "lavagem" || s.tipo === "limpeza") && podeEditar("limpeza")){
+      html += '<div class="item-actions" style="margin-top:4px;"><button class="btn btn-out" data-act="reportarProblema" data-id="'+s.id+'">'+ic("warning")+' Problema na acomodação</button></div>';
+    }
     return html;
   }
 
@@ -6604,6 +6616,8 @@
           if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
         } else if(act === "editarObservacao"){
           if(!podeEditar(moduloExclusao)){ showToast("Você não tem permissão para essa ação"); return; }
+        } else if(act === "reportarProblema"){
+          if(!podeEditar("limpeza")){ showToast("Você não tem permissão para essa ação"); return; }
         } else if(!podeAgirSolicitacao(s)){
           showToast("Você não tem permissão para essa ação"); return;
         }
@@ -6612,6 +6626,8 @@
             abrirEditarItensPedidoSheet(s);
           } else if(act === "editarObservacao"){
             abrirObservacaoSolicitacaoSheet(s);
+          } else if(act === "reportarProblema"){
+            abrirProblemaAcomodacaoSheet(s);
           } else if(act === "iniciar"){
             if(s.tipo === "lavagem" || s.tipo === "limpeza"){
               abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarIniciarSolicitacao(id); });
@@ -7337,6 +7353,68 @@
     };
   }
 
+  // Aberto a partir do botão "Problema na acomodação" nos pedidos de
+  // limpeza/lavagem — a equipe marca um ou mais problemas recorrentes
+  // (ou escreve um customizado) e isso vira uma manutenção (origem
+  // "limpeza") que aparece pra recepção dentro de Recepção > Limpeza.
+  function abrirProblemaAcomodacaoSheet(s){
+    var html =
+      '<div class="sheet-overlay open" id="problemaAcomodacaoOverlay">' +
+        '<div class="sheet">' +
+          '<h2>'+ic("warning")+' Problema na acomodação</h2>' +
+          '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">'+escapeHtml(acomodacaoNome(s.acomodacaoId))+' — isso avisa a recepção (aba Limpeza) pra tomar providência.</p>' +
+          '<label>Problemas recorrentes (selecione um ou mais)</label>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px;">' +
+          PROBLEMAS_RECORRENTES.map(function(p, i){
+            return '<button type="button" class="problemaChip" data-idx="'+i+'" style="padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:var(--sand-50);color:var(--ink-900);font-family:inherit;font-size:12.5px;font-weight:600;">'+escapeHtml(p)+'</button>';
+          }).join("") +
+          '</div>' +
+          '<label>Outro problema (opcional)</label>' +
+          '<textarea id="problemaCustomTexto" rows="3" placeholder="Descreva outro problema, se não estiver na lista acima" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);resize:vertical;"></textarea>' +
+          '<div class="sheet-actions">' +
+            '<button type="button" class="btn-secondary" id="problemaCancel">Cancelar</button>' +
+            '<button type="button" class="btn-primary" id="problemaSalvar">'+ic("check")+' Reportar pra recepção</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("problemaAcomodacaoOverlay");
+    var selecionados = {};
+    overlay.querySelectorAll(".problemaChip").forEach(function(chip){
+      chip.onclick = function(){
+        var idx = chip.getAttribute("data-idx");
+        if(selecionados[idx]){
+          delete selecionados[idx];
+          chip.style.background = "var(--sand-50)"; chip.style.color = "var(--ink-900)"; chip.style.borderColor = "var(--line)";
+        } else {
+          selecionados[idx] = true;
+          chip.style.background = "var(--teal-700)"; chip.style.color = "#fff"; chip.style.borderColor = "var(--teal-700)";
+        }
+      };
+    });
+    document.getElementById("problemaCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+    document.getElementById("problemaSalvar").onclick = async function(){
+      var escolhidos = Object.keys(selecionados).map(function(idx){ return PROBLEMAS_RECORRENTES[idx]; });
+      var custom = document.getElementById("problemaCustomTexto").value.trim();
+      if(escolhidos.length === 0 && !custom){ showToast("Selecione ou descreva pelo menos um problema"); return; }
+      var titulo = escolhidos.join(", ") || custom;
+      var btn = document.getElementById("problemaSalvar"); btn.disabled = true;
+      try{
+        var payload = {id:uid(), title:titulo, local:acomodacaoNome(s.acomodacaoId), description:(escolhidos.length && custom ? custom : (escolhidos.length ? null : custom)),
+          status:"pendente", origem:"limpeza", prioridade:"media", criado_por:(currentUser?currentUser.id:null)};
+        var m = await dbInsert("manutencoes", payload, mapManutencaoFromRow);
+        state.manutencoes.push(m);
+        overlay.remove();
+        showToast("Problema reportado pra recepção");
+        renderApp();
+      }catch(err){
+        console.error(err); showToast("Erro ao reportar problema");
+        btn.disabled = false;
+      }
+    };
+  }
+
   function abrirNovoAbastecimentoAvulsoSheet(){
     var todasAtivas = state.acomodacoes.filter(function(a){ return a.ativo; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
@@ -7878,10 +7956,41 @@
     '</div>';
 
     if(recepcaoSubView === "limpeza"){
+      var bloqueadasRecepcao = state.solicitacoes.filter(function(s){ return s.status === "bloqueada"; })
+        .sort(function(a,b){ return a.criadoEm-b.criadoEm; });
+      var problemasRecepcao = state.manutencoes.filter(function(m){ return m.origem === "limpeza" && m.status !== "concluida"; })
+        .sort(function(a,b){ return (b.createdAt||0)-(a.createdAt||0); });
       var prontas = computeAcomodacoesProntasParaEntrada();
       var aguardando = computeAguardandoAbastecimento();
       var aguardandoRevisao = computeAguardandoRevisao();
-      html += '<div class="section-title" style="margin-top:0;">'+ic("check")+' Prontas para entrada</div>';
+
+      if(bloqueadasRecepcao.length > 0){
+        html += '<div class="section-title" style="margin-top:0;color:var(--amber-600);">'+ic("lockClosed")+' Aguardando checkout</div>';
+        html += '<p class="count-intro">Acomodações com saída hoje, aguardando confirmação de que o hóspede já saiu pra liberar a limpeza.</p>';
+        html += '<div class="card">';
+        bloqueadasRecepcao.forEach(function(s, i){
+          html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' + renderSolicitacaoCard(s) + '</div>';
+        });
+        html += '</div>';
+      }
+
+      if(problemasRecepcao.length > 0){
+        html += '<div class="section-title" style="margin-top:18px;color:var(--red-600);">'+ic("warning")+' Problemas reportados na limpeza</div>';
+        html += '<div class="card">';
+        problemasRecepcao.forEach(function(m, i){
+          var pInfo = PRIORIDADE_INFO[m.prioridade] || PRIORIDADE_INFO.media;
+          html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+            '<p class="item-name" style="margin:0 0 3px;">'+ic("warning")+' '+escapeHtml(m.title)+
+            ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local||"")+'</span></p>' +
+            (m.description ? '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+escapeHtml(m.description)+'</p>' : '') +
+            '<p class="item-meta">'+pInfo.label+(m.criadoPorNome ? ' · reportado por '+escapeHtml(m.criadoPorNome) : '')+'</p>' +
+            (podeEditar("recepcao") ? '<div class="item-actions"><button class="btn btn-in" data-act="resolverProblemaLimpeza" data-id="'+m.id+'">'+ic("check")+' Resolvido</button></div>' : '') +
+          '</div>';
+        });
+        html += '</div>';
+      }
+
+      html += '<div class="section-title" style="margin-top:18px;">'+ic("check")+' Prontas para entrada</div>';
       html += '<p class="count-intro">Check-ins de hoje com limpeza, abastecimento e revisão já concluídos — a acomodação pode receber o hóspede.</p>';
       if(prontas.length === 0){
         html += '<div class="empty">Nenhuma pronta ainda.</div>';
@@ -8058,6 +8167,24 @@
           renderApp();
         }catch(err){
           console.error(err); showToast("Erro ao marcar revisão");
+          btn.disabled = false;
+        }
+      };
+    });
+
+    main.querySelectorAll('[data-act="resolverProblemaLimpeza"]').forEach(function(btn){
+      btn.onclick = async function(){
+        var id = btn.getAttribute("data-id");
+        if(!podeEditar("recepcao")){ showToast("Você não tem permissão para essa ação"); return; }
+        btn.disabled = true;
+        try{
+          var m = await dbUpdate("manutencoes", id, {status:"concluida", resolved_at:new Date().toISOString()}, mapManutencaoFromRow);
+          var idx = state.manutencoes.findIndex(function(x){ return x.id===id; });
+          if(idx>-1) state.manutencoes[idx] = m;
+          showToast("Marcado como resolvido");
+          renderApp();
+        }catch(err){
+          console.error(err); showToast("Erro ao atualizar");
           btn.disabled = false;
         }
       };
