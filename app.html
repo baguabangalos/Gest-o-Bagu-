@@ -4992,6 +4992,15 @@
   var checklistTurnoBusy = false;
   var checklistTurnoInterval = null;
   var checklistTurnoSelecionado = null; // id do turno escolhido, quando a pessoa tem mais de um turno fixo
+  var checklistEmpresaSelecionada = null; // só usado por admin — qual empresa ele tá gerenciando/vendo agora (null = a própria)
+
+  // Qual empresa (pousada/restaurante) está "ativa" pra gestão/visão geral
+  // do checklist de turno. Administradores enxergam as duas e podem
+  // alternar; quem não é admin só vê a própria empresa.
+  function empresaAtivaChecklist(){
+    if(currentUser && currentUser.role === "admin") return checklistEmpresaSelecionada || currentUser.empresa || "pousada";
+    return (currentUser && currentUser.empresa) || "pousada";
+  }
 
   // Turnos com horário de término cadastrado que passaram 30min do fim e
   // ainda não foram concluídos — usado pro aviso visual e pra notificação
@@ -4999,12 +5008,13 @@
   function turnosAtrasados(){
     var out = [];
     var agora = Date.now();
+    var ehAdminGlobal = currentUser && currentUser.role === "admin";
     var minhaEmpresaAtraso = (currentUser && currentUser.empresa) || "pousada";
     (state.turnoExecucoes||[]).forEach(function(exec){
       if(exec.concluidoEm) return;
       var turno = state.turnos.find(function(t){ return t.id===exec.turnoId; });
       if(!turno || !turno.horaFim) return;
-      if((turno.empresa||"pousada") !== minhaEmpresaAtraso) return;
+      if(!ehAdminGlobal && (turno.empresa||"pousada") !== minhaEmpresaAtraso) return;
       var limite = dateAtLocalTime(exec.data, turno.horaFim).getTime() + 30*60000;
       if(agora > limite) out.push({turno:turno, execucao:exec, atrasoMin:Math.floor((agora-limite)/60000)});
     });
@@ -5194,9 +5204,15 @@
   // ---------- Gestão de turnos e atividades (só admin, dentro da aba Checklist de Turno) ----------
   function renderTurnoManagementHtml(){
     var html = '<div class="section-title" style="margin-top:0;">'+ic("clock")+' Turnos e atividades (gestão)</div>';
-    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Cada turno tem seu horário de início e sua lista de atividades. Atividades "hora fixa" só liberam pra marcar dentro da janela definida. Só administradores veem esta parte.</p>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Cada turno tem seu horário de início e sua lista de atividades. Atividades "hora fixa" só liberam pra marcar dentro da janela definida. Só administradores e quem tem permissão de gestão veem esta parte.</p>';
+    var minhaEmpresa = empresaAtivaChecklist();
+    if(currentUser && currentUser.role === "admin"){
+      html += '<div class="seg-toggle" style="margin-bottom:10px;">' +
+        '<button type="button" data-empresa-checklist="pousada" class="'+(minhaEmpresa==="pousada"?"active":"")+'">'+ic("home")+' Pousada</button>' +
+        '<button type="button" data-empresa-checklist="restaurante" class="'+(minhaEmpresa==="restaurante"?"active":"")+'">'+ic("cube")+' Restaurante (Marcelo)</button>' +
+      '</div>';
+    }
     html += '<div class="card">';
-    var minhaEmpresa = (currentUser && currentUser.empresa) || "pousada";
     var turnosOrdenados = state.turnos.filter(function(t){ return (t.empresa||"pousada") === minhaEmpresa; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
     if(turnosOrdenados.length === 0){
@@ -5265,6 +5281,9 @@
   }
 
   function bindTurnoManagementEvents(main){
+    main.querySelectorAll("[data-empresa-checklist]").forEach(function(b){
+      b.onclick = function(){ checklistEmpresaSelecionada = b.getAttribute("data-empresa-checklist"); renderChecklistTurno(); };
+    });
     var novoTurnoBtn = document.getElementById("adicionarTurnoBtn");
     if(novoTurnoBtn){
       novoTurnoBtn.onclick = async function(){
@@ -5273,7 +5292,7 @@
         var horaFim = document.getElementById("novoTurnoHoraFim").value || null;
         if(!nome || !hora){ showToast("Preencha o nome e o horário do turno"); return; }
         try{
-          var minhaEmpresaNovoTurno = (currentUser && currentUser.empresa) || "pousada";
+          var minhaEmpresaNovoTurno = empresaAtivaChecklist();
           await dbInsert("turnos", {id:uid(), nome:nome, hora_inicio:hora, hora_fim:horaFim, ordem:state.turnos.length, empresa:minhaEmpresaNovoTurno}, mapTurnoFromRow).then(function(t){ state.turnos.push(t); });
           showToast("Turno criado"); renderChecklistTurno();
         }catch(err){
@@ -5454,7 +5473,7 @@
   // não tá, sem precisar abrir cada turno um por um. Só olha os turnos da
   // própria empresa — nunca mistura pousada com restaurante.
   function renderChecklistOverviewHtml(){
-    var minhaEmpresa = (currentUser && currentUser.empresa) || "pousada";
+    var minhaEmpresa = empresaAtivaChecklist();
     var turnosEmpresa = state.turnos.filter(function(t){ return (t.empresa||"pousada") === minhaEmpresa; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
     if(turnosEmpresa.length === 0) return "";
