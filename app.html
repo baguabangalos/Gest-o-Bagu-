@@ -398,6 +398,38 @@
   </div>
 </div>
 
+<!-- Tela de completar cadastro (logo depois de criar a conta) -->
+<div class="sheet-overlay" id="completarPerfilOverlay">
+  <div class="sheet" style="max-width:340px;margin:14vh auto 0;">
+    <h2 style="text-align:center;">Onde você trabalha?</h2>
+    <p class="count-intro" style="margin:0 0 14px;">Isso já libera seu acesso padrão na hora — dá pra ajustar depois com um administrador, em Administração.</p>
+    <label>Empresa</label>
+    <select id="cpEmpresa" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--sand-50);margin-bottom:12px;">
+      <option value="pousada">Pousada Bagua Bangalôs</option>
+      <option value="restaurante">Restaurante (Marcelo)</option>
+    </select>
+    <div id="cpSetorWrap">
+      <label>Setor</label>
+      <select id="cpSetor" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--sand-50);margin-bottom:12px;">
+        <option value="recepcao">Recepção</option>
+        <option value="limpeza">Limpeza</option>
+        <option value="manutencao">Manutenção</option>
+        <option value="guarda">Guarda</option>
+      </select>
+    </div>
+    <div id="cpGarcomWrap" style="display:none;margin-bottom:12px;">
+      <label>Função</label>
+      <p style="margin:4px 0 0;font-weight:700;">Garçom</p>
+    </div>
+    <label>Turno(s) que você trabalha</label>
+    <div id="cpTurnos" style="display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 12px;"></div>
+    <div id="cpError" style="color:#c0392b;font-size:13px;margin-top:4px;display:none;"></div>
+    <div class="sheet-actions" style="margin-top:8px;">
+      <button type="button" class="btn-primary" id="cpConcluir" style="width:100%;">Concluir cadastro</button>
+    </div>
+  </div>
+</div>
+
 <div id="appShell" style="display:none;">
 
 <header class="top">
@@ -1110,7 +1142,7 @@
   function mapEscalaExcecaoFromRow(r){
     return {id:r.id, userId:r.user_id, data:r.data, tipo:r.tipo, horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null, observacao:r.observacao||null};
   }
-  var EQUIPE_LABEL = {recepcao:"Recepção", manutencao:"Manutenção", limpeza:"Limpeza", guarda:"Guarda"};
+  var EQUIPE_LABEL = {recepcao:"Recepção", manutencao:"Manutenção", limpeza:"Limpeza", guarda:"Guarda", garcom:"Garçom"};
   var ESCALA_TIPO_LABEL = {trabalho:"Trabalho", folga:"Folga", folga_extra:"Folga (compensação)", falta:"Falta", atestado:"Atestado"};
   var ESCALA_TIPO_COR = {trabalho:"var(--teal-700)", folga:"var(--ink-400)", folga_extra:"var(--amber-600)", falta:"var(--red-600)", atestado:"#6d4aa8"};
   // Guarda: escala 12x36 (um dia trabalha, um dia folga, pra sempre), turno
@@ -1477,8 +1509,10 @@
         var res1 = await sb.auth.signUp({email:email, password:password, options:{data:{nome:nome}}});
         if(res1.error) throw res1.error;
         if(res1.data.session){
-          // confirmação de e-mail desligada no projeto: já entra direto
-          await bootApp();
+          // confirmação de e-mail desligada no projeto: já entra direto,
+          // mas primeiro pede pra escolher área/setor/turno, que já libera
+          // o acesso padrão na hora (ver abrirCompletarPerfil).
+          abrirCompletarPerfil();
         } else {
           // confirmação de e-mail ligada: precisa clicar no link antes de entrar
           setLoginMode("entrar");
@@ -1500,6 +1534,78 @@
     }finally{
       btn.disabled = false;
       btn.textContent = loginMode === "cadastrar" ? "Criar conta" : "Entrar";
+    }
+  };
+
+  // ---------- Completar cadastro (área/setor/turno) logo após criar a conta ----------
+  // Libera o acesso padrão na hora (sem precisar de admin), via a Edge
+  // Function "aplicar-acesso-padrao" — ela roda com privilégio de servidor
+  // e só aceita rodar uma vez por conta (confere se já tem setor definido),
+  // pra isso não virar uma forma de qualquer um se dar mais permissão depois.
+  function atualizarCpSetorVisibilidade(){
+    var empresa = document.getElementById("cpEmpresa").value;
+    document.getElementById("cpSetorWrap").style.display = empresa === "pousada" ? "block" : "none";
+    document.getElementById("cpGarcomWrap").style.display = empresa === "restaurante" ? "block" : "none";
+  }
+
+  async function carregarCpTurnos(){
+    var wrap = document.getElementById("cpTurnos");
+    wrap.innerHTML = '<span class="item-meta">Carregando turnos…</span>';
+    var empresa = document.getElementById("cpEmpresa").value;
+    try{
+      var res = await sb.from("turnos").select("*").eq("empresa", empresa).order("ordem");
+      if(res.error) throw res.error;
+      var turnos = res.data || [];
+      if(turnos.length === 0){
+        wrap.innerHTML = '<span class="item-meta">Nenhum turno cadastrado ainda pra essa empresa — peça pro administrador cadastrar antes.</span>';
+        return;
+      }
+      wrap.innerHTML = turnos.map(function(t){
+        return '<label style="display:flex;align-items:center;gap:5px;font-size:13px;"><input type="checkbox" class="cp-turno-check" value="'+t.id+'"> '+escapeHtml(t.nome)+'</label>';
+      }).join("");
+    }catch(err){
+      console.error(err);
+      wrap.innerHTML = '<span class="item-meta">Erro ao carregar os turnos — tente de novo.</span>';
+    }
+  }
+
+  function abrirCompletarPerfil(){
+    hideLogin();
+    document.getElementById("completarPerfilOverlay").classList.add("open");
+    document.getElementById("cpEmpresa").value = "pousada";
+    document.getElementById("cpSetor").value = "recepcao";
+    atualizarCpSetorVisibilidade();
+    carregarCpTurnos();
+  }
+
+  document.getElementById("cpEmpresa").onchange = function(){ atualizarCpSetorVisibilidade(); carregarCpTurnos(); };
+
+  document.getElementById("cpConcluir").onclick = async function(){
+    var btn = document.getElementById("cpConcluir");
+    var errEl = document.getElementById("cpError");
+    errEl.style.display = "none";
+    var empresa = document.getElementById("cpEmpresa").value;
+    var setor = empresa === "restaurante" ? "garcom" : document.getElementById("cpSetor").value;
+    var turnoIds = Array.prototype.slice.call(document.querySelectorAll(".cp-turno-check:checked")).map(function(c){ return c.value; });
+    if(turnoIds.length === 0){
+      errEl.textContent = "Selecione pelo menos um turno";
+      errEl.style.display = "block";
+      return;
+    }
+    btn.disabled = true; btn.textContent = "Configurando acesso…";
+    try{
+      var res = await sb.functions.invoke("aplicar-acesso-padrao", {body:{empresa:empresa, setor:setor, turnoIds:turnoIds}});
+      if(res.error) throw res.error;
+      if(res.data && res.data.ok === false) throw new Error(res.data.error || "Não consegui configurar seu acesso");
+      document.getElementById("completarPerfilOverlay").classList.remove("open");
+      await bootApp();
+    }catch(err){
+      console.error(err);
+      errEl.textContent = err.message || "Erro ao configurar seu acesso — tente de novo ou peça pro administrador liberar manualmente.";
+      errEl.style.display = "block";
+    }finally{
+      btn.disabled = false;
+      btn.textContent = "Concluir cadastro";
     }
   };
 
