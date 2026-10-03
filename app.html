@@ -9018,18 +9018,16 @@
         '<option value="restaurante" '+(u.empresa==="restaurante"?"selected":"")+'>Restaurante (Marcelo)</option>' +
         '</select></label>';
       if(u.role !== "admin"){
-        if(u.equipe === "recepcao" || u.equipe === "guarda"){
-          html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno(s) fixo(s) (checklist)</label>';
-          html += '<div class="turno-fixo-checks" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">';
-          var turnosDaEmpresaU = state.turnos.filter(function(t){ return (t.empresa||"pousada") === (u.empresa||"pousada"); });
-          turnosDaEmpresaU.forEach(function(t){
-            html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;">' +
-              '<input type="checkbox" class="turno-fixo-check" value="'+t.id+'" '+(u.turnoIds.indexOf(t.id)>-1?"checked":"")+'> '+escapeHtml(t.nome) +
-            '</label>';
-          });
-          if(turnosDaEmpresaU.length === 0) html += '<span class="item-meta">Nenhum turno cadastrado ainda pra essa empresa.</span>';
-          html += '</div>';
-        }
+        html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:8px 0 4px;">Turno(s) fixo(s) (checklist)</label>';
+        html += '<div class="turno-fixo-checks" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">';
+        var turnosDaEmpresaU = state.turnos.filter(function(t){ return (t.empresa||"pousada") === (u.empresa||"pousada"); });
+        turnosDaEmpresaU.forEach(function(t){
+          html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;">' +
+            '<input type="checkbox" class="turno-fixo-check" value="'+t.id+'" '+(u.turnoIds.indexOf(t.id)>-1?"checked":"")+'> '+escapeHtml(t.nome) +
+          '</label>';
+        });
+        if(turnosDaEmpresaU.length === 0) html += '<span class="item-meta">Nenhum turno cadastrado ainda pra essa empresa.</span>';
+        html += '</div>';
         html += '<table class="admin-perm-table"><tr><th></th><th>Ver</th><th>Editar</th><th>Excluir</th></tr>';
         MODULOS_ADMIN.forEach(function(m){
           var perm = u.permissoes[m.key] || {ver:false, editar:false, excluir:false};
