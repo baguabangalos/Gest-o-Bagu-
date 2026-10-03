@@ -5414,6 +5414,13 @@
   }
 
   function bindTurnoManagementEvents(main){
+    main.querySelectorAll("[data-ver-turno-dia]").forEach(function(btn){
+      btn.onclick = function(){
+        var turno = state.turnos.find(function(t){ return t.id===btn.getAttribute("data-turno-id"); });
+        var execucao = state.turnoExecucoes.find(function(e){ return e.id===btn.getAttribute("data-execucao-id"); });
+        if(turno && execucao) abrirDetalheTurnoDiaSheet(turno, execucao);
+      };
+    });
     main.querySelectorAll("[data-empresa-checklist]").forEach(function(b){
       b.onclick = function(){ checklistEmpresaSelecionada = b.getAttribute("data-empresa-checklist"); renderChecklistTurno(); };
     });
@@ -5636,21 +5643,73 @@
       } else {
         html += '<p class="item-meta">Turno ainda não concluído hoje.</p>';
       }
+      if(execAtual){
+        html += '<button type="button" data-ver-turno-dia data-turno-id="'+t.id+'" data-execucao-id="'+execAtual.id+'" style="display:block;background:none;border:none;padding:0;margin-top:6px;color:var(--teal-700);font-size:12.5px;font-weight:800;cursor:pointer;text-align:left;">'+ic("search")+' Ver o que foi marcado hoje</button>';
+      }
       var historico = state.turnoExecucoes.filter(function(e){ return e.turnoId===t.id && e.data!==cicloAtual; })
         .sort(function(a,b){ return b.data.localeCompare(a.data); }).slice(0,6);
       if(historico.length > 0){
         html += '<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:8px;">';
-        html += '<p class="item-meta" style="font-weight:700;margin-bottom:4px;">Últimos dias</p>';
+        html += '<p class="item-meta" style="font-weight:700;margin-bottom:4px;">Últimos dias (toque pra ver o detalhe)</p>';
         historico.forEach(function(e, i){
-          html += '<p class="item-meta" style="'+(i>0?'margin-top:4px;':'')+'">'+escapeHtml(fmtDateOnly(dateAtLocalTime(e.data,"00:00").getTime()))+' — '+
+          html += '<button type="button" data-ver-turno-dia data-turno-id="'+t.id+'" data-execucao-id="'+e.id+'" style="display:block;width:100%;text-align:left;background:none;border:none;padding:0;'+(i>0?'margin-top:6px;':'')+'cursor:pointer;color:inherit;font:inherit;">' +
+            '<span class="item-meta" style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;">'+escapeHtml(fmtDateOnly(dateAtLocalTime(e.data,"00:00").getTime()))+' — '+
             (e.concluidoEm ? (''+ic('check')+' concluído por '+escapeHtml(e.concluidoPor||"—")+(e.observacaoPendencias?(' · pendência: '+escapeHtml(e.observacaoPendencias)):'')) : (''+ic('close')+' não foi concluído')) +
-          '</p>';
+            '</span>' +
+          '</button>';
         });
         html += '</div>';
       }
       html += '</div>';
     });
     return html;
+  }
+
+  // Abre uma folha mostrando, atividade por atividade, o que foi marcado
+  // (ou não) num turno/dia específico — feito, feito com atraso, não
+  // realizado ou nem marcado — além de quem marcou, quando, e o motivo
+  // quando a pessoa registrou que não deu pra fazer.
+  function abrirDetalheTurnoDiaSheet(turno, execucao){
+    var existente = document.getElementById("turnoDiaOverlay");
+    if(existente) existente.remove();
+    var ocorr = ocorrenciasTurno(turno, execucao.data);
+    var linhas = ocorr.map(function(oc){
+      var item = oc.slot ? itemExecucaoSlot(execucao.id, oc.atividade.id, oc.slot) : atividadeExecucaoFor(execucao.id, oc.atividade.id);
+      var statusLabel, statusColor, statusIcon;
+      if(!item || item.status === "pendente"){
+        statusLabel = "Não marcado"; statusColor = "var(--ink-600)"; statusIcon = "close";
+      } else if(item.status === "feito"){
+        statusLabel = item.atrasado ? "Feito (com atraso)" : "Feito"; statusColor = "var(--teal-700)"; statusIcon = "check";
+      } else {
+        statusLabel = "Não realizado"; statusColor = "var(--red-600)"; statusIcon = "close";
+      }
+      var quem = item && item.marcadoPor ? item.marcadoPor : null;
+      var quando = item && item.marcadoEm ? fmtDate(item.marcadoEm) : null;
+      return '<div class="card" style="margin-bottom:8px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+        '<p style="margin:0;font-size:14px;font-weight:700;flex:1;">'+escapeHtml(oc.atividade.titulo)+(oc.slot?(' — '+escapeHtml(oc.slot)):'')+'</p>' +
+        '<span style="font-size:12.5px;font-weight:800;color:'+statusColor+';white-space:nowrap;">'+ic(statusIcon)+' '+statusLabel+'</span>' +
+        '</div>' +
+        (quem ? ('<p class="item-meta" style="margin-top:4px;">'+escapeHtml(quem)+(quando?(' · '+quando):'')+'</p>') : '') +
+        (item && item.motivo ? ('<p class="item-meta" style="color:var(--amber-600);margin-top:2px;">'+ic("pencil")+' '+escapeHtml(item.motivo)+'</p>') : '') +
+      '</div>';
+    }).join("");
+    var cabecalho = execucao.concluidoEm
+      ? (ic("check")+' Concluído por '+escapeHtml(execucao.concluidoPor||"—")+' às '+escapeHtml(fmtDate(execucao.concluidoEm).split(" ")[1]||""))
+      : (ic("close")+' Não foi concluído');
+    var html = '<div class="sheet-overlay open" id="turnoDiaOverlay"><div class="sheet">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+      '<h2 style="margin:0;">'+escapeHtml(turno.nome)+' — '+escapeHtml(fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime()))+'</h2>' +
+      '<button type="button" id="turnoDiaFechar" style="background:none;border:none;padding:4px;color:var(--ink-600);cursor:pointer;">'+ic("close")+'</button>' +
+      '</div>' +
+      '<p class="item-meta" style="margin:0 0 12px;font-weight:700;">'+cabecalho+'</p>' +
+      (execucao.observacaoPendencias ? ('<p class="item-meta" style="color:var(--amber-600);font-weight:700;margin-bottom:12px;">'+ic("pencil")+' '+escapeHtml(execucao.observacaoPendencias)+'</p>') : '') +
+      (linhas || '<p class="empty">Nenhuma atividade cadastrada pra esse turno nesse dia.</p>') +
+      '</div></div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("turnoDiaOverlay");
+    document.getElementById("turnoDiaFechar").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target===overlay) overlay.remove(); });
   }
 
   async function renderChecklistTurno(){
