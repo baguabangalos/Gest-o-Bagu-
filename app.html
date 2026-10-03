@@ -424,6 +424,7 @@
     <label>Turno(s) que você trabalha</label>
     <div id="cpTurnos" style="display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 12px;"></div>
     <div id="cpError" style="color:#c0392b;font-size:13px;margin-top:4px;display:none;"></div>
+    <div id="cpInfo" style="color:var(--ink-600);font-size:13px;margin-top:4px;display:none;"></div>
     <div class="sheet-actions" style="margin-top:8px;">
       <button type="button" class="btn-primary" id="cpConcluir" style="width:100%;">Concluir cadastro</button>
     </div>
@@ -1571,19 +1572,35 @@
 
   function abrirCompletarPerfil(){
     hideLogin();
+    cpJaConcluido = false;
     document.getElementById("completarPerfilOverlay").classList.add("open");
     document.getElementById("cpEmpresa").value = "pousada";
     document.getElementById("cpSetor").value = "recepcao";
+    document.getElementById("cpError").style.display = "none";
+    document.getElementById("cpInfo").style.display = "none";
+    document.getElementById("cpConcluir").textContent = "Concluir cadastro";
     atualizarCpSetorVisibilidade();
     carregarCpTurnos();
   }
 
   document.getElementById("cpEmpresa").onchange = function(){ atualizarCpSetorVisibilidade(); carregarCpTurnos(); };
 
+  var cpJaConcluido = false; // depois que a Edge Function roda uma vez, não chama de novo (ela só aceita rodar uma vez por conta)
+
   document.getElementById("cpConcluir").onclick = async function(){
     var btn = document.getElementById("cpConcluir");
     var errEl = document.getElementById("cpError");
+    var infoEl = document.getElementById("cpInfo");
     errEl.style.display = "none";
+
+    // Depois que já configuramos o perfil (ver bloco abaixo), esse mesmo
+    // botão só serve pra entrar no app — não chama a função de novo.
+    if(cpJaConcluido){
+      document.getElementById("completarPerfilOverlay").classList.remove("open");
+      await bootApp();
+      return;
+    }
+
     var empresa = document.getElementById("cpEmpresa").value;
     var setor = empresa === "restaurante" ? "garcom" : document.getElementById("cpSetor").value;
     var turnoIds = Array.prototype.slice.call(document.querySelectorAll(".cp-turno-check:checked")).map(function(c){ return c.value; });
@@ -1592,18 +1609,28 @@
       errEl.style.display = "block";
       return;
     }
-    btn.disabled = true; btn.textContent = "Configurando acesso…";
+    btn.disabled = true; btn.textContent = "Configurando…";
     try{
       var res = await sb.functions.invoke("aplicar-acesso-padrao", {body:{empresa:empresa, setor:setor, turnoIds:turnoIds}});
       if(res.error) throw res.error;
       if(res.data && res.data.ok === false) throw new Error(res.data.error || "Não consegui configurar seu acesso");
-      document.getElementById("completarPerfilOverlay").classList.remove("open");
-      await bootApp();
+      cpJaConcluido = true;
+      if(res.data && res.data.acessoLiberado){
+        // Restaurante: só tem o Checklist de Turno mesmo, então já libera e entra direto.
+        document.getElementById("completarPerfilOverlay").classList.remove("open");
+        await bootApp();
+        return;
+      }
+      // Pousada: fica registrado o setor/turno, mas quem libera o acesso
+      // aos módulos é a supervisão da pousada, em Administração.
+      infoEl.textContent = "Cadastro feito! Seu setor e turno já ficaram registrados — agora é só esperar a recepção/administração liberar seu acesso em Administração. Pode tocar em \"Entrar\" pra acessar o app enquanto isso.";
+      infoEl.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "Entrar";
     }catch(err){
       console.error(err);
       errEl.textContent = err.message || "Erro ao configurar seu acesso — tente de novo ou peça pro administrador liberar manualmente.";
       errEl.style.display = "block";
-    }finally{
       btn.disabled = false;
       btn.textContent = "Concluir cadastro";
     }
