@@ -7073,8 +7073,11 @@
         acomodacoesData[id].checkoutDoc = doc;
       }
       // Hóspede já estava no quarto antes desse dia e só vai sair depois
-      // dele — dia inteiro no meio da estadia, sem check-in nem checkout.
-      if(ci < dataInicio.getTime() && co > dataFim.getTime()){
+      // dele (não embora nesse dia) — dia inteiro no meio da estadia, sem
+      // check-in nem checkout. Comparar com dataInicio (não dataFim) é o
+      // que importa aqui: o checkout só precisa ser depois do começo desse
+      // dia pra esse dia inteiro ainda estar dentro da estadia.
+      if(ci < dataInicio.getTime() && co > dataInicio.getTime()){
         acomodacoesData[id] = acomodacoesData[id] || {};
         acomodacoesData[id].meioEstadia = true;
       }
