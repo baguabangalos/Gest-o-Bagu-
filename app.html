@@ -7072,6 +7072,12 @@
         acomodacoesData[id].checkout = true;
         acomodacoesData[id].checkoutDoc = doc;
       }
+      // Hóspede já estava no quarto antes desse dia e só vai sair depois
+      // dele — dia inteiro no meio da estadia, sem check-in nem checkout.
+      if(ci < dataInicio.getTime() && co > dataFim.getTime()){
+        acomodacoesData[id] = acomodacoesData[id] || {};
+        acomodacoesData[id].meioEstadia = true;
+      }
     });
     return acomodacoesData;
   }
@@ -7079,9 +7085,12 @@
   // Previsão dos próximos 7 dias (hoje + 6) pra aba Limpeza: pra cada dia,
   // quantas acomodações vão ter só check-in, só checkout, check-in e
   // checkout no mesmo dia (virada de quarto entre hóspedes diferentes), e
-  // quantas são renovação de estadia (mesmo hóspede, mesmo quarto, cruzado
-  // pelo CPF/passaporte — mesma regra que já classifica isso como
-  // "Manutenção" hoje em vez de check-in/checkout de verdade).
+  // quantas são "manutenção" — limpeza durante a estadia, seja porque o
+  // hóspede está no meio da estadia naquele dia (sem check-in/checkout),
+  // seja porque é uma renovação (checkout e check-in no mesmo dia, mesmo
+  // hóspede/quarto, cruzado pelo CPF/passaporte) — mesma regra que já
+  // classifica isso como "Manutenção" hoje em vez de check-in/checkout de
+  // verdade.
   function previsao7DiasLimpeza(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var dias = [];
@@ -7096,6 +7105,7 @@
         else if(info.checkin && info.checkout) checkinCheckout++;
         else if(info.checkin) checkin++;
         else if(info.checkout) checkout++;
+        else if(info.meioEstadia) manutencao++;
       });
       dias.push({data:dataInicio, checkin:checkin, checkout:checkout, checkinCheckout:checkinCheckout, manutencao:manutencao});
     }
