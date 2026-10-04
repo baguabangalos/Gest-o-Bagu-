@@ -6519,7 +6519,7 @@
   function isRecepcaoOnly(tipo){ return !!TIPOS_RECEPCAO_ONLY[tipo]; }
   var STATUS_DOT = {bloqueada:""+ic('lockClosed')+"", pendente:icDotBig("var(--red-600)"), em_andamento:icDotBig("var(--amber-600)"), concluido:icDotBig("var(--teal-700)"), monitorando:icDotBig("var(--amber-600)")};
   var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído", monitorando:"Sauna ligada — monitorando"};
-  var limpezaSubView = "abertos"; // 'abertos' | 'concluidos'
+  var limpezaSubView = "abertos"; // 'abertos' | 'concluidos' | 'previsao'
 
   function acomodacaoNome(id){
     var a = state.acomodacoes.find(function(x){ return x.id===id; });
@@ -7046,6 +7046,62 @@
     return {mesmoQuartoIds:mesmoQuartoIds, transferenciasPorAcomodacaoCheckin:transferenciasPorAcomodacaoCheckin};
   }
 
+  // Versão de classificarOcupacaoHoje/computeTransferenciasHoje para uma
+  // data qualquer (não só hoje) — usada na previsão dos próximos dias.
+  // Já traz junto o doc (CPF/passaporte) de quem fez checkin e de quem fez
+  // checkout naquela acomodação nesse dia, pra poder cruzar na hora.
+  function classificarOcupacaoData(dataInicio){
+    var dataFim = new Date(dataInicio.getTime() + 24*3600*1000);
+    var codigoToId = {};
+    state.acomodacoes.forEach(function(a){ if(a.codigoHospedin) codigoToId[a.codigoHospedin] = a.id; });
+    var acomodacoesData = {};
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      var id = codigoToId[r.acomodacao];
+      if(!id) return;
+      var ci = parseDataLocal(r.checkin).getTime();
+      var co = parseDataLocal(r.checkout).getTime();
+      var doc = normalizarDocumento(r.guest_ssn || r.guest_passport || "") || null;
+      if(ci >= dataInicio.getTime() && ci < dataFim.getTime()){
+        acomodacoesData[id] = acomodacoesData[id] || {};
+        acomodacoesData[id].checkin = true;
+        acomodacoesData[id].checkinDoc = doc;
+      }
+      if(co >= dataInicio.getTime() && co < dataFim.getTime()){
+        acomodacoesData[id] = acomodacoesData[id] || {};
+        acomodacoesData[id].checkout = true;
+        acomodacoesData[id].checkoutDoc = doc;
+      }
+    });
+    return acomodacoesData;
+  }
+
+  // Previsão dos próximos 7 dias (hoje + 6) pra aba Limpeza: pra cada dia,
+  // quantas acomodações vão ter só check-in, só checkout, check-in e
+  // checkout no mesmo dia (virada de quarto entre hóspedes diferentes), e
+  // quantas são renovação de estadia (mesmo hóspede, mesmo quarto, cruzado
+  // pelo CPF/passaporte — mesma regra que já classifica isso como
+  // "Manutenção" hoje em vez de check-in/checkout de verdade).
+  function previsao7DiasLimpeza(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var dias = [];
+    for(var i=0;i<7;i++){
+      var dataInicio = new Date(hojeInicio.getTime() + i*24*3600*1000);
+      var ocupacao = classificarOcupacaoData(dataInicio);
+      var checkin=0, checkout=0, checkinCheckout=0, manutencao=0;
+      Object.keys(ocupacao).forEach(function(id){
+        var info = ocupacao[id];
+        var mesmoQuarto = !!(info.checkin && info.checkout && info.checkinDoc && info.checkinDoc === info.checkoutDoc);
+        if(mesmoQuarto) manutencao++;
+        else if(info.checkin && info.checkout) checkinCheckout++;
+        else if(info.checkin) checkin++;
+        else if(info.checkout) checkout++;
+      });
+      dias.push({data:dataInicio, checkin:checkin, checkout:checkout, checkinCheckout:checkinCheckout, manutencao:manutencao});
+    }
+    return dias;
+  }
+
   // Não é mais chamada automaticamente (ver bootApp) — a criação das
   // tarefas do dia agora roda no servidor (Edge Function
   // "gerar-tarefas-lavagem" + pg_cron), pra não depender de quem abre o
@@ -7320,6 +7376,7 @@
     html += '<div class="seg-toggle">' +
       '<button data-lsub="abertos" class="'+(limpezaSubView==="abertos"?"active":"")+'">Em aberto'+(abertos.length?(' · '+abertos.length):'')+'</button>' +
       '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
+      '<button data-lsub="previsao" class="'+(limpezaSubView==="previsao"?"active":"")+'">Previsão 7 dias</button>' +
     '</div>';
 
     if(limpezaSubView === "abertos"){
@@ -7374,6 +7431,28 @@
       if(abertos.length === 0 && placeholders.length === 0){
         html += '<div class="empty">Nenhum pedido em aberto.</div>';
       }
+    } else if(limpezaSubView === "previsao"){
+      var DIAS_SEMANA_ABREV = ["dom","seg","ter","qua","qui","sex","sáb"];
+      function statBloco(n, cor, rotulo){
+        return '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:18px;font-weight:800;margin:0;color:'+cor+';">'+n+'</p><p style="font-size:10px;color:var(--ink-600);margin:2px 0 0;line-height:1.2;">'+rotulo+'</p></div>';
+      }
+      var previsao = previsao7DiasLimpeza();
+      html += '<p class="item-meta" style="margin:0 0 10px;">Baseado nas reservas já sincronizadas do Hospedin — pode mudar se houver novas reservas, cancelamentos ou trocas de quarto depois de agora.</p>';
+      previsao.forEach(function(d, idx){
+        var dd = ("0"+d.data.getDate()).slice(-2), mm = ("0"+(d.data.getMonth()+1)).slice(-2);
+        var label = idx===0 ? "Hoje" : (idx===1 ? "Amanhã" : (DIAS_SEMANA_ABREV[d.data.getDay()]));
+        var total = d.checkin + d.checkout + d.checkinCheckout + d.manutencao;
+        html += '<div class="card" style="margin-bottom:10px;">' +
+          '<p class="item-name" style="margin:0 0 8px;">'+escapeHtml(label)+' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+dd+'/'+mm+'</span></p>' +
+          '<div style="display:flex;gap:4px;flex-wrap:wrap;">' +
+            statBloco(d.checkin, "var(--teal-900)", "Check-in") +
+            statBloco(d.checkout, "var(--teal-900)", "Checkout") +
+            statBloco(d.checkinCheckout, "var(--teal-700)", "Check-in + Checkout") +
+            statBloco(d.manutencao, "var(--amber-600)", "Manutenção") +
+          '</div>' +
+          (total===0 ? '<p class="item-meta" style="margin-top:6px;">Nenhuma movimentação prevista.</p>' : '') +
+        '</div>';
+      });
     } else {
       if(concluidosHoje.length === 0){
         html += '<div class="empty">Nenhum pedido concluído hoje ainda.</div>';
