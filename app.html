@@ -507,6 +507,7 @@
         <option value="Manutenção">Manutenção</option>
         <option value="Uniformes">Uniformes</option>
         <option value="Lojinha">Lojinha</option>
+        <option value="UTV">UTV</option>
       </select>
       <label>Unidade</label>
       <input type="text" id="f_unit" placeholder="Ex: un, kg, L, pacote" required>
@@ -1015,8 +1016,8 @@
     }
   });
 
-  var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção","Uniformes","Lojinha"];
-  var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção","Uniformes":"Uniformes","Lojinha":"Lojinha"};
+  var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção","Uniformes","Lojinha","UTV"];
+  var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção","Uniformes":"Uniformes","Lojinha":"Lojinha","UTV":"UTV"};
   var WEEKDAYS = [
     {key:"dom",label:"Dom"},{key:"seg",label:"Seg"},{key:"ter",label:"Ter"},
     {key:"qua",label:"Qua"},{key:"qui",label:"Qui"},{key:"sex",label:"Sex"},{key:"sab",label:"Sáb"}
@@ -1138,14 +1139,18 @@
     return html;
   }
   function mapEscalaSemanalFromRow(r){
-    return {id:r.id, userId:r.user_id, diaSemana:r.dia_semana, tipo:r.tipo||"folga", horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null};
+    return {id:r.id, userId:r.user_id, diaSemana:r.dia_semana, tipo:r.tipo||"folga", horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null, setor:r.setor||null};
   }
   function mapEscalaExcecaoFromRow(r){
-    return {id:r.id, userId:r.user_id, data:r.data, tipo:r.tipo, horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null, observacao:r.observacao||null};
+    return {id:r.id, userId:r.user_id, data:r.data, tipo:r.tipo, horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null, observacao:r.observacao||null, setor:r.setor||null};
   }
   var EQUIPE_LABEL = {recepcao:"Recepção", manutencao:"Manutenção", limpeza:"Limpeza", guarda:"Guarda", garcom:"Garçom"};
-  var ESCALA_TIPO_LABEL = {trabalho:"Trabalho", folga:"Folga", folga_extra:"Folga (compensação)", falta:"Falta", atestado:"Atestado"};
-  var ESCALA_TIPO_COR = {trabalho:"var(--teal-700)", folga:"var(--ink-400)", folga_extra:"var(--amber-600)", falta:"var(--red-600)", atestado:"#6d4aa8"};
+  var ESCALA_TIPO_LABEL = {trabalho:"Trabalho", folga:"Folga", folga_extra:"Folga (compensação)", falta:"Falta", atestado:"Atestado", trabalho_outro_setor:"Trabalho (outro setor)"};
+  var ESCALA_TIPO_COR = {trabalho:"var(--teal-700)", folga:"var(--ink-400)", folga_extra:"var(--amber-600)", falta:"var(--red-600)", atestado:"#6d4aa8", trabalho_outro_setor:"var(--teal-900)"};
+  // Setores que alternam entre si (ex: Gabriel, que varia entre recepção e
+  // manutenção dependendo do dia). Só esses dois entram na troca de setor
+  // por dia — os outros setores (limpeza, guarda, garçom) são fixos.
+  var SETORES_ALTERNAVEIS = ["recepcao","manutencao"];
   // Guarda: escala 12x36 (um dia trabalha, um dia folga, pra sempre), turno
   // das 19:00 às 07:00 (vira o dia). Em vez de guardar "par/ímpar" (que muda
   // de sentido quando o mês tem número ímpar de dias), guardamos só UMA data
@@ -1168,17 +1173,29 @@
     return (state.turnos||[]).find(function(t){ return /turno\s*3/i.test(t.nome||""); }) || null;
   }
   function escalaEfetiva(userId, dataStr){
-    var exc = (state.escalaExcecoes||[]).find(function(e){ return e.userId===userId && e.data===dataStr; });
-    if(exc) return {tipo:exc.tipo, horaInicio:exc.horaInicio, horaFim:exc.horaFim, observacao:exc.observacao, excecao:true};
     var perfil = (state.staffProfiles||[]).find(function(p){ return p.id===userId; });
+    var setorPadrao = perfil ? perfil.equipe : null;
+    var exc = (state.escalaExcecoes||[]).find(function(e){ return e.userId===userId && e.data===dataStr; });
+    if(exc){
+      // "trabalho_outro_setor" é só uma troca de setor pro dia — se não
+      // vieram horário próprios na exceção, usa o horário normal da pessoa
+      // nesse dia da semana (da escala semanal), já que ela trabalha
+      // normalmente, só que em outro setor.
+      if(exc.tipo === "trabalho_outro_setor"){
+        var dowExc = dateAtLocalTime(dataStr,"00:00").getDay();
+        var baseExc = (state.escalaSemanal||[]).find(function(e){ return e.userId===userId && e.diaSemana===dowExc; });
+        return {tipo:"trabalho", horaInicio:exc.horaInicio||(baseExc?baseExc.horaInicio:null), horaFim:exc.horaFim||(baseExc?baseExc.horaFim:null), observacao:exc.observacao, excecao:true, setor:exc.setor||setorPadrao};
+      }
+      return {tipo:exc.tipo, horaInicio:exc.horaInicio, horaFim:exc.horaFim, observacao:exc.observacao, excecao:true, setor:setorPadrao};
+    }
     if(perfil && perfil.equipe === "guarda"){
       var trabalha = guardaTrabalhaNoDia(perfil.guardaReferenciaData, dataStr);
-      if(trabalha === null) return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, semPadrao:true};
+      if(trabalha === null) return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, semPadrao:true, setor:setorPadrao};
       if(trabalha){
         var turnoG = turnoGuardaAtual();
-        return {tipo:"trabalho", horaInicio:(turnoG?turnoG.horaInicio:GUARDA_HORA_INICIO), horaFim:(turnoG?turnoG.horaFim:GUARDA_HORA_FIM), excecao:false};
+        return {tipo:"trabalho", horaInicio:(turnoG?turnoG.horaInicio:GUARDA_HORA_INICIO), horaFim:(turnoG?turnoG.horaFim:GUARDA_HORA_FIM), excecao:false, setor:setorPadrao};
       }
-      return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false};
+      return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, setor:setorPadrao};
     }
     var dt = dateAtLocalTime(dataStr,"00:00");
     var dow = dt.getDay();
@@ -1186,13 +1203,13 @@
       if(perfil && perfil.domingoFolgaMes){
         var ordinal = Math.ceil(dt.getDate()/7);
         if(ordinal === perfil.domingoFolgaMes){
-          return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, domingoFixo:true};
+          return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, domingoFixo:true, setor:setorPadrao};
         }
       }
     }
     var base = (state.escalaSemanal||[]).find(function(e){ return e.userId===userId && e.diaSemana===dow; });
-    if(base) return {tipo:base.tipo, horaInicio:base.horaInicio, horaFim:base.horaFim, excecao:false};
-    return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, semPadrao:true};
+    if(base) return {tipo:base.tipo, horaInicio:base.horaInicio, horaFim:base.horaFim, excecao:false, setor:(base.tipo==="trabalho" && base.setor) ? base.setor : setorPadrao};
+    return {tipo:"folga", horaInicio:null, horaFim:null, excecao:false, semPadrao:true, setor:setorPadrao};
   }
   function mapTurnoExecucaoFromRow(r){
     return {id:r.id, turnoId:r.turno_id, data:r.data, criadoEm:new Date(r.criado_em).getTime(),
@@ -2266,6 +2283,7 @@
   });
 
   // ---------- Home ----------
+  var homeSearchQuery = "";
   function renderHome(){
     var main = document.getElementById("homeView");
     var lowCount = allLowItems().length;
@@ -2274,81 +2292,72 @@
     var estoqueSub = lowCount > 0 ? (lowCount + (lowCount===1?" item abaixo do mínimo":" itens abaixo do mínimo")) : "tudo dentro do estoque mínimo";
     var manutSub = pendCount > 0 ? (pendCount + (pendCount===1?" pendência":" pendências")) : "nenhuma pendência";
     var procSub = procCount > 0 ? (procCount + (procCount===1?" procedimento salvo":" procedimentos salvos")) : "nenhum procedimento salvo ainda";
-    var cardsHtml = "";
-    if(podeVer("estoque")) cardsHtml +=
-      '<div class="card home-card" data-section="estoque">' + '<div class="home-card-icon">'+ic("box")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Estoque</p><p class="home-card-sub">'+escapeHtml(estoqueSub)+'</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
-    if(podeVer("procedimentos")) cardsHtml +=
-      '<div class="card home-card" data-section="procedimentos">' + '<div class="home-card-icon">'+ic("doc")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Procedimentos</p><p class="home-card-sub">'+escapeHtml(procSub)+'</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
-    if(podeVer("manutencao")) cardsHtml +=
-      '<div class="card home-card" data-section="manutencoes">' + '<div class="home-card-icon">'+ic("wrench")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Manutenções</p><p class="home-card-sub">'+escapeHtml(manutSub)+'</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
-    if(podeVer("hospedes")) cardsHtml +=
-      '<div class="card home-card" data-section="hospedes">' + '<div class="home-card-icon">'+ic("user")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Hóspedes</p><p class="home-card-sub">buscar documento por CPF/passaporte</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
+    var cards = [];
+    if(podeVer("estoque")) cards.push({section:"estoque", titulo:"Estoque", icon:ic("box"), sub:estoqueSub});
+    if(podeVer("procedimentos")) cards.push({section:"procedimentos", titulo:"Procedimentos", icon:ic("doc"), sub:procSub});
+    if(podeVer("manutencao")) cards.push({section:"manutencoes", titulo:"Manutenções", icon:ic("wrench"), sub:manutSub});
+    if(podeVer("hospedes")) cards.push({section:"hospedes", titulo:"Hóspedes", icon:ic("user"), sub:"buscar documento por CPF/passaporte"});
     if(podeVer("limpeza")){
       var limpPend = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && !isRecepcaoOnly(s.tipo); }).length;
       var limpSub = limpPend > 0 ? (limpPend + (limpPend===1?" pedido em aberto":" pedidos em aberto")) : "tudo em dia";
-      cardsHtml +=
-      '<div class="card home-card" data-section="limpeza">' + '<div class="home-card-icon">'+ic("broom")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Limpeza</p><p class="home-card-sub">'+escapeHtml(limpSub)+'</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
+      cards.push({section:"limpeza", titulo:"Limpeza", icon:ic("broom"), sub:limpSub});
     }
     if(podeVer("recepcao")){
       var pendTotal = state.solicitacoes.filter(function(s){ return s.status!=="concluido"; }).length +
         state.manutencoes.filter(function(m){ return m.status==="pendente" && m.origem==="hospede"; }).length;
       var recepSub = pendTotal > 0 ? (pendTotal + (pendTotal===1?" pendência":" pendências")) : "tudo em dia";
-      cardsHtml +=
-      '<div class="card home-card" data-section="recepcao">' + '<div class="home-card-icon">'+ic("bell")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Recepção</p><p class="home-card-sub">'+escapeHtml(recepSub)+'</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
+      cards.push({section:"recepcao", titulo:"Recepção", icon:ic("bell"), sub:recepSub});
     }
     if(podeVer("servico_geral")){
-      cardsHtml +=
-      '<div class="card home-card" data-section="servicogeral">' + '<div class="home-card-icon">'+ic("gear")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Serviço Geral</p><p class="home-card-sub">jacuzzi e manutenção predial</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
+      cards.push({section:"servicogeral", titulo:"Serviço Geral", icon:ic("gear"), sub:"jacuzzi e manutenção predial"});
     }
     if(podeVer("equipamentos")){
       var equipAlertCount = state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length;
       var equipSub = equipAlertCount > 0 ? (equipAlertCount + (equipAlertCount===1?" equipamento precisa de atenção":" equipamentos precisam de atenção")) : "tudo em dia";
-      cardsHtml +=
-      '<div class="card home-card" data-section="equipamentos">' + '<div class="home-card-icon">'+ic("gauge")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Equipamentos</p><p class="home-card-sub">'+escapeHtml(equipSub)+'</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
+      cards.push({section:"equipamentos", titulo:"Equipamentos", icon:ic("gauge"), sub:equipSub});
     }
     if(podeVer("checklist_turno")){
       var turnosAtrasadosN = (currentUser.role==="admin") ? turnosAtrasados().length : 0;
       var checklistSub = turnosAtrasadosN>0 ? (''+ic("warning")+' '+turnosAtrasadosN+' turno(s) atrasado(s) pra concluir') : "atividades do seu turno";
-      cardsHtml +=
-      '<div class="card home-card" data-section="checklistturno">' + '<div class="home-card-icon">'+ic("clock")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Checklist de Turno</p><p class="home-card-sub"'+(turnosAtrasadosN>0?' style="color:var(--red-600);font-weight:700;"':'')+'>'+escapeHtml(checklistSub)+'</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
+      cards.push({section:"checklistturno", titulo:"Checklist de Turno", icon:ic("clock"), sub:checklistSub, subVermelho:turnosAtrasadosN>0});
     }
     if(podeVer("escala_trabalho")){
-      cardsHtml +=
-      '<div class="card home-card" data-section="escala">' + '<div class="home-card-icon">'+ic("users")+'</div>' + '<div class="home-card-main"><p class="home-card-title">Equipe</p><p class="home-card-sub">horários, folga e setor</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
+      cards.push({section:"escala", titulo:"Equipe", icon:ic("users"), sub:"horários, folga e setor"});
     }
-    if(currentUser && currentUser.role === "admin") cardsHtml +=
-      '<div class="card home-card" data-section="supervisao">' + '<div class="home-card-icon">'+ic("search")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Supervisão</p><p class="home-card-sub">painel geral e histórico</p></div>' +
+    if(currentUser && currentUser.role === "admin") cards.push({section:"supervisao", titulo:"Supervisão", icon:ic("search"), sub:"painel geral e histórico"});
+    if(currentUser && currentUser.role === "admin") cards.push({section:"admin", titulo:"Administração", icon:ic("key"), sub:"gerenciar quem acessa o quê"});
+    cards.push({section:"configuracoes", titulo:"Configurações", icon:ic("logout"), sub:"minha conta e sair"});
+
+    var q = normalizarBusca(homeSearchQuery.trim());
+    var cardsFiltrados = q ? cards.filter(function(c){ return normalizarBusca(c.titulo).indexOf(q) > -1 || normalizarBusca(c.sub).indexOf(q) > -1; }) : cards;
+
+    var cardsHtml = cardsFiltrados.map(function(c){
+      return '<div class="card home-card" data-section="'+c.section+'">' + '<div class="home-card-icon">'+c.icon+'</div>' +
+        '<div class="home-card-main"><p class="home-card-title">'+escapeHtml(c.titulo)+'</p><p class="home-card-sub"'+(c.subVermelho?' style="color:var(--red-600);font-weight:700;"':'')+'>'+escapeHtml(c.sub)+'</p></div>' +
         '<div class="home-card-arrow">›</div>' +
       '</div>';
-    if(currentUser && currentUser.role === "admin") cardsHtml +=
-      '<div class="card home-card" data-section="admin">' + '<div class="home-card-icon">'+ic("key")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Administração</p><p class="home-card-sub">gerenciar quem acessa o quê</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
-    cardsHtml +=
-      '<div class="card home-card" data-section="configuracoes">' + '<div class="home-card-icon">'+ic("logout")+'</div>' +        '<div class="home-card-main"><p class="home-card-title">Configurações</p><p class="home-card-sub">minha conta e sair</p></div>' +
-        '<div class="home-card-arrow">›</div>' +
-      '</div>';
-    main.innerHTML = cardsHtml || '<div class="empty">Você ainda não tem acesso liberado a nenhuma área. Peça para o administrador liberar seu acesso.</div>';
+    }).join("");
+
+    var buscaHtml = cards.length > 4 ? ('<div style="padding:0 0 12px;">' +
+      '<input type="text" id="homeSearchInput" placeholder="Buscar área…" value="'+escapeHtml(homeSearchQuery)+'" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;background:#fff;font-family:inherit;">' +
+    '</div>') : "";
+
+    var listaHtml = cardsFiltrados.length > 0
+      ? cardsHtml
+      : (q ? '<div class="empty">Nenhuma área encontrada com "'+escapeHtml(homeSearchQuery.trim())+'".</div>' : '<div class="empty">Você ainda não tem acesso liberado a nenhuma área. Peça para o administrador liberar seu acesso.</div>');
+
+    main.innerHTML = buscaHtml + '<div id="homeCardsList">' + listaHtml + '</div>';
+
+    var searchInput = document.getElementById("homeSearchInput");
+    if(searchInput){
+      searchInput.addEventListener("input", function(){
+        homeSearchQuery = searchInput.value;
+        renderHome();
+        var novoInput = document.getElementById("homeSearchInput");
+        if(novoInput){ novoInput.focus(); novoInput.setSelectionRange(novoInput.value.length, novoInput.value.length); }
+      });
+    }
+
     main.querySelectorAll(".home-card").forEach(function(c){
       c.onclick = function(){
         var sec = c.getAttribute("data-section");
@@ -6142,8 +6151,11 @@
           var ef = escalaEfetiva(f.id, d);
           var cor = ESCALA_TIPO_COR[ef.tipo] || "var(--ink-400)";
           var texto = ef.tipo === "trabalho" ? (escapeHtml(ef.horaInicio||"?")+"–"+escapeHtml(ef.horaFim||"?")) : (ESCALA_TIPO_LABEL[ef.tipo]||ef.tipo);
+          var setorDiferente = ef.tipo === "trabalho" && ef.setor && f.equipe && ef.setor !== f.equipe;
           html += '<td style="padding:3px;border-top:1px solid var(--line);text-align:center;">' +
-            '<div style="padding:6px 3px;border-radius:7px;border:1px solid '+cor+';background:'+(ef.tipo==="trabalho"?"#fff":"var(--sand-50)")+';color:'+cor+';font-size:10.5px;font-weight:700;">'+texto+((ef.excecao||ef.domingoFixo)?' •':'')+'</div>' +
+            '<div style="padding:6px 3px;border-radius:7px;border:1px solid '+cor+';background:'+(ef.tipo==="trabalho"?"#fff":"var(--sand-50)")+';color:'+cor+';font-size:10.5px;font-weight:700;">'+texto+((ef.excecao||ef.domingoFixo)?' •':'')+
+            (setorDiferente ? '<br><span style="font-weight:600;color:var(--amber-600);">'+EQUIPE_LABEL[ef.setor]+'</span>' : '') +
+            '</div>' +
           '</td>';
         });
         html += '</tr>';
@@ -6233,8 +6245,8 @@
 
     if(podeEd && excFuncionarios.length > 0){
       html += '<div class="card" style="margin-top:16px;">';
-      html += '<p class="section-title" style="margin:0 0 10px;">Registrar folga extra, falta ou atestado</p>';
-      html += '<p class="item-meta" style="margin:0 0 10px;">Vale pra qualquer pessoa, inclusive guardas — a escala 12×36 dos guardas se edita em Equipe → Guarda.</p>';
+      html += '<p class="section-title" style="margin:0 0 10px;">Registrar folga extra, falta, atestado ou troca de setor do dia</p>';
+      html += '<p class="item-meta" style="margin:0 0 10px;">Vale pra qualquer pessoa, inclusive guardas — a escala 12×36 dos guardas se edita em Equipe → Guarda. "Trabalho (outro setor)" é pra quando alguém que varia entre Recepção e Manutenção (ex: um dia decidido por necessidade) trabalha normalmente, só que num setor diferente do de costume naquele dia.</p>';
       html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:4px;">Funcionário</label>';
       html += '<select id="folgaExcFuncionario" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:10px;">' +
         excFuncionarios.map(function(f){ return '<option value="'+f.id+'">'+escapeHtml(f.nome)+(f.equipe==="guarda"?" (guarda)":"")+'</option>'; }).join("") +
@@ -6245,8 +6257,12 @@
         '<option value="folga_extra">Folga extra (compensação)</option>' +
         '<option value="falta">Falta</option>' +
         '<option value="atestado">Atestado</option>' +
+        '<option value="trabalho_outro_setor">Trabalho (outro setor)</option>' +
       '</select>';
       html += '</div>';
+      html += '<select id="folgaExcSetor" style="display:none;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:10px;">' +
+        SETORES_ALTERNAVEIS.map(function(s){ return '<option value="'+s+'">'+EQUIPE_LABEL[s]+'</option>'; }).join("") +
+      '</select>';
       html += '<textarea id="folgaExcObs" placeholder="Observação (opcional)" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;margin-bottom:10px;"></textarea>';
       html += '<button type="button" id="folgaExcRegistrarBtn" class="btn-primary" style="width:100%;">Registrar</button>';
       html += '</div>';
@@ -6257,8 +6273,10 @@
         html += '<p class="section-title" style="margin:0 0 10px;">Próximas exceções registradas</p>';
         futuras.forEach(function(e, idx){
           var f = funcionarios.find(function(x){ return x.id===e.userId; }) || (state.staffProfiles||[]).find(function(x){ return x.id===e.userId; });
+          var rotuloTipo = ESCALA_TIPO_LABEL[e.tipo]||e.tipo;
+          if(e.tipo === "trabalho_outro_setor" && e.setor) rotuloTipo += " — " + EQUIPE_LABEL[e.setor];
           html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:'+(idx===0?'0 0 10px':'10px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
-            '<span style="font-size:13px;"><strong>'+escapeHtml(f?f.nome:"?")+'</strong> — '+(ESCALA_TIPO_LABEL[e.tipo]||e.tipo)+' em '+e.data.slice(8,10)+'/'+e.data.slice(5,7)+'</span>' +
+            '<span style="font-size:13px;"><strong>'+escapeHtml(f?f.nome:"?")+'</strong> — '+rotuloTipo+' em '+e.data.slice(8,10)+'/'+e.data.slice(5,7)+'</span>' +
             '<button type="button" class="folga-exc-remover" data-uid="'+e.userId+'" data-data="'+e.data+'" style="background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12px;font-weight:700;">Remover</button>' +
           '</div>';
         });
@@ -6277,14 +6295,22 @@
       body.querySelectorAll(".domingo-fixo-select").forEach(function(sel){
         sel.addEventListener("change", function(){ salvarDomingoFixo(sel.getAttribute("data-uid"), sel.value); });
       });
+      var tipoSelExc = document.getElementById("folgaExcTipo");
+      var setorSelExc = document.getElementById("folgaExcSetor");
+      if(tipoSelExc && setorSelExc){
+        tipoSelExc.addEventListener("change", function(){
+          setorSelExc.style.display = tipoSelExc.value === "trabalho_outro_setor" ? "block" : "none";
+        });
+      }
       var regBtn = document.getElementById("folgaExcRegistrarBtn");
       if(regBtn) regBtn.onclick = function(){
         var userId = document.getElementById("folgaExcFuncionario").value;
         var dataStr = document.getElementById("folgaExcData").value;
         var tipo = document.getElementById("folgaExcTipo").value;
         var obs = document.getElementById("folgaExcObs").value.trim() || null;
+        var setor = tipo === "trabalho_outro_setor" ? document.getElementById("folgaExcSetor").value : null;
         if(!userId || !dataStr){ showToast("Escolha funcionário e data"); return; }
-        salvarEscalaExcecao(userId, dataStr, tipo, null, null, obs);
+        salvarEscalaExcecao(userId, dataStr, tipo, null, null, obs, setor);
       };
       body.querySelectorAll(".folga-exc-remover").forEach(function(btn){
         btn.onclick = function(){ removerEscalaExcecao(btn.getAttribute("data-uid"), btn.getAttribute("data-data")); };
@@ -6454,11 +6480,71 @@
       });
       html += '</div>';
     }
+
+    // Pra quem varia de setor dependendo do dia (ex: 3 dias na recepção, 3
+    // dias na manutenção) — define um setor fixo diferente do padrão em
+    // dias específicos da semana. Pra um dia pontual decidido de última
+    // hora (ex: "esse dia ele vai pra onde precisar mais"), use "Trabalho
+    // (outro setor)" em Equipe → Folga em vez disso.
+    var staffAlternavel = staff.filter(function(p){ return SETORES_ALTERNAVEIS.indexOf(p.equipe) > -1; });
+    if(staffAlternavel.length > 0){
+      html += '<div class="section-title" style="margin-top:22px;">Setor fixo por dia da semana</div>';
+      html += '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Pra quem varia entre Recepção e Manutenção em dias fixos da semana (ex: segunda e quarta na manutenção, resto na recepção). Deixe "Padrão" nos dias que seguem o setor de cima. Pra um dia avulso que muda conforme a necessidade, use "Trabalho (outro setor)" na aba Folga.</p>';
+      html += '<div class="card">';
+      staffAlternavel.forEach(function(p, idx){
+        html += '<div style="padding:'+(idx===0?'0 0 14px':'14px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">';
+        html += '<p style="margin:0 0 8px;font-weight:700;font-size:13.5px;">'+escapeHtml(p.nome)+' <span style="font-weight:400;color:var(--ink-400);">— padrão: '+EQUIPE_LABEL[p.equipe]+'</span></p>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+        for(var dia=0; dia<=6; dia++){
+          var rowDia = (state.escalaSemanal||[]).find(function(e){ return e.userId===p.id && e.diaSemana===dia; });
+          var setorAtual = (rowDia && rowDia.tipo==="trabalho" && rowDia.setor) ? rowDia.setor : "";
+          html += '<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--ink-600);">' + DIAS_SEMANA_NOMES[dia].slice(0,3) +
+            '<select class="setor-dia-select" data-uid="'+p.id+'" data-dia="'+dia+'" '+(isAdmin?'':'disabled')+' style="padding:6px 7px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:12.5px;background:var(--sand-50);">' +
+              '<option value="">Padrão</option>' +
+              SETORES_ALTERNAVEIS.map(function(s){ return '<option value="'+s+'" '+(setorAtual===s?"selected":"")+'>'+EQUIPE_LABEL[s]+'</option>'; }).join("") +
+            '</select>' +
+          '</label>';
+        }
+        html += '</div></div>';
+      });
+      html += '</div>';
+    }
+
     body.innerHTML = html;
     if(isAdmin){
       body.querySelectorAll(".equipe-setor-select").forEach(function(sel){
         sel.addEventListener("change", function(){ salvarEquipeSetor(sel.getAttribute("data-uid"), sel.value); });
       });
+      body.querySelectorAll(".setor-dia-select").forEach(function(sel){
+        sel.addEventListener("change", function(){
+          salvarSetorDiaSemana(sel.getAttribute("data-uid"), parseInt(sel.getAttribute("data-dia"),10), sel.value || null);
+        });
+      });
+    }
+  }
+
+  async function salvarSetorDiaSemana(userId, dia, setor){
+    try{
+      var existente = state.escalaSemanal.find(function(e){ return e.userId===userId && e.diaSemana===dia; });
+      if(existente && existente.tipo !== "trabalho"){
+        showToast("Esse dia está marcado como folga — tire a folga fixa primeiro, na aba Folga");
+        renderEquipe();
+        return;
+      }
+      var payload = {user_id:userId, dia_semana:dia, tipo:"trabalho", hora_inicio:(existente?existente.horaInicio:null), hora_fim:(existente?existente.horaFim:null), setor:setor};
+      if(existente){
+        var upd = await dbUpdate("escala_semanal", existente.id, payload, mapEscalaSemanalFromRow);
+        var idx = state.escalaSemanal.findIndex(function(e){ return e.id===existente.id; });
+        state.escalaSemanal[idx] = upd;
+      } else {
+        payload.id = uid();
+        var novo = await dbInsert("escala_semanal", payload, mapEscalaSemanalFromRow);
+        state.escalaSemanal.push(novo);
+      }
+      showToast("Setor do dia atualizado");
+      renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao salvar setor do dia");
     }
   }
 
@@ -6481,10 +6567,10 @@
     }
   }
 
-  async function salvarEscalaExcecao(userId, dataStr, tipo, horaInicio, horaFim, obs){
+  async function salvarEscalaExcecao(userId, dataStr, tipo, horaInicio, horaFim, obs, setor){
     try{
       var existente = state.escalaExcecoes.find(function(e){ return e.userId===userId && e.data===dataStr; });
-      var payload = {user_id:userId, data:dataStr, tipo:tipo, hora_inicio:horaInicio||null, hora_fim:horaFim||null, observacao:obs||null};
+      var payload = {user_id:userId, data:dataStr, tipo:tipo, hora_inicio:horaInicio||null, hora_fim:horaFim||null, observacao:obs||null, setor:setor||null};
       if(existente){
         var upd = await dbUpdate("escala_excecoes", existente.id, payload, mapEscalaExcecaoFromRow);
         var idx = state.escalaExcecoes.findIndex(function(e){ return e.id===existente.id; });
@@ -9023,6 +9109,7 @@
     });
   }
 
+  var adminUsersSearchQuery = "";
   var relatorioEmailsCache = null;
   async function loadRelatorioEmails(){
     var res = await sb.from("relatorio_destinatarios").select("*").order("criado_em");
@@ -9070,6 +9157,11 @@
       main.innerHTML = '<div class="empty">Erro ao carregar usuários — tente de novo.</div>';
       return;
     }
+    renderAdminBody();
+  }
+
+  function renderAdminBody(){
+    var main = document.getElementById("adminView");
     var html = '<div class="section-title" style="margin-top:0;">'+ic("mail")+' Relatório semanal por email</div>';
     html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Todo segunda de manhã, um resumo automático de todas as abas é enviado pra esses emails.</p>';
     html += '<div class="card">';
@@ -9099,7 +9191,19 @@
       return;
     }
     html += '<p style="color:var(--ink-600);font-size:13px;margin:0 0 14px;">Marque o que cada pessoa pode ver e editar. Muda na hora, sem precisar salvar.</p>';
-    adminUsersCache.forEach(function(u){
+    if(adminUsersCache.length > 5){
+      html += '<div style="padding:0 0 12px;">' +
+        '<input type="text" id="adminUsersSearchInput" placeholder="Buscar pessoa pelo nome ou email…" value="'+escapeHtml(adminUsersSearchQuery)+'" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;background:#fff;font-family:inherit;">' +
+      '</div>';
+    }
+    var qUsuarios = normalizarBusca(adminUsersSearchQuery.trim());
+    var usuariosFiltrados = qUsuarios ? adminUsersCache.filter(function(u){
+      return normalizarBusca(u.nome||"").indexOf(qUsuarios) > -1 || normalizarBusca(u.email||"").indexOf(qUsuarios) > -1;
+    }) : adminUsersCache;
+    if(usuariosFiltrados.length === 0){
+      html += '<div class="empty">Nenhuma pessoa encontrada com "'+escapeHtml(adminUsersSearchQuery.trim())+'".</div>';
+    }
+    usuariosFiltrados.forEach(function(u){
       html += '<div class="admin-user-card" data-uid="'+u.id+'">';
       html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+'</div>';
       html += '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>';
@@ -9153,6 +9257,16 @@
       html += '</div>';
     });
     main.innerHTML = html;
+
+    var adminSearchInput = document.getElementById("adminUsersSearchInput");
+    if(adminSearchInput){
+      adminSearchInput.addEventListener("input", function(){
+        adminUsersSearchQuery = adminSearchInput.value;
+        renderAdminBody();
+        var novoInput = document.getElementById("adminUsersSearchInput");
+        if(novoInput){ novoInput.focus(); novoInput.setSelectionRange(novoInput.value.length, novoInput.value.length); }
+      });
+    }
 
     var addEmailBtn = document.getElementById("adicionarRelatorioEmailBtn");
     if(addEmailBtn){
