@@ -5132,6 +5132,23 @@
   function localDateStr(d){
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   }
+  // Turno que atravessa a meia-noite (ex.: entra às 19h, sai às 7h do dia
+  // seguinte) — horaFim cadastrado é "menor" que horaInicio.
+  function turnoCruzaMeiaNoite(turno){
+    return !!(turno && turno.horaInicio && turno.horaFim && turno.horaFim < turno.horaInicio);
+  }
+  // Dada a data do ciclo (execucao.data, sempre o dia em que o turno
+  // começou) e um horário hh:mm de uma atividade/limite desse turno,
+  // devolve a data civil correta em que esse horário realmente cai: se o
+  // turno cruza a meia-noite e o horário é anterior ao início do turno
+  // (ex.: 02:00 de um turno que começa às 19h), é madrugada do dia
+  // seguinte, não do dia em que o ciclo começou.
+  function dataEfetivaNoCiclo(execucaoData, turno, hhmm){
+    if(turnoCruzaMeiaNoite(turno) && hhmm && hhmm < turno.horaInicio){
+      return addDiasStr(execucaoData, 1);
+    }
+    return execucaoData;
+  }
   function fmtHM(d){
     return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
   }
@@ -5169,7 +5186,7 @@
       var turno = state.turnos.find(function(t){ return t.id===exec.turnoId; });
       if(!turno || !turno.horaFim) return;
       if(!ehAdminGlobal && (turno.empresa||"pousada") !== minhaEmpresaAtraso) return;
-      var limite = dateAtLocalTime(exec.data, turno.horaFim).getTime() + 30*60000;
+      var limite = dateAtLocalTime(dataEfetivaNoCiclo(exec.data, turno, turno.horaFim), turno.horaFim).getTime() + 30*60000;
       if(agora > limite) out.push({turno:turno, execucao:exec, atrasoMin:Math.floor((agora-limite)/60000)});
     });
     return out;
@@ -5341,13 +5358,19 @@
     if(atividade.tipo === "livre"){
       return {fase:"liberado", podeMarcarFeito:true, podeMarcarNaoFeito:true, podeMarcarAtrasado:false};
     }
-    var inicio, fim;
+    var turnoDaAtividade = state.turnos.find(function(t){ return t.id===execucao.turnoId; });
+    var inicio, fim, dataInicio, dataFim;
     if(atividade.tipo === "recorrente"){
-      inicio = dateAtLocalTime(execucao.data, slotHora);
-      fim = dateAtLocalTime(execucao.data, addMinutosHM(slotHora, atividade.intervaloMinutos));
+      var fimHm = addMinutosHM(slotHora, atividade.intervaloMinutos);
+      dataInicio = dataEfetivaNoCiclo(execucao.data, turnoDaAtividade, slotHora);
+      dataFim = (fimHm < slotHora) ? addDiasStr(dataInicio, 1) : dataInicio;
+      inicio = dateAtLocalTime(dataInicio, slotHora);
+      fim = dateAtLocalTime(dataFim, fimHm);
     } else {
-      inicio = dateAtLocalTime(execucao.data, atividade.horaInicio);
-      fim = dateAtLocalTime(execucao.data, atividade.horaFim);
+      dataInicio = dataEfetivaNoCiclo(execucao.data, turnoDaAtividade, atividade.horaInicio);
+      dataFim = (atividade.horaFim < atividade.horaInicio) ? addDiasStr(dataInicio, 1) : dataInicio;
+      inicio = dateAtLocalTime(dataInicio, atividade.horaInicio);
+      fim = dateAtLocalTime(dataFim, atividade.horaFim);
     }
     var now = new Date();
     if(now < inicio) return {fase:"bloqueado", podeMarcarFeito:false, podeMarcarNaoFeito:false, podeMarcarAtrasado:false, libera:inicio};
@@ -5805,7 +5828,7 @@
       '<p class="item-meta">ciclo de '+fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime())+' — reinicia às '+escapeHtml(turno.horaInicio)+' do dia seguinte'+(turno.horaFim?(' · término às '+escapeHtml(turno.horaFim)):'')+'</p>' +
     '</div>';
     if(!execucao.concluidoEm && turno.horaFim){
-      var limiteMs = dateAtLocalTime(execucao.data, turno.horaFim).getTime() + 30*60000;
+      var limiteMs = dateAtLocalTime(dataEfetivaNoCiclo(execucao.data, turno, turno.horaFim), turno.horaFim).getTime() + 30*60000;
       if(Date.now() > limiteMs){
         var atrasoMin = Math.floor((Date.now()-limiteMs)/60000);
         html += '<div class="card" style="margin-bottom:14px;border:2px solid var(--red-600);background:#fdf0f0;">' +
@@ -5815,9 +5838,18 @@
     }
     var atividadesComuns = atividades.filter(function(a){ return a.tipo !== "recorrente"; });
     var atividadesRecorrentes = atividades.filter(function(a){ return a.tipo === "recorrente"; });
-    if(atividades.length === 0){
+    // Turno já concluído: some com a lista marcada atividade por atividade
+    // e deixa a tela limpa, pronta pro próximo ciclo — quem quiser conferir
+    // o que foi feito usa o link "ver o que foi marcado" (mesmo detalhe que
+    // a Supervisão/visão geral usam).
+    var jaConcluido = !!execucao.concluidoEm;
+    if(jaConcluido){
+      html += '<button type="button" data-ver-turno-dia data-turno-id="'+turno.id+'" data-execucao-id="'+execucao.id+'" style="display:block;background:none;border:none;padding:0;margin-bottom:14px;color:var(--teal-700);font-size:12.5px;font-weight:800;cursor:pointer;text-align:left;">'+ic("search")+' Ver o que foi marcado nesse ciclo</button>';
+    }
+    if(atividades.length === 0 && !jaConcluido){
       html += '<div class="empty">Nenhuma atividade cadastrada pra este turno ainda.</div>';
     }
+    if(!jaConcluido){
     atividadesComuns.forEach(function(a){
       var item = atividadeExecucaoFor(execucao.id, a.id);
       var est = estadoAtividade(a, execucao, item);
@@ -5866,9 +5898,10 @@
       html += '<div class="slot-action-wrap" data-slot-action-for="'+a.id+'" style="display:none;margin-top:10px;"></div>';
       html += '</div>';
     });
+    } // fim do if(!jaConcluido) que esconde a lista de atividades
 
     var pendenciasHerdadas = state.turnoAtividadeExecucoes.filter(function(x){ return x.repassadoTurnoId===turno.id && x.status==="pendente"; });
-    if(pendenciasHerdadas.length > 0){
+    if(pendenciasHerdadas.length > 0 && !jaConcluido){
       html += '<div class="section-title">'+ic("download")+' Pendências do turno anterior</div>';
       pendenciasHerdadas.forEach(function(item){
         var ativOrig = state.turnoAtividades.find(function(a){ return a.id===item.turnoAtividadeId; });
@@ -5889,7 +5922,6 @@
       });
     }
 
-    var jaConcluido = !!execucao.concluidoEm;
     html += '<div class="card" style="margin-top:14px;background:var(--sand-50);">';
     if(jaConcluido){
       html += '<p style="margin:0;font-size:14px;font-weight:700;">'+ic("check")+' Turno concluído às '+fmtDate(execucao.concluidoEm).split(" ")[1]+(execucao.concluidoPor?(' por '+escapeHtml(execucao.concluidoPor)):'')+'</p>';
@@ -5907,6 +5939,15 @@
     html += '</div>';
 
     main.innerHTML = html;
+    main.querySelectorAll('[data-ver-turno-dia]').forEach(function(btn){
+      btn.onclick = function(){
+        var tId = btn.getAttribute("data-turno-id");
+        var eId = btn.getAttribute("data-execucao-id");
+        var t = tId ? (state.turnos.find(function(x){ return x.id===tId; }) || turno) : turno;
+        var e = eId ? (state.turnoExecucoes.find(function(x){ return x.id===eId; }) || execucao) : execucao;
+        abrirDetalheTurnoDiaSheet(t, e);
+      };
+    });
     main.querySelectorAll('button[data-act="feito"]').forEach(function(b){
       b.onclick = function(){ marcarAtividadeTurno(execucao, b.getAttribute("data-id"), "feito", null, false); };
     });
@@ -8851,10 +8892,12 @@
   function renderSupervisao(){
     var main = document.getElementById("supervisaoView");
     var html = buildPainelHtml();
+    var turnosAtrasadosAgora = turnosAtrasados();
     html += '<div class="seg-toggle" style="margin-top:18px;">' +
       '<button data-stopo="limpeza" class="'+(supervisaoTopo==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza</button>' +
       '<button data-stopo="estoque" class="'+(supervisaoTopo==="estoque"?"active":"")+'">'+ic("box")+' Estoque</button>' +
       '<button data-stopo="manutencao" class="'+(supervisaoTopo==="manutencao"?"active":"")+'">'+ic("wrench")+' Manutenção</button>' +
+      '<button data-stopo="turnos" class="'+(supervisaoTopo==="turnos"?"active":"")+'">'+ic("clock")+' Turnos'+(turnosAtrasadosAgora.length?(' <span style="background:var(--red-600);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;margin-left:3px;">'+turnosAtrasadosAgora.length+'</span>'):'')+'</button>' +
     '</div>';
     html += '<div id="supervisaoTopoContent"></div>';
     main.innerHTML = html;
@@ -8864,7 +8907,70 @@
     var content = document.getElementById("supervisaoTopoContent");
     if(supervisaoTopo === "limpeza") renderSupervisaoLimpeza(content);
     else if(supervisaoTopo === "estoque") renderSupervisaoEstoqueTopico(content);
-    else renderSupervisaoManutencaoTopico(content);
+    else if(supervisaoTopo === "manutencao") renderSupervisaoManutencaoTopico(content);
+    else renderSupervisaoTurnosTopico(content);
+    if(!supervisaoTurnosInterval){
+      supervisaoTurnosInterval = setInterval(function(){
+        if(appSection === "supervisao" && supervisaoTopo === "turnos") renderSupervisao();
+      }, 60000);
+    }
+  }
+  var supervisaoTurnosInterval = null;
+
+  // Painel de supervisão dos turnos: alerta em destaque pra quem passou do
+  // horário sem concluir, e um resumo do status de hoje de cada turno (das
+  // duas empresas, já que é visão de admin). O "atrasado" é recalculado a
+  // cada render/minuto porque depende só da hora atual, sem precisar
+  // recarregar dados do banco.
+  function renderSupervisaoTurnosTopico(content){
+    var html = "";
+    var atrasados = turnosAtrasados();
+    if(atrasados.length > 0){
+      html += '<div class="section-title" style="margin-top:14px;">'+ic("warning")+' Turnos atrasados agora</div>';
+      atrasados.sort(function(a,b){ return b.atrasoMin-a.atrasoMin; }).forEach(function(item){
+        html += '<div class="card" style="margin-bottom:10px;border:2px solid var(--red-600);background:#fdf0f0;">' +
+          '<p style="margin:0 0 3px;font-size:15px;font-weight:800;">'+escapeHtml(item.turno.nome)+' <span class="item-meta" style="font-weight:600;">('+escapeHtml((item.turno.empresa||"pousada")==="restaurante"?"Restaurante":"Pousada")+')</span></p>' +
+          '<p style="margin:0;color:var(--red-600);font-weight:800;font-size:13.5px;">Deveria ter terminado às '+escapeHtml(item.turno.horaFim)+' — já passou '+item.atrasoMin+' min sem ser concluído.</p>' +
+          '<button type="button" data-ver-turno-dia data-turno-id="'+item.turno.id+'" data-execucao-id="'+item.execucao.id+'" style="display:block;background:none;border:none;padding:0;margin-top:6px;color:var(--teal-700);font-size:12.5px;font-weight:800;cursor:pointer;text-align:left;">'+ic("search")+' Ver o que já foi marcado</button>' +
+        '</div>';
+      });
+    } else {
+      html += '<div class="card" style="margin-top:14px;background:var(--sand-50);"><p style="margin:0;font-size:13.5px;">'+ic("check")+' Nenhum turno atrasado agora.</p></div>';
+    }
+
+    html += '<div class="section-title" style="margin-top:18px;">'+ic("search")+' Status de hoje, por turno</div>';
+    var turnosTodos = state.turnos.slice().sort(function(a,b){
+      var ea = (a.empresa||"pousada"), eb = (b.empresa||"pousada");
+      if(ea !== eb) return ea==="pousada" ? -1 : 1;
+      return (a.ordem||0)-(b.ordem||0);
+    });
+    if(turnosTodos.length === 0){
+      html += '<div class="empty">Nenhum turno cadastrado ainda.</div>';
+    }
+    turnosTodos.forEach(function(t){
+      var cicloAtual = cicloDataAtual(t);
+      var execAtual = state.turnoExecucoes.find(function(e){ return e.turnoId===t.id && e.data===cicloAtual; });
+      html += '<div class="card" style="margin-bottom:10px;">';
+      html += '<p style="margin:0 0 3px;font-size:14.5px;font-weight:800;">'+escapeHtml(t.nome)+' <span class="item-meta" style="font-weight:600;">('+escapeHtml((t.empresa||"pousada")==="restaurante"?"Restaurante":"Pousada")+')</span></p>';
+      if(execAtual && execAtual.concluidoEm){
+        html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("check")+' Concluído por '+escapeHtml(execAtual.concluidoPor||"—")+' às '+escapeHtml(fmtDate(execAtual.concluidoEm).split(" ")[1]||"")+'</p>';
+      } else {
+        html += '<p class="item-meta">Ainda não concluído hoje.</p>';
+      }
+      if(execAtual){
+        html += '<button type="button" data-ver-turno-dia data-turno-id="'+t.id+'" data-execucao-id="'+execAtual.id+'" style="display:block;background:none;border:none;padding:0;margin-top:6px;color:var(--teal-700);font-size:12.5px;font-weight:800;cursor:pointer;text-align:left;">'+ic("search")+' Ver o que foi marcado hoje</button>';
+      }
+      html += '</div>';
+    });
+
+    content.innerHTML = html;
+    content.querySelectorAll("[data-ver-turno-dia]").forEach(function(btn){
+      btn.onclick = function(){
+        var turno = state.turnos.find(function(t){ return t.id===btn.getAttribute("data-turno-id"); });
+        var execucao = state.turnoExecucoes.find(function(e){ return e.id===btn.getAttribute("data-execucao-id"); });
+        if(turno && execucao) abrirDetalheTurnoDiaSheet(turno, execucao);
+      };
+    });
   }
 
   function renderSupervisaoLimpeza(content){
