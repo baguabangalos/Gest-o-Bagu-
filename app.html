@@ -8412,15 +8412,15 @@
     return checkinsConcluidos.filter(function(s){ return !idsComAbastecimentoPendente[s.acomodacaoId] && !s.revisaoConcluidaEm; });
   }
 
-  var recepcaoSubView = "limpeza"; // 'limpeza' | 'abastecimento' | 'avulsos' | 'qr'
+  var recepcaoSubView = "abastecimento"; // 'abastecimento' | 'limpeza' | 'avulsos' | 'qr'
 
   function renderRecepcao(){
     var main = document.getElementById("recepcaoView");
     var podeGerenciar = podeEditar("recepcao") || (currentUser && currentUser.role === "admin");
 
     var html = '<div class="seg-toggle">' +
-      '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza</button>' +
       '<button data-rsub="abastecimento" class="'+(recepcaoSubView==="abastecimento"?"active":"")+'">'+ic("cube")+' Solicitações</button>' +
+      '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza</button>' +
       '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">'+ic("plus")+' Avulsos</button>' +
       '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
     '</div>';
