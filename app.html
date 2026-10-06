@@ -2303,8 +2303,20 @@
       cards.push({section:"limpeza", titulo:"Limpeza", icon:ic("broom"), sub:limpSub});
     }
     if(podeVer("recepcao")){
-      var pendTotal = state.solicitacoes.filter(function(s){ return s.status!=="concluido"; }).length +
-        state.manutencoes.filter(function(m){ return m.status==="pendente" && m.origem==="hospede"; }).length;
+      // Conta só o que realmente aparece dentro da própria aba Recepção
+      // (sub-abas Limpeza e Solicitações) — antes somava TODAS as
+      // solicitações não concluídas (inclusive limpeza/lavagem comuns, que
+      // só aparecem na aba Limpeza) mais reparos pedidos por hóspede (que só
+      // aparecem na aba Manutenções), então o número no card nunca batia com
+      // o que a pessoa via ao entrar na aba.
+      function ehPedidoDeHospedeHome(s){ return s.origem !== "equipe" && s.origem !== "hospedin_extrato"; }
+      var pendTotal = state.solicitacoes.filter(function(s){ return s.status === "bloqueada"; }).length +
+        state.manutencoes.filter(function(m){ return m.origem === "limpeza" && m.status !== "concluida"; }).length +
+        computeAguardandoAbastecimento().length +
+        computeAguardandoRevisao().length +
+        state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "pendente" && ehPedidoDeHospedeHome(s); }).length +
+        state.solicitacoes.filter(function(s){ return s.tipo === "sauna" && (s.status === "pendente" || s.status === "monitorando"); }).length +
+        state.solicitacoes.filter(function(s){ return s.tipo === "lenha" && s.status !== "concluido"; }).length;
       var recepSub = pendTotal > 0 ? (pendTotal + (pendTotal===1?" pendência":" pendências")) : "tudo em dia";
       cards.push({section:"recepcao", titulo:"Recepção", icon:ic("bell"), sub:recepSub});
     }
