@@ -2330,7 +2330,7 @@
     }
     if(podeVer("checklist_turno")){
       var turnosAtrasadosN = (currentUser.role==="admin") ? turnosAtrasados().length : 0;
-      var checklistSub = turnosAtrasadosN>0 ? (''+ic("warning")+' '+turnosAtrasadosN+' turno(s) atrasado(s) pra concluir') : "atividades do seu turno";
+      var checklistSub = turnosAtrasadosN>0 ? (turnosAtrasadosN+' turno(s) atrasado(s) pra concluir') : "atividades do seu turno";
       cards.push({section:"checklistturno", titulo:"Checklist de Turno", icon:ic("clock"), sub:checklistSub, subVermelho:turnosAtrasadosN>0});
     }
     if(podeVer("escala_trabalho")){
