@@ -4741,6 +4741,7 @@
   var manutencaoOverlay = document.getElementById("manutencaoSheetOverlay");
   var editingManutencaoId = null;
   var manutencaoSubView = "pendentes";
+  var manutencaoBusca = ""; // texto digitado na busca de manutenções (serviço, local, responsável)
 
   // Painel simples "onde posso ir agora" — pensado especificamente pra quem
   // faz manutenção/serviços gerais e só precisa de uma resposta rápida e
@@ -4829,6 +4830,7 @@
       '<button data-msub="pendentes" class="'+(manutencaoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-msub="concluidas" class="'+(manutencaoSubView==="concluidas"?"active":"")+'">Concluídas</button>' +
     '</div>';
+    html += '<input type="text" id="manutBusca" placeholder="Buscar por serviço, local ou responsável…" value="'+escapeHtml(manutencaoBusca)+'" style="width:100%;padding:11px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;background:var(--sand-50);font-family:inherit;">';
     var list = manutencaoSubView === "pendentes" ? pend : done;
     if(list.length === 0){
       html += '<div class="empty">'+(manutencaoSubView==="pendentes" ? 'Nenhuma pendência. Toque em "+" para registrar uma.' : 'Nenhuma manutenção concluída ainda.')+'</div>';
@@ -4836,7 +4838,8 @@
       var lixoManut = podeExcluir("manutencao") ? '<button class="btn-edit" data-act="excluir" data-id="{ID}" title="Excluir">'+ic("trash")+'</button>' : '';
       list.forEach(function(m){
         var pInfo = PRIORIDADE_INFO[m.prioridade] || PRIORIDADE_INFO.media;
-        html += '<div class="card manut-card" data-id="'+m.id+'" style="border-left:4px solid '+pInfo.cor+';">' +
+        var textoBusca = normalizarBusca([m.title, m.local, m.responsavel, m.description].join(" "));
+        html += '<div class="card manut-card" data-id="'+m.id+'" data-busca="'+escapeHtml(textoBusca)+'" style="border-left:4px solid '+pInfo.cor+';">' +
           '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+pInfo.cor+';margin-bottom:4px;">'+pInfo.label+'</span>' +
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
         if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("user")+' '+escapeHtml(m.responsavel)+'</p>';
@@ -4854,11 +4857,30 @@
         }
         html += '</div>';
       });
+      html += '<div class="empty" id="manutBuscaVazio" style="display:none;">Nenhuma manutenção encontrada com essa busca.</div>';
     }
     main.innerHTML = html;
     main.querySelectorAll("[data-msub]").forEach(function(b){
       b.onclick = function(){ manutencaoSubView = b.getAttribute("data-msub"); renderManutencoes(); };
     });
+    // Busca: só esconde/mostra os cards já desenhados (não redesenha a tela,
+    // pra não perder o foco do campo enquanto a pessoa digita).
+    var buscaInp = document.getElementById("manutBusca");
+    function aplicarFiltroManutencoes(){
+      var q = normalizarBusca(manutencaoBusca.trim());
+      var visiveis = 0;
+      main.querySelectorAll(".manut-card").forEach(function(c){
+        var ok = !q || (c.getAttribute("data-busca")||"").indexOf(q) > -1;
+        c.style.display = ok ? "" : "none";
+        if(ok) visiveis++;
+      });
+      var vazio = document.getElementById("manutBuscaVazio");
+      if(vazio) vazio.style.display = (q && visiveis === 0) ? "" : "none";
+    }
+    if(buscaInp){
+      buscaInp.addEventListener("input", function(){ manutencaoBusca = buscaInp.value; aplicarFiltroManutencoes(); });
+      aplicarFiltroManutencoes();
+    }
     main.querySelectorAll(".manut-card").forEach(function(c){
       c.addEventListener("click", function(e){
         if(e.target.closest("button[data-act]")) return;
