@@ -4745,62 +4745,6 @@
   // Painel simples "onde posso ir agora" — pensado especificamente pra quem
   // faz manutenção/serviços gerais e só precisa de uma resposta rápida e
   // óbvia, sem precisar interpretar ícones ou status técnico.
-  // Acomodação a que um manutenção se refere (o campo "local" é texto livre).
-  function acomodacaoDoLocalManutencao(local){
-    if(!local) return null;
-    var localNorm = normalizarBusca(local);
-    return state.acomodacoes.find(function(a){
-      var nomeNorm = normalizarBusca(a.nome);
-      return localNorm.indexOf(nomeNorm) > -1 || nomeNorm.indexOf(localNorm) > -1;
-    }) || null;
-  }
-
-  // "Como está" a acomodação pra quem vai fazer manutenção: tem hóspede lá
-  // dentro? e, nas acomodações com jacuzzi, a limpeza da jacuzzi já foi
-  // feita ou ainda está pendente? Usado no painel "Onde posso ir agora" e
-  // nos cards de manutenção pendente.
-  function statusAcomodacaoManutencaoHtml(acomodacaoId){
-    if(!acomodacaoId) return "";
-    function linha(texto, cor){
-      return '<p class="item-meta" style="margin:3px 0 0;font-weight:700;color:'+cor+';">'+texto+'</p>';
-    }
-    var h = "";
-
-    // Hóspede: checkout ainda não confirmado pela recepção = ainda está lá.
-    var checkoutAguardando = state.solicitacoes.some(function(s){
-      return s.acomodacaoId === acomodacaoId && s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkout") > -1 && s.status === "bloqueada";
-    });
-    if(checkoutAguardando){
-      h += linha(ic("user")+' Hóspede ainda na acomodação (saída não confirmada)', "var(--red-600)");
-    } else if(hospedeAtualInfo(acomodacaoId)){
-      h += linha(ic("user")+' Tem hóspede hospedado — bata na porta', "var(--amber-600)");
-    } else {
-      h += linha(ic("check")+' Sem hóspede na acomodação', "var(--teal-700)");
-    }
-
-    // Jacuzzi (só nas acomodações que têm).
-    if(acomodacoesComJacuzziIds().indexOf(acomodacaoId) > -1){
-      var daAcomodacao = state.solicitacoes.filter(function(s){ return s.acomodacaoId === acomodacaoId; });
-      var pendente = daAcomodacao.find(function(s){
-        if(s.jacuzziConcluidaEm || s.status === "concluido") return false;
-        return (s.tipo === "lavagem" && s.contexto && (s.contexto.indexOf("checkin") > -1 || s.contexto.indexOf("checkout") > -1)) ||
-          (s.tipo === "limpeza" && s.contexto === "estadia");
-      });
-      if(pendente){
-        h += linha(ic("bath")+' Jacuzzi: limpeza pendente'+(pendente.status === "bloqueada" ? ' (aguardando liberação)' : ''), "var(--amber-600)");
-      } else {
-        var ultima = null;
-        daAcomodacao.forEach(function(s){
-          if(s.jacuzziConcluidaEm && (!ultima || s.jacuzziConcluidaEm > ultima.jacuzziConcluidaEm)) ultima = s;
-        });
-        if(ultima && (Date.now() - ultima.jacuzziConcluidaEm) < 3*24*3600*1000){
-          h += linha(ic("bath")+' Jacuzzi limpa em '+fmtDate(ultima.jacuzziConcluidaEm)+' por '+escapeHtml(nomeStaff(ultima.jacuzziConcluidaPor)), "var(--teal-700)");
-        }
-      }
-    }
-    return h;
-  }
-
   function computeOndePossoIr(){
     var podeIr = [], podeIrComHospede = [], aguarde = [];
 
@@ -4809,9 +4753,9 @@
       if(s.status === "concluido") return;
       var nome = acomodacaoNome(s.acomodacaoId);
       if(s.status === "bloqueada"){
-        aguarde.push({id:s.acomodacaoId, nome:nome, motivo:"Checkout ainda não confirmado pela recepção"});
+        aguarde.push({nome:nome, motivo:"Checkout ainda não confirmado pela recepção"});
       } else {
-        podeIr.push({id:s.acomodacaoId, nome:nome, motivo:"Checkout liberado pela recepção"});
+        podeIr.push({nome:nome, motivo:"Checkout liberado pela recepção"});
       }
     });
 
@@ -4826,9 +4770,9 @@
       if(!acomodacaoMatch) return;
       var info = hospedeAtualInfo(acomodacaoMatch.id);
       if(info){
-        podeIrComHospede.push({id:acomodacaoMatch.id, nome:acomodacaoMatch.nome, motivo:m.title});
+        podeIrComHospede.push({nome:acomodacaoMatch.nome, motivo:m.title});
       } else {
-        podeIr.push({id:acomodacaoMatch.id, nome:acomodacaoMatch.nome, motivo:m.title});
+        podeIr.push({nome:acomodacaoMatch.nome, motivo:m.title});
       }
     });
 
@@ -4847,7 +4791,6 @@
           h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:9px;margin-top:9px;':'')+'">' +
             '<p style="margin:0;font-size:16px;font-weight:700;">'+escapeHtml(item.nome)+'</p>' +
             '<p style="margin:2px 0 0;font-size:12.5px;color:var(--ink-600);">'+escapeHtml(item.motivo)+'</p>' +
-            statusAcomodacaoManutencaoHtml(item.id) +
           '</div>';
         });
       }
@@ -4882,8 +4825,7 @@
       return b.createdAt-a.createdAt;
     });
     var done = state.manutencoes.filter(function(m){ return m.status==="concluida"; }).sort(function(a,b){ return (b.resolvedAt||0)-(a.resolvedAt||0); });
-    var html = renderOndePossoIrHtml();
-    html += '<div class="seg-toggle">' +
+    var html = '<div class="seg-toggle">' +
       '<button data-msub="pendentes" class="'+(manutencaoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-msub="concluidas" class="'+(manutencaoSubView==="concluidas"?"active":"")+'">Concluídas</button>' +
     '</div>';
@@ -4899,10 +4841,6 @@
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
         if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("user")+' '+escapeHtml(m.responsavel)+'</p>';
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
-        if(m.status === "pendente" || m.status === "em_andamento"){
-          var acomDaManut = acomodacaoDoLocalManutencao(m.local);
-          if(acomDaManut) html += '<div style="margin-bottom:6px;">'+statusAcomodacaoManutencaoHtml(acomDaManut.id)+'</div>';
-        }
         if(m.status === "pendente"){
           html += '<p class="item-meta">aberta em '+fmtDate(m.createdAt)+'</p>' +
             '<div class="item-actions"><button class="btn btn-in" data-act="iniciarManut" data-id="'+m.id+'">▶ Iniciar</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
