@@ -4745,6 +4745,62 @@
   // Painel simples "onde posso ir agora" — pensado especificamente pra quem
   // faz manutenção/serviços gerais e só precisa de uma resposta rápida e
   // óbvia, sem precisar interpretar ícones ou status técnico.
+  // Acomodação a que um manutenção se refere (o campo "local" é texto livre).
+  function acomodacaoDoLocalManutencao(local){
+    if(!local) return null;
+    var localNorm = normalizarBusca(local);
+    return state.acomodacoes.find(function(a){
+      var nomeNorm = normalizarBusca(a.nome);
+      return localNorm.indexOf(nomeNorm) > -1 || nomeNorm.indexOf(localNorm) > -1;
+    }) || null;
+  }
+
+  // "Como está" a acomodação pra quem vai fazer manutenção: tem hóspede lá
+  // dentro? e, nas acomodações com jacuzzi, a limpeza da jacuzzi já foi
+  // feita ou ainda está pendente? Usado no painel "Onde posso ir agora" e
+  // nos cards de manutenção pendente.
+  function statusAcomodacaoManutencaoHtml(acomodacaoId){
+    if(!acomodacaoId) return "";
+    function linha(texto, cor){
+      return '<p class="item-meta" style="margin:3px 0 0;font-weight:700;color:'+cor+';">'+texto+'</p>';
+    }
+    var h = "";
+
+    // Hóspede: checkout ainda não confirmado pela recepção = ainda está lá.
+    var checkoutAguardando = state.solicitacoes.some(function(s){
+      return s.acomodacaoId === acomodacaoId && s.tipo === "lavagem" && s.contexto && s.contexto.indexOf("checkout") > -1 && s.status === "bloqueada";
+    });
+    if(checkoutAguardando){
+      h += linha(ic("user")+' Hóspede ainda na acomodação (saída não confirmada)', "var(--red-600)");
+    } else if(hospedeAtualInfo(acomodacaoId)){
+      h += linha(ic("user")+' Tem hóspede hospedado — bata na porta', "var(--amber-600)");
+    } else {
+      h += linha(ic("check")+' Sem hóspede na acomodação', "var(--teal-700)");
+    }
+
+    // Jacuzzi (só nas acomodações que têm).
+    if(acomodacoesComJacuzziIds().indexOf(acomodacaoId) > -1){
+      var daAcomodacao = state.solicitacoes.filter(function(s){ return s.acomodacaoId === acomodacaoId; });
+      var pendente = daAcomodacao.find(function(s){
+        if(s.jacuzziConcluidaEm || s.status === "concluido") return false;
+        return (s.tipo === "lavagem" && s.contexto && (s.contexto.indexOf("checkin") > -1 || s.contexto.indexOf("checkout") > -1)) ||
+          (s.tipo === "limpeza" && s.contexto === "estadia");
+      });
+      if(pendente){
+        h += linha(ic("bath")+' Jacuzzi: limpeza pendente'+(pendente.status === "bloqueada" ? ' (aguardando liberação)' : ''), "var(--amber-600)");
+      } else {
+        var ultima = null;
+        daAcomodacao.forEach(function(s){
+          if(s.jacuzziConcluidaEm && (!ultima || s.jacuzziConcluidaEm > ultima.jacuzziConcluidaEm)) ultima = s;
+        });
+        if(ultima && (Date.now() - ultima.jacuzziConcluidaEm) < 3*24*3600*1000){
+          h += linha(ic("bath")+' Jacuzzi limpa em '+fmtDate(ultima.jacuzziConcluidaEm)+' por '+escapeHtml(nomeStaff(ultima.jacuzziConcluidaPor)), "var(--teal-700)");
+        }
+      }
+    }
+    return h;
+  }
+
   function computeOndePossoIr(){
     var podeIr = [], podeIrComHospede = [], aguarde = [];
 
@@ -4753,9 +4809,9 @@
       if(s.status === "concluido") return;
       var nome = acomodacaoNome(s.acomodacaoId);
       if(s.status === "bloqueada"){
-        aguarde.push({nome:nome, motivo:"Checkout ainda não confirmado pela recepção"});
+        aguarde.push({id:s.acomodacaoId, nome:nome, motivo:"Checkout ainda não confirmado pela recepção"});
       } else {
-        podeIr.push({nome:nome, motivo:"Checkout liberado pela recepção"});
+        podeIr.push({id:s.acomodacaoId, nome:nome, motivo:"Checkout liberado pela recepção"});
       }
     });
 
@@ -4770,9 +4826,9 @@
       if(!acomodacaoMatch) return;
       var info = hospedeAtualInfo(acomodacaoMatch.id);
       if(info){
-        podeIrComHospede.push({nome:acomodacaoMatch.nome, motivo:m.title});
+        podeIrComHospede.push({id:acomodacaoMatch.id, nome:acomodacaoMatch.nome, motivo:m.title});
       } else {
-        podeIr.push({nome:acomodacaoMatch.nome, motivo:m.title});
+        podeIr.push({id:acomodacaoMatch.id, nome:acomodacaoMatch.nome, motivo:m.title});
       }
     });
 
@@ -4791,6 +4847,7 @@
           h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:9px;margin-top:9px;':'')+'">' +
             '<p style="margin:0;font-size:16px;font-weight:700;">'+escapeHtml(item.nome)+'</p>' +
             '<p style="margin:2px 0 0;font-size:12.5px;color:var(--ink-600);">'+escapeHtml(item.motivo)+'</p>' +
+            statusAcomodacaoManutencaoHtml(item.id) +
           '</div>';
         });
       }
@@ -4842,6 +4899,10 @@
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
         if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("user")+' '+escapeHtml(m.responsavel)+'</p>';
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
+        if(m.status === "pendente" || m.status === "em_andamento"){
+          var acomDaManut = acomodacaoDoLocalManutencao(m.local);
+          if(acomDaManut) html += '<div style="margin-bottom:6px;">'+statusAcomodacaoManutencaoHtml(acomDaManut.id)+'</div>';
+        }
         if(m.status === "pendente"){
           html += '<p class="item-meta">aberta em '+fmtDate(m.createdAt)+'</p>' +
             '<div class="item-actions"><button class="btn btn-in" data-act="iniciarManut" data-id="'+m.id+'">▶ Iniciar</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
@@ -5378,10 +5439,31 @@
     return {fase:"vencido", podeMarcarFeito:false, podeMarcarNaoFeito:true, podeMarcarAtrasado:true};
   }
 
+  // Reagenda no servidor (Supabase) os avisos de "atividade liberada": um
+  // disparo em cada horário de atividade de hora fixa. Roda sozinho depois de
+  // criar/editar/excluir atividade e também pelo botão "Sincronizar
+  // notificações". Se a parte do servidor ainda não estiver instalada, falha
+  // em silêncio (só no console) pra não atrapalhar o resto do app.
+  async function sincronizarNotificacoesTurno(silencioso){
+    try{
+      var res = await sb.rpc("sincronizar_notificacoes_turno");
+      if(res.error) throw res.error;
+      var d = res.data || {};
+      if(!silencioso) showToast("Notificações sincronizadas — "+(d.horarios||0)+" horário(s) agendado(s)");
+      return true;
+    }catch(err){
+      console.error("Erro ao sincronizar notificações de turno:", err);
+      if(!silencioso) showToast("Não consegui sincronizar as notificações");
+      return false;
+    }
+  }
+
   // ---------- Gestão de turnos e atividades (só admin, dentro da aba Checklist de Turno) ----------
   function renderTurnoManagementHtml(){
     var html = '<div class="section-title" style="margin-top:0;">'+ic("clock")+' Turnos e atividades (gestão)</div>';
     html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Cada turno tem seu horário de início e sua lista de atividades. Atividades "hora fixa" só liberam pra marcar dentro da janela definida. Só administradores e quem tem permissão de gestão veem esta parte.</p>';
+    html += '<button type="button" class="link-btn" id="sincNotifTurnoBtn">'+ic("link")+' Sincronizar notificações dos horários</button>' +
+      '<p class="item-meta" style="margin:2px 0 10px;">Quem está no turno recebe um aviso no horário em que cada atividade de hora fixa é liberada. Isso se ajusta sozinho quando você cria, edita ou remove uma atividade; use o botão se algum aviso não estiver chegando no horário certo.</p>';
     var minhaEmpresa = empresaAtivaChecklist();
     if(currentUser && currentUser.role === "admin"){
       html += '<div class="seg-toggle" style="margin-bottom:10px;">' +
@@ -5468,6 +5550,14 @@
     main.querySelectorAll("[data-empresa-checklist]").forEach(function(b){
       b.onclick = function(){ checklistEmpresaSelecionada = b.getAttribute("data-empresa-checklist"); renderChecklistTurno(); };
     });
+    var sincNotifBtn = document.getElementById("sincNotifTurnoBtn");
+    if(sincNotifBtn){
+      sincNotifBtn.onclick = async function(){
+        sincNotifBtn.disabled = true;
+        await sincronizarNotificacoesTurno(false);
+        sincNotifBtn.disabled = false;
+      };
+    }
     var novoTurnoBtn = document.getElementById("adicionarTurnoBtn");
     if(novoTurnoBtn){
       novoTurnoBtn.onclick = async function(){
@@ -5494,6 +5584,7 @@
           state.turnoAtividades = state.turnoAtividades.filter(function(a){ return a.turnoId!==id; });
           if(checklistTurnoSelecionado === id) checklistTurnoSelecionado = null;
           showToast("Turno excluído"); renderChecklistTurno();
+          sincronizarNotificacoesTurno(true);
         }catch(err){
           console.error(err); showToast("Erro ao excluir turno");
         }
@@ -5507,6 +5598,7 @@
           await dbDelete("turno_atividades", id);
           state.turnoAtividades = state.turnoAtividades.filter(function(a){ return a.id!==id; });
           showToast("Atividade removida"); renderChecklistTurno();
+          sincronizarNotificacoesTurno(true);
         }catch(err){
           console.error(err); showToast("Erro ao remover atividade");
         }
@@ -5557,6 +5649,7 @@
             var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId}, mapTurnoAtividadeFromRow);
             state.turnoAtividades.push(nova);
             showToast("Atividade adicionada"); renderChecklistTurno();
+            sincronizarNotificacoesTurno(true);
           }catch(err){
             console.error(err); showToast("Erro ao adicionar atividade");
           }
@@ -5644,6 +5737,7 @@
         overlay.remove();
         showToast("Atividade atualizada");
         renderChecklistTurno();
+        sincronizarNotificacoesTurno(true);
       }catch(err){
         console.error(err); showToast("Erro ao salvar atividade");
         btn.disabled = false;
@@ -6808,6 +6902,68 @@
   // acomodação (não precisa ter chegado hoje — cobre estadias em andamento).
   // Itens de frigobar marcados "faltando" durante a estadia que está terminando
   // hoje nessa acomodação — usado pra avisar na hora do checkout.
+  // Texto "Água (2), Coca (1)" a partir de uma lista de {nome, quantidade}.
+  function itensListaTexto(itens){
+    return (itens||[]).map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
+  }
+
+  // Linhas de detalhe de um abastecimento concluído: o que foi retirado do
+  // estoque e o que ficou em falta. Usado no histórico da Supervisão e no card.
+  function itensAbastecimentoDetalheHtml(s){
+    var h = '';
+    var temRetirado = s.itens && s.itens.length;
+    var temFalta = s.itensFaltando && s.itensFaltando.length;
+    if(temRetirado){
+      h += '<br><span style="color:var(--ink-900);font-size:12.5px;font-weight:600;">'+ic("cup")+' Retirado: '+itensListaTexto(s.itens)+'</span>';
+    }
+    if(temFalta){
+      h += '<br><span style="color:var(--red-600);font-size:12.5px;font-weight:700;">'+ic("warning")+' Em falta: '+itensListaTexto(s.itensFaltando)+'</span>';
+    }
+    if(!temRetirado && !temFalta){
+      h += '<br><span style="color:var(--ink-400);font-size:12px;">itens não registrados nesse abastecimento</span>';
+    }
+    return h;
+  }
+
+  // Reservas do Hospedin que terminam hoje nessa acomodação (checkout de hoje).
+  function reservaComCheckoutHoje(acomodacaoId){
+    var a = state.acomodacoes.find(function(x){ return x.id===acomodacaoId; });
+    if(!a || !a.codigoHospedin) return null;
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var hojeFim = hojeInicio.getTime() + 24*3600*1000;
+    var reserva = null;
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      if(r.acomodacao !== a.codigoHospedin) return;
+      var co = parseDataLocal(r.checkout).getTime();
+      if(co >= hojeInicio.getTime() && co < hojeFim) reserva = r;
+    });
+    return reserva;
+  }
+
+  // O que foi reposto no frigobar durante a estadia que termina hoje, a
+  // pedido do hóspede (soma por item) — aparece no card de checkout.
+  function reposicoesDaEstadiaParaCheckout(acomodacaoId){
+    var reserva = reservaComCheckoutHoje(acomodacaoId);
+    if(!reserva) return [];
+    var ci = parseDataLocal(reserva.checkin).getTime();
+    var fimJanela = parseDataLocal(reserva.checkout).getTime() + 24*3600*1000;
+    var soma = {};
+    var ordem = [];
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo !== "frigobar" || s.acomodacaoId !== acomodacaoId || s.status !== "concluido") return;
+      if(s.origem === "equipe" || s.origem === "hospedin_extrato") return;
+      if(!s.itens || !s.itens.length) return;
+      var ref = s.criadoEm;
+      if(ref < ci || ref >= fimJanela) return;
+      s.itens.forEach(function(it){
+        if(!(it.nome in soma)){ soma[it.nome] = 0; ordem.push(it.nome); }
+        soma[it.nome] += (it.quantidade || 1);
+      });
+    });
+    return ordem.map(function(nome){ return {nome:nome, quantidade:soma[nome]}; });
+  }
+
   function itensFaltantesParaCheckout(acomodacaoId){
     var a = state.acomodacoes.find(function(x){ return x.id===acomodacaoId; });
     if(!a || !a.codigoHospedin) return [];
@@ -6885,9 +7041,13 @@
     if(s.observacao){
       html += '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+ic("pencil")+' '+escapeHtml(s.observacao)+'</p>';
     }
+    var frigobarConcluido = s.tipo === "frigobar" && s.status === "concluido";
     if(s.itens && s.itens.length){
-      var itensTxt = s.itens.map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
-      html += '<p class="item-meta" style="margin-bottom:4px;">'+itensTxt+'</p>';
+      var itensTxt = itensListaTexto(s.itens);
+      html += '<p class="item-meta" style="margin-bottom:4px;">'+(frigobarConcluido ? '<b>Retirado:</b> ' : '')+itensTxt+'</p>';
+    }
+    if(frigobarConcluido && s.itensFaltando && s.itensFaltando.length){
+      html += '<p class="item-meta" style="color:var(--red-600);font-weight:700;margin-bottom:4px;">'+ic("warning")+' Em falta: '+itensListaTexto(s.itensFaltando)+'</p>';
     }
     if(s.fotosAbastecimento && s.fotosAbastecimento.length){
       html += '<div style="display:grid;grid-template-columns:repeat('+Math.min(s.fotosAbastecimento.length,3)+',1fr);gap:5px;margin:6px 0;">' +
@@ -6926,6 +7086,10 @@
       if(faltantes.length){
         var faltantesTxt = faltantes.map(function(it){ return escapeHtml(it.nome); }).join(", ");
         html += '<p class="item-meta" style="color:var(--red-600);font-weight:700;">'+ic("warning")+' Ficou em falta durante a estadia: '+faltantesTxt+'</p>';
+      }
+      var repostos = reposicoesDaEstadiaParaCheckout(s.acomodacaoId);
+      if(repostos.length){
+        html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("cup")+' Repostos na estadia (pedidos do hóspede): '+itensListaTexto(repostos)+'</p>';
       }
     }
     if(s.origem === "hospede") html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("phone")+' Solicitado pelo hóspede (link)</p>';
@@ -9109,7 +9273,12 @@
         var hh = '<div class="card">';
         histSolic.items.forEach(function(s){
           var dur = (s.criadoEm && s.concluidoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
+          var origemAbast = s.origem === "hospede" ? ""+ic('phone')+" solicitado pelo hóspede" :
+            (s.origem === "hospedin_extrato" ? ""+ic('doc')+" do extrato do Hospedin" :
+            (s.criadoPor ? ""+ic('user')+" solicitado por "+escapeHtml(nomeStaff(s.criadoPor)) : null));
           hh += '<div class="move-row"><div>'+ic("cup")+' <strong>Abastecimento</strong> — '+escapeHtml(acomodacaoNome(s.acomodacaoId))+
+            itensAbastecimentoDetalheHtml(s)+
+            (origemAbast ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+origemAbast+'</span>') : '')+
             (dur!=null ? ('<br><span style="color:var(--ink-400);font-size:12px;">levou '+fmtDuration(dur)+'</span>') : '')+
             (s.concluidoPor ? ('<br><span style="color:var(--ink-400);font-size:12px;">'+ic("check")+' concluído por '+escapeHtml(nomeStaff(s.concluidoPor))+'</span>') : '')+
             '</div><div class="move-date">'+fmtDate(s.concluidoEm)+'</div></div>';
