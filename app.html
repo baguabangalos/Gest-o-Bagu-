@@ -1144,6 +1144,12 @@
   function mapEscalaExcecaoFromRow(r){
     return {id:r.id, userId:r.user_id, data:r.data, tipo:r.tipo, horaInicio:r.hora_inicio||null, horaFim:r.hora_fim||null, observacao:r.observacao||null, setor:r.setor||null};
   }
+  function mapFeriadoFromRow(r){
+    return {id:r.id, data:r.data, nome:r.nome, abrangencia:r.abrangencia||"nacional", direitoFolga:r.direito_folga!==false, observacao:r.observacao||null, apuradoEm:r.apurado_em||null};
+  }
+  function mapFeriadoTrabalhadoFromRow(r){
+    return {id:r.id, feriadoId:r.feriado_id, userId:r.user_id, origem:r.origem||"automatico", evidencia:r.evidencia||null, descartado:!!r.descartado, folgaData:r.folga_data||null, folgaRegistradaEm:r.folga_registrada_em||null, observacao:r.observacao||null};
+  }
   var EQUIPE_LABEL = {recepcao:"Recepção", manutencao:"Manutenção", limpeza:"Limpeza", guarda:"Guarda", garcom:"Garçom"};
   var ESCALA_TIPO_LABEL = {trabalho:"Trabalho", folga:"Folga", folga_extra:"Folga (compensação)", falta:"Falta", atestado:"Atestado", trabalho_outro_setor:"Trabalho (outro setor)"};
   var ESCALA_TIPO_COR = {trabalho:"var(--teal-700)", folga:"var(--ink-400)", folga_extra:"var(--amber-600)", falta:"var(--red-600)", atestado:"#6d4aa8", trabalho_outro_setor:"var(--teal-900)"};
@@ -1420,9 +1426,12 @@
       sb.from("turno_atividade_execucoes").select("*").limit(4000),
       sb.from("profiles").select("id,nome,ativo,equipe,domingo_folga_mes,guarda_referencia_data").order("nome"),
       sb.from("escala_semanal").select("*"),
-      sb.from("escala_excecoes").select("*").order("data", {ascending:false}).limit(2000)
+      sb.from("escala_excecoes").select("*").order("data", {ascending:false}).limit(2000),
+      sb.from("feriados").select("*").order("data"),
+      sb.from("feriado_trabalhados").select("*").limit(5000)
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
+    var feriadosRes=results[21], feriadoTrabRes=results[22];
     var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10], syncSettingRes=results[11], equipRes=results[12], equipEvRes=results[13], turnosRes=results[14], turnoAtivRes=results[15], turnoExecRes=results[16], turnoAtivExecRes=results[17], staffProfilesRes=results[18], escalaSemanalRes=results[19], escalaExcecoesRes=results[20];
     var hospedinOcupacao = hospedinRes.data || [];
     var staffNames = {};
@@ -1452,7 +1461,9 @@
       staffNames: staffNames,
       staffProfiles: (staffProfilesRes.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false, equipe:p.equipe||null, domingoFolgaMes:p.domingo_folga_mes||null, guardaReferenciaData:p.guarda_referencia_data||null}; }),
       escalaSemanal: (escalaSemanalRes.data||[]).map(mapEscalaSemanalFromRow),
-      escalaExcecoes: (escalaExcecoesRes.data||[]).map(mapEscalaExcecaoFromRow)
+      escalaExcecoes: (escalaExcecoesRes.data||[]).map(mapEscalaExcecaoFromRow),
+      feriados: (feriadosRes.data||[]).map(mapFeriadoFromRow),
+      feriadoTrabalhados: (feriadoTrabRes.data||[]).map(mapFeriadoTrabalhadoFromRow)
     };
   }
 
@@ -1774,6 +1785,8 @@
     document.getElementById("appShell").style.display = "";
     document.getElementById("userBadge").textContent = currentUser.nome + (currentUser.role==="admin" ? " · admin" : "");
     state = await loadAllFromSupabase();
+    // Feriados: confere sozinho quem trabalhou nos feriados que já passaram.
+    apurarFeriados(false).catch(function(e){ console.error("apurarFeriados", e); });
     // A criação das tarefas de "Preparo do quarto" do dia não depende mais
     // de alguém abrir o app — roda sozinha no servidor (Edge Function
     // "gerar-tarefas-lavagem" + agendamento), sempre a partir das 7h da
@@ -2997,7 +3010,23 @@
         if(p.observacao) html += '<p class="item-meta" style="margin-bottom:6px;">'+escapeHtml(p.observacao)+'</p>';
         if(p.foto) html += '<img data-anexo-path="'+escapeHtml(p.foto)+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:120px;object-fit:cover;border-radius:9px;display:block;margin-bottom:8px;cursor:pointer;">';
         html += '<p class="item-meta" style="margin-bottom:8px;">pedido em '+fmtDate(p.criadoEm)+' por '+escapeHtml(nomeStaff(p.criadoPor))+'</p>' +
-          '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("check")+' Chegou</button>' +
+          '<div style="display:flex;gap:8px;">' +
+          '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="flex:1;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("check")+' Chegou</button>' +
+          (podeEditar("estoque") ? '<button type="button" class="pedidoEditarBtn" data-id="'+p.id+'" style="background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px 16px;font-family:inherit;font-size:13.5px;font-weight:700;">Editar</button>' : '') +
+          '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    var recebidos = (state.estoque.pedidosCompra||[]).filter(function(p){ return p.status === "recebido"; }).sort(function(a,b){ return (b.recebidoEm||0)-(a.recebidoEm||0); }).slice(0, 15);
+    if(recebidos.length > 0){
+      html += '<div class="section-title" style="margin-top:18px;">Pedidos recebidos</div><div class="card">';
+      recebidos.forEach(function(p, i){
+        var itensTxt = p.itens.map(function(it){ return escapeHtml(it.nome)+" ("+it.quantidade+")"; }).join(", ");
+        html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<p style="margin:0 0 4px;font-size:13.5px;font-weight:700;">'+itensTxt+'</p>' +
+          '<p class="item-meta" style="margin-bottom:'+(podeEditar("estoque")?'8px':'0')+';">pedido em '+fmtDateOnly(p.criadoEm)+' · chegou em '+(p.recebidoEm?fmtDateOnly(p.recebidoEm):'—')+'</p>' +
+          (podeEditar("estoque") ? '<button type="button" class="pedidoEditarBtn" data-id="'+p.id+'" style="background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:7px 14px;font-family:inherit;font-size:12.5px;font-weight:700;">Editar datas</button>' : '') +
         '</div>';
       });
       html += '</div>';
@@ -3010,7 +3039,96 @@
         if(p) abrirReceberPedidoSheet(p);
       };
     });
+    el.querySelectorAll(".pedidoEditarBtn").forEach(function(btn){
+      btn.onclick = function(){
+        var p = (state.estoque.pedidosCompra||[]).find(function(x){ return x.id === btn.getAttribute("data-id"); });
+        if(p) abrirEditarPedidoSheet(p);
+      };
+    });
     document.getElementById("novoPedidoCompraBtn").onclick = abrirNovoPedidoCompraSheet;
+  }
+
+  // Troca só o DIA de um instante, mantendo a hora que ele já tinha.
+  function isoComDia(dataStr, refTs){
+    var ref = refTs ? new Date(refTs) : new Date();
+    var pt = dataStr.split("-").map(Number);
+    return new Date(pt[0], pt[1]-1, pt[2], ref.getHours(), ref.getMinutes(), 0).toISOString();
+  }
+
+  function abrirEditarPedidoSheet(p){
+    if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+    var recebido = p.status === "recebido";
+    var itensEd = p.itens.map(function(it){ return {nome:it.nome, quantidade:it.quantidade}; });
+    var todosItens = state.estoque.items.slice().sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    var html =
+      '<div class="sheet-overlay open" id="editarPedidoOverlay"><div class="sheet">' +
+        '<h2>Editar pedido de compra</h2>' +
+        '<label>Data do pedido</label>' +
+        '<input type="date" id="editPedidoData" value="'+localDateStr(new Date(p.criadoEm))+'">' +
+        (recebido ? '<label>Data em que chegou</label><input type="date" id="editPedidoChegada" value="'+(p.recebidoEm?localDateStr(new Date(p.recebidoEm)):'')+'">' : '') +
+        '<label>Itens pedidos</label>' +
+        '<div id="editPedidoItens"></div>' +
+        (recebido ? '<p class="item-meta" style="margin:0 0 12px;">Os itens de um pedido que já chegou não mudam — o estoque já foi atualizado na entrada. Só as datas e a observação.</p>' :
+          '<div style="display:flex;gap:8px;margin:4px 0 14px;">' +
+            '<select id="editPedidoExtra" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);"><option value="">Adicionar item…</option>' +
+            todosItens.map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("") +
+            '</select><button type="button" id="editPedidoExtraBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button></div>') +
+        '<label>Observação</label><textarea id="editPedidoObs"></textarea>' +
+        '<div class="sheet-actions"><button type="button" class="btn-secondary" id="editPedidoCancel">Cancelar</button>' +
+        '<button type="button" class="btn-primary" id="editPedidoSalvar">'+ic("check")+' Salvar</button></div>' +
+      '</div></div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var overlay = document.getElementById("editarPedidoOverlay");
+    document.getElementById("editPedidoObs").value = p.observacao || "";
+    var box = document.getElementById("editPedidoItens");
+    function desenhar(){
+      box.innerHTML = itensEd.map(function(it, i){
+        return '<div class="card" style="margin-bottom:8px;padding:10px 12px;display:flex;align-items:center;gap:8px;">' +
+          '<span style="flex:1;font-size:14px;font-weight:700;">'+escapeHtml(it.nome)+'</span>' +
+          (recebido ? '<span>'+it.quantidade+'</span>' :
+            '<input type="number" class="editPedidoQty" data-i="'+i+'" min="1" step="1" value="'+it.quantidade+'" style="width:70px;">' +
+            '<button type="button" class="editPedidoRem" data-i="'+i+'" style="background:none;border:none;color:var(--ink-400);">'+ic("close")+'</button>') +
+        '</div>';
+      }).join("");
+      box.querySelectorAll(".editPedidoQty").forEach(function(inp){
+        inp.onchange = function(){ itensEd[+inp.getAttribute("data-i")].quantidade = parseFloat(inp.value) || 1; };
+      });
+      box.querySelectorAll(".editPedidoRem").forEach(function(b){
+        b.onclick = function(){ itensEd.splice(+b.getAttribute("data-i"), 1); desenhar(); };
+      });
+    }
+    desenhar();
+    var addBtn = document.getElementById("editPedidoExtraBtn");
+    if(addBtn) addBtn.onclick = function(){
+      var sel = document.getElementById("editPedidoExtra");
+      if(!sel.value) return;
+      if(itensEd.some(function(x){ return x.nome===sel.value; })){ showToast("Esse item já está na lista"); return; }
+      itensEd.push({nome:sel.value, quantidade:1}); sel.value = ""; desenhar();
+    };
+    document.getElementById("editPedidoCancel").onclick = function(){ overlay.remove(); };
+    overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
+    document.getElementById("editPedidoSalvar").onclick = async function(){
+      var dataPed = document.getElementById("editPedidoData").value;
+      if(!dataPed){ showToast("Informe a data do pedido"); return; }
+      if(!recebido && itensEd.length === 0){ showToast("O pedido precisa de pelo menos um item"); return; }
+      var payload = {criado_em:isoComDia(dataPed, p.criadoEm), observacao:document.getElementById("editPedidoObs").value.trim()||null};
+      if(!recebido) payload.itens = itensEd;
+      if(recebido){
+        var dataCheg = document.getElementById("editPedidoChegada").value;
+        if(!dataCheg){ showToast("Informe a data em que chegou"); return; }
+        if(dataCheg < dataPed){ showToast("A chegada não pode ser antes do pedido"); return; }
+        payload.recebido_em = isoComDia(dataCheg, p.recebidoEm);
+      }
+      var btn = document.getElementById("editPedidoSalvar"); btn.disabled = true;
+      try{
+        var upd = await dbUpdate("pedidos_compra", p.id, payload, mapPedidoCompraFromRow);
+        var ix = state.estoque.pedidosCompra.findIndex(function(x){ return x.id===p.id; });
+        if(ix>-1) state.estoque.pedidosCompra[ix] = upd;
+        overlay.remove(); showToast("Pedido atualizado"); renderPedidosCompraSection();
+      }catch(err){
+        console.error(err); showToast("Erro ao salvar o pedido"); btn.disabled = false;
+      }
+    };
   }
 
   var pedidoCompraFotoPendente = null;
@@ -3036,6 +3154,8 @@
             '</select>' +
             '<button type="button" id="pedidoExtraAddBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>' +
           '</div>' +
+          '<label>Data do pedido</label>' +
+          '<input type="date" id="pedidoData" value="'+localDateStr(new Date())+'">' +
           '<label>Observação (opcional)</label>' +
           '<textarea id="pedidoObservacao" placeholder="Ex: pedido feito com o fornecedor X, prazo de 3 dias"></textarea>' +
           '<div class="sheet-actions">' +
@@ -3106,6 +3226,8 @@
         var payload = {id:uid(), itens:itens, foto:fotoParaSalvar,
           observacao:document.getElementById("pedidoObservacao").value.trim()||null,
           status:"pendente", criado_por:(currentUser?currentUser.id:null)};
+        var dataPedNovo = document.getElementById("pedidoData").value;
+        if(dataPedNovo && dataPedNovo !== localDateStr(new Date())) payload.criado_em = isoComDia(dataPedNovo, null);
         var p = await dbInsert("pedidos_compra", payload, mapPedidoCompraFromRow);
         state.estoque.pedidosCompra.unshift(p);
         overlay.remove();
@@ -3140,6 +3262,8 @@
               '</div>';
             }).join("") +
           '</div>' +
+          '<label>Data em que chegou</label>' +
+          '<input type="date" id="receberData" value="'+localDateStr(new Date())+'">' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="receberCancel">Cancelar</button>' +
             '<button type="button" class="btn-primary" id="receberConfirm">'+ic("check")+' Confirmar recebimento</button>' +
@@ -3167,6 +3291,8 @@
 
     document.getElementById("receberConfirm").onclick = async function(){
       if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+      var dataChegou = document.getElementById("receberData").value || localDateStr(new Date());
+      var chegouIso = (dataChegou === localDateStr(new Date())) ? new Date().toISOString() : isoComDia(dataChegou, null);
       var btn = document.getElementById("receberConfirm"); btn.disabled = true;
       try{
         for(var i=0;i<p.itens.length;i++){
@@ -3179,10 +3305,10 @@
           var updated = await dbUpdate("items", itemEstoque.id, {qty:novaQty}, mapItemFromRow);
           var idxItem = state.estoque.items.findIndex(function(x){ return x.id===itemEstoque.id; });
           if(idxItem>-1) state.estoque.items[idxItem] = updated;
-          var mov = await dbInsert("movements", {id:uid(), item_id:itemEstoque.id, type:"entrada", qty:qty, note:"Pedido de compra recebido", date:new Date().toISOString()}, mapMovementFromRow);
+          var mov = await dbInsert("movements", {id:uid(), item_id:itemEstoque.id, type:"entrada", qty:qty, note:"Pedido de compra recebido", date:chegouIso}, mapMovementFromRow);
           state.estoque.movements.unshift(mov);
         }
-        var pAtualizado = await dbUpdate("pedidos_compra", p.id, {status:"recebido", recebido_em:new Date().toISOString(), recebido_por:(currentUser?currentUser.id:null)}, mapPedidoCompraFromRow);
+        var pAtualizado = await dbUpdate("pedidos_compra", p.id, {status:"recebido", recebido_em:chegouIso, recebido_por:(currentUser?currentUser.id:null)}, mapPedidoCompraFromRow);
         var idxP = state.estoque.pedidosCompra.findIndex(function(x){ return x.id===p.id; });
         if(idxP>-1) state.estoque.pedidosCompra[idxP] = pAtualizado;
         overlay.remove();
@@ -6194,6 +6320,7 @@
       '<button data-eqsub="horarios" class="'+(equipeSubView==="horarios"?"active":"")+'">Horários</button>' +
       '<button data-eqsub="folga" class="'+(equipeSubView==="folga"?"active":"")+'">Folga</button>' +
       '<button data-eqsub="guarda" class="'+(equipeSubView==="guarda"?"active":"")+'">Guarda</button>' +
+      '<button data-eqsub="feriados" class="'+(equipeSubView==="feriados"?"active":"")+'">Feriados'+(feriadosAtrasadosN()>0?' <span style="background:var(--red-600);color:#fff;border-radius:9px;padding:0 6px;font-size:11px;">'+feriadosAtrasadosN()+'</span>':'')+'</button>' +
       '<button data-eqsub="setor" class="'+(equipeSubView==="setor"?"active":"")+'">Setor</button>' +
     '</div>' +
     '<div id="equipeSubBody"></div>';
@@ -6205,6 +6332,7 @@
     if(equipeSubView === "folga") renderEquipeFolga(body, podeEd);
     else if(equipeSubView === "guarda") renderEquipeGuarda(body, podeEd);
     else if(equipeSubView === "setor") renderEquipeSetor(body);
+    else if(equipeSubView === "feriados") renderEquipeFeriados(body, podeEd);
     else renderEquipeHorarios(body, podeEd);
   }
 
@@ -6422,6 +6550,332 @@
       body.querySelectorAll(".folga-exc-remover").forEach(function(btn){
         btn.onclick = function(){ removerEscalaExcecao(btn.getAttribute("data-uid"), btn.getAttribute("data-data")); };
       });
+    }
+  }
+
+  // ---------- Feriados e folga compensatória ----------
+  var FERIADO_PRAZO_DIAS = 30; // depois disso sem folga marcada, avisa
+  function feriadoPorId(id){ return (state.feriados||[]).find(function(f){ return f.id===id; }) || null; }
+  function nomePessoaPorId(id){ var p = (state.staffProfiles||[]).find(function(x){ return x.id===id; }); return p ? p.nome : "?"; }
+  function fmtDiaMes(dataStr){ return dataStr ? (dataStr.slice(8,10)+"/"+dataStr.slice(5,7)+"/"+dataStr.slice(0,4)) : ""; }
+  function feriadoPendentes(){
+    return (state.feriadoTrabalhados||[]).filter(function(r){ return !r.descartado && !r.folgaData && feriadoPorId(r.feriadoId); });
+  }
+  function feriadosAtrasadosN(){
+    var hoje = localDateStr(new Date());
+    return feriadoPendentes().filter(function(r){ return diasEntre(feriadoPorId(r.feriadoId).data, hoje) > FERIADO_PRAZO_DIAS; }).length;
+  }
+  // Quem "apareceu" no app naquele dia, pelo que fez (não depende da escala).
+  function feriadoEvidencias(dataStr){
+    var porNome = {}, idsValidos = {};
+    (state.staffProfiles||[]).forEach(function(p){ if(p.ativo!==false && p.equipe){ porNome[normalizarBusca(p.nome).trim()] = p.id; idsValidos[p.id] = true; } });
+    var ev = {};
+    function add(uidP, chave){
+      if(!uidP) return;
+      var e = ev[uidP] || (ev[uidP] = {atividades:0, turnos:0, solicitacoes:0});
+      e[chave]++;
+    }
+    function idPorNome(nome){
+      if(!nome) return null;
+      var limpo = normalizarBusca(String(nome).replace(/\s*\(via[^)]*\)\s*$/i,"")).trim();
+      return porNome[limpo] || null;
+    }
+    (state.turnoAtividadeExecucoes||[]).forEach(function(a){
+      if(!a.marcadoEm || a.status==="pendente") return;
+      if(localDateStr(new Date(a.marcadoEm)) !== dataStr) return;
+      add(idPorNome(a.marcadoPor), "atividades");
+    });
+    (state.turnoExecucoes||[]).forEach(function(t){
+      if(t.data !== dataStr || !t.concluidoPor) return;
+      add(idPorNome(t.concluidoPor), "turnos");
+    });
+    (state.solicitacoes||[]).forEach(function(sol){
+      var vistos = {};
+      [[sol.concluidoPor, sol.concluidoEm],[sol.iniciadoPor, sol.iniciadoEm],[sol.liberadoPor, sol.liberadoEm]].forEach(function(par){
+        if(!par[0] || !par[1] || !idsValidos[par[0]] || vistos[par[0]]) return;
+        if(localDateStr(new Date(par[1])) !== dataStr) return;
+        vistos[par[0]] = true;
+        add(par[0], "solicitacoes");
+      });
+    });
+    return ev;
+  }
+  function feriadoEvidenciaTexto(e){
+    var partes = [];
+    if(e.atividades) partes.push("marcou "+e.atividades+" atividade"+(e.atividades>1?"s":"")+" do checklist");
+    if(e.turnos) partes.push("concluiu "+e.turnos+" checklist"+(e.turnos>1?"s":"")+" de turno");
+    if(e.solicitacoes) partes.push("atendeu "+e.solicitacoes+" solicitaç"+(e.solicitacoes>1?"ões":"ão")+" de acomodação");
+    return partes.join(" · ");
+  }
+  // Olha os feriados que já passaram (até 60 dias) e cria o crédito de folga
+  // pra quem trabalhou. Roda sozinho ao abrir o app e no botão "Conferir agora".
+  var apurandoFeriados = false;
+  async function apurarFeriados(forcar){
+    if(apurandoFeriados) return 0;
+    if(!currentUser || !podeEditar("escala_trabalho")) return 0;
+    apurandoFeriados = true;
+    var novos = 0;
+    try{
+      var hoje = localDateStr(new Date());
+      var limite = addDiasStr(hoje, -60);
+      var lista = (state.feriados||[]).filter(function(f){ return f.direitoFolga && f.data < hoje && f.data >= limite && (forcar || !f.apuradoEm); });
+      for(var i=0; i<lista.length; i++){
+        var f = lista[i];
+        var ev = feriadoEvidencias(f.data);
+        var ids = Object.keys(ev);
+        for(var j=0; j<ids.length; j++){
+          var uidP = ids[j];
+          var existe = (state.feriadoTrabalhados||[]).some(function(r){ return r.feriadoId===f.id && r.userId===uidP; });
+          if(existe) continue;
+          try{
+            var novo = await dbInsert("feriado_trabalhados", {id:uid(), feriado_id:f.id, user_id:uidP, origem:"automatico", evidencia:feriadoEvidenciaTexto(ev[uidP]), descartado:false}, mapFeriadoTrabalhadoFromRow);
+            state.feriadoTrabalhados.push(novo);
+            novos++;
+          }catch(err){
+            if(!(err && err.code === "23505")) console.error("feriado_trabalhados", err);
+          }
+        }
+        if(!f.apuradoEm){
+          try{
+            var upd = await dbUpdate("feriados", f.id, {apurado_em:new Date().toISOString()}, mapFeriadoFromRow);
+            var ix = state.feriados.findIndex(function(x){ return x.id===f.id; });
+            if(ix > -1) state.feriados[ix] = upd;
+          }catch(err2){ console.error(err2); }
+        }
+      }
+    } finally { apurandoFeriados = false; }
+    return novos;
+  }
+
+  function renderEquipeFeriados(body, podeEd){
+    var hoje = localDateStr(new Date());
+    var feriados = (state.feriados||[]).slice();
+    var regs = (state.feriadoTrabalhados||[]).filter(function(r){ return !r.descartado && feriadoPorId(r.feriadoId); });
+    var pend = regs.filter(function(r){ return !r.folgaData; }).sort(function(a,b){ return feriadoPorId(a.feriadoId).data < feriadoPorId(b.feriadoId).data ? -1 : 1; });
+    var feitas = regs.filter(function(r){ return !!r.folgaData; }).sort(function(a,b){ return a.folgaData < b.folgaData ? 1 : -1; }).slice(0, 30);
+    var atrasadas = pend.filter(function(r){ return diasEntre(feriadoPorId(r.feriadoId).data, hoje) > FERIADO_PRAZO_DIAS; });
+    var pessoas = (state.staffProfiles||[]).filter(function(p){ return p.ativo!==false && p.equipe; });
+    var inputEstilo = 'padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);';
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Quem trabalha num feriado ganha uma folga compensatória. O app confere sozinho, no dia seguinte ao feriado, quem fez alguma coisa no sistema (checklist, solicitações) e já guarda o crédito — sem depender da escala. Se alguém trabalhou e não apareceu, adicione manualmente. A folga pode ser marcada em qualquer data, inclusive <strong>antes</strong> do feriado (adiantada) ou trocando a folga da semana.</p>';
+
+    if(atrasadas.length > 0){
+      html += '<div class="card" style="border-left:4px solid var(--red-600);margin-bottom:14px;">' +
+        '<p style="margin:0 0 6px;font-weight:700;color:var(--red-600);font-size:13.5px;">'+ic('warning')+' '+atrasadas.length+' folga'+(atrasadas.length>1?'s':'')+' de feriado há mais de '+FERIADO_PRAZO_DIAS+' dias sem data marcada</p>' +
+        '<p style="margin:0;font-size:12.5px;color:var(--ink-600);">' + atrasadas.map(function(r){ return escapeHtml(nomePessoaPorId(r.userId))+' ('+escapeHtml(feriadoPorId(r.feriadoId).nome)+')'; }).join(" · ") + '</p></div>';
+    }
+
+    // Saldo por pessoa
+    var saldo = {};
+    pend.forEach(function(r){ saldo[r.userId] = (saldo[r.userId]||0) + 1; });
+    html += '<div class="card" style="margin-bottom:14px;"><p class="section-title" style="margin:0 0 10px;">Folgas a compensar</p>';
+    var idsSaldo = Object.keys(saldo);
+    if(idsSaldo.length === 0){
+      html += '<p class="item-meta" style="margin:0;">Ninguém com folga de feriado pendente.</p>';
+    } else {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">' + idsSaldo.map(function(id){
+        return '<span style="background:var(--sand-50);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12.5px;"><strong>'+escapeHtml(nomePessoaPorId(id))+'</strong> · '+saldo[id]+' folga'+(saldo[id]>1?'s':'')+'</span>';
+      }).join("") + '</div>';
+      pend.forEach(function(r, idx){
+        var f = feriadoPorId(r.feriadoId);
+        var dias = diasEntre(f.data, hoje);
+        var atrasada = dias > FERIADO_PRAZO_DIAS;
+        var quando = dias > 0 ? ('há '+dias+' dia'+(dias>1?'s':'')) : (dias === 0 ? 'hoje' : ('em '+(-dias)+' dia'+(dias<-1?'s':'')));
+        html += '<div style="padding:12px 0;'+(idx>0?'border-top:1px solid var(--line);':'border-top:1px solid var(--line);')+'">' +
+          '<p style="margin:0 0 2px;font-size:13.5px;"><strong>'+escapeHtml(nomePessoaPorId(r.userId))+'</strong> — '+escapeHtml(f.nome)+' ('+fmtDiaMes(f.data)+')</p>' +
+          '<p style="margin:0 0 8px;font-size:11.5px;color:'+(atrasada?'var(--red-600)':'var(--ink-600)')+';">'+quando+(atrasada?' — passou do prazo':'')+' · '+(r.origem==="manual"?'adicionado manualmente':'conferido automaticamente')+(r.evidencia?': '+escapeHtml(r.evidencia):'')+'</p>';
+        if(podeEd){
+          html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+            '<input type="date" class="fer-folga-data" data-rid="'+r.id+'" style="'+inputEstilo+'">' +
+            '<label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" class="fer-folga-escala" data-rid="'+r.id+'" checked> lançar na escala</label>' +
+            '<button type="button" class="btn-primary fer-folga-marcar" data-rid="'+r.id+'">Marcar folga</button>' +
+            '<button type="button" class="fer-remover" data-rid="'+r.id+'" style="background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12px;font-weight:700;">Remover</button>' +
+          '</div>';
+        }
+        html += '</div>';
+      });
+    }
+    html += '</div>';
+
+    if(feitas.length > 0){
+      html += '<div class="card" style="margin-bottom:14px;"><p class="section-title" style="margin:0 0 10px;">Folgas já compensadas</p>';
+      feitas.forEach(function(r, idx){
+        var f = feriadoPorId(r.feriadoId);
+        var adiantada = r.folgaData < f.data;
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:'+(idx===0?'0 0 9px':'9px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
+          '<span style="font-size:13px;"><strong>'+escapeHtml(nomePessoaPorId(r.userId))+'</strong> — '+escapeHtml(f.nome)+' ('+fmtDiaMes(f.data)+') → folga em <strong>'+fmtDiaMes(r.folgaData)+'</strong>'+(adiantada?' <em style="color:var(--amber-600);">(adiantada)</em>':'')+'</span>' +
+          (podeEd ? '<button type="button" class="fer-desfazer" data-rid="'+r.id+'" style="background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12px;font-weight:700;">Desfazer</button>' : '') +
+        '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Lista de feriados com quem trabalhou
+    var limite = addDiasStr(hoje, -60);
+    var lista = feriados.filter(function(f){ return f.data >= limite; }).sort(function(a,b){ return a.data < b.data ? -1 : 1; });
+    html += '<div class="card" style="margin-bottom:14px;"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;"><p class="section-title" style="margin:0;">Feriados e quem trabalhou</p>' +
+      (podeEd ? '<button type="button" id="ferApurarBtn" class="btn-secondary" style="font-size:12px;">Conferir agora</button>' : '') + '</div>';
+    if(lista.length === 0) html += '<p class="item-meta" style="margin:0;">Nenhum feriado cadastrado.</p>';
+    lista.forEach(function(f, idx){
+      var quem = regs.filter(function(r){ return r.feriadoId===f.id; });
+      var passou = f.data < hoje;
+      html += '<div style="padding:'+(idx===0?'0 0 11px':'11px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
+        '<p style="margin:0;font-size:13.5px;"><strong>'+fmtDiaMes(f.data)+'</strong> — '+escapeHtml(f.nome)+' <span style="font-size:11px;color:var(--ink-600);">('+(f.abrangencia==="municipal"?"municipal":(f.abrangencia==="nacional"?"nacional":"outro"))+')</span>' +
+          (podeEd && quem.length===0 ? ' <button type="button" class="fer-excluir-feriado" data-fid="'+f.id+'" style="background:none;border:none;color:var(--red-600);font-family:inherit;font-size:11px;font-weight:700;">excluir</button>' : '') + '</p>' +
+        (f.observacao ? '<p style="margin:2px 0 0;font-size:11.5px;color:var(--amber-600);">'+escapeHtml(f.observacao)+'</p>' : '') +
+        '<p style="margin:4px 0 0;font-size:12.5px;color:var(--ink-600);">'+
+          (quem.length>0 ? quem.map(function(r){ return escapeHtml(nomePessoaPorId(r.userId))+(r.origem==="manual"?' (manual)':''); }).join(", ") : (passou ? 'Ninguém registrado' : 'Ainda não chegou — o app confere no dia seguinte')) + '</p>' +
+      '</div>';
+    });
+    html += '</div>';
+
+    if(podeEd){
+      html += '<div class="card" style="margin-bottom:14px;"><p class="section-title" style="margin:0 0 6px;">Adicionar pessoa que trabalhou (ou folga adiantada)</p>' +
+        '<p class="item-meta" style="margin:0 0 10px;">Use quando o app não pegou, ou pra adiantar a folga antes do feriado: escolha o feriado, a pessoa e, se já souber, a data da folga.</p>' +
+        '<select id="ferAddFeriado" style="width:100%;margin-bottom:8px;'+inputEstilo+'">' + lista.concat([]).map(function(f){ return '<option value="'+f.id+'">'+fmtDiaMes(f.data)+' — '+escapeHtml(f.nome)+'</option>'; }).join("") + '</select>' +
+        '<select id="ferAddPessoa" style="width:100%;margin-bottom:8px;'+inputEstilo+'">' + pessoas.map(function(p){ return '<option value="'+p.id+'">'+escapeHtml(p.nome)+'</option>'; }).join("") + '</select>' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;"><label style="font-size:12px;color:var(--ink-600);">Folga em (opcional)</label><input type="date" id="ferAddFolga" style="flex:1;'+inputEstilo+'"></div>' +
+        '<button type="button" id="ferAddBtn" class="btn-primary" style="width:100%;">Adicionar</button></div>';
+
+      html += '<div class="card"><p class="section-title" style="margin:0 0 6px;">Cadastrar outro feriado</p>' +
+        '<p class="item-meta" style="margin:0 0 10px;">Feriado novo, ponto facultativo que dá folga, ou data municipal corrigida.</p>' +
+        '<input type="text" id="ferNovoNome" placeholder="Nome do feriado" style="width:100%;box-sizing:border-box;margin-bottom:8px;'+inputEstilo+'">' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px;"><input type="date" id="ferNovoData" style="flex:1;'+inputEstilo+'">' +
+        '<select id="ferNovoAbr" style="flex:1;'+inputEstilo+'"><option value="nacional">Nacional</option><option value="municipal">Municipal</option><option value="outro">Outro</option></select></div>' +
+        '<button type="button" id="ferNovoBtn" class="btn-primary" style="width:100%;">Cadastrar feriado</button></div>';
+    }
+
+    body.innerHTML = html;
+    if(!podeEd) return;
+
+    body.querySelectorAll(".fer-folga-marcar").forEach(function(btn){
+      btn.onclick = function(){
+        var rid = btn.getAttribute("data-rid");
+        var dEl = body.querySelector('.fer-folga-data[data-rid="'+rid+'"]');
+        var cEl = body.querySelector('.fer-folga-escala[data-rid="'+rid+'"]');
+        marcarFolgaFeriado(rid, dEl ? dEl.value : "", !!(cEl && cEl.checked));
+      };
+    });
+    body.querySelectorAll(".fer-remover").forEach(function(btn){ btn.onclick = function(){ removerRegistroFeriado(btn.getAttribute("data-rid")); }; });
+    body.querySelectorAll(".fer-desfazer").forEach(function(btn){ btn.onclick = function(){ desfazerFolgaFeriado(btn.getAttribute("data-rid")); }; });
+    body.querySelectorAll(".fer-excluir-feriado").forEach(function(btn){ btn.onclick = function(){ excluirFeriado(btn.getAttribute("data-fid")); }; });
+    var apBtn = document.getElementById("ferApurarBtn");
+    if(apBtn) apBtn.onclick = async function(){
+      apBtn.disabled = true;
+      try{
+        var n = await apurarFeriados(true);
+        showToast(n > 0 ? (n+" pessoa(s) adicionada(s)") : "Conferido — nada novo");
+      }catch(err){ console.error(err); showToast("Erro ao conferir"); }
+      renderEquipe();
+    };
+    var addBtn = document.getElementById("ferAddBtn");
+    if(addBtn) addBtn.onclick = function(){
+      adicionarPessoaFeriado(document.getElementById("ferAddFeriado").value, document.getElementById("ferAddPessoa").value, document.getElementById("ferAddFolga").value);
+    };
+    var novoBtn = document.getElementById("ferNovoBtn");
+    if(novoBtn) novoBtn.onclick = function(){
+      cadastrarFeriado(document.getElementById("ferNovoNome").value.trim(), document.getElementById("ferNovoData").value, document.getElementById("ferNovoAbr").value);
+    };
+  }
+
+  async function marcarFolgaFeriado(rid, dataStr, lancarNaEscala){
+    var r = (state.feriadoTrabalhados||[]).find(function(x){ return x.id===rid; });
+    if(!r) return;
+    if(!dataStr){ showToast("Escolha a data da folga"); return; }
+    var f = feriadoPorId(r.feriadoId);
+    try{
+      var upd = await dbUpdate("feriado_trabalhados", rid, {folga_data:dataStr, folga_registrada_em:new Date().toISOString()}, mapFeriadoTrabalhadoFromRow);
+      var ix = state.feriadoTrabalhados.findIndex(function(x){ return x.id===rid; });
+      state.feriadoTrabalhados[ix] = upd;
+      if(lancarNaEscala){
+        var outra = (state.escalaExcecoes||[]).find(function(e){ return e.userId===r.userId && e.data===dataStr; });
+        if(outra && outra.tipo !== "folga_extra" && outra.tipo !== "folga"){
+          showToast("Folga registrada aqui, mas já existe outra marcação na escala nesse dia");
+          renderEquipe();
+          return;
+        }
+        await salvarEscalaExcecao(r.userId, dataStr, "folga_extra", null, null, "Compensação do feriado "+(f?f.nome:""), null);
+        return;
+      }
+      showToast("Folga registrada"); renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao registrar a folga");
+    }
+  }
+  async function desfazerFolgaFeriado(rid){
+    var r = (state.feriadoTrabalhados||[]).find(function(x){ return x.id===rid; });
+    if(!r || !r.folgaData) return;
+    if(!confirm("Desfazer essa folga compensatória? Ela volta pra lista de pendentes.")) return;
+    try{
+      var dataAntiga = r.folgaData;
+      var upd = await dbUpdate("feriado_trabalhados", rid, {folga_data:null, folga_registrada_em:null}, mapFeriadoTrabalhadoFromRow);
+      var ix = state.feriadoTrabalhados.findIndex(function(x){ return x.id===rid; });
+      state.feriadoTrabalhados[ix] = upd;
+      var exc = (state.escalaExcecoes||[]).find(function(e){ return e.userId===r.userId && e.data===dataAntiga && e.tipo==="folga_extra" && (e.observacao||"").indexOf("Compensação do feriado")===0; });
+      if(exc){ await removerEscalaExcecao(r.userId, dataAntiga); return; }
+      showToast("Folga desfeita"); renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao desfazer");
+    }
+  }
+  async function removerRegistroFeriado(rid){
+    var r = (state.feriadoTrabalhados||[]).find(function(x){ return x.id===rid; });
+    if(!r) return;
+    if(!confirm("Remover "+nomePessoaPorId(r.userId)+" desse feriado? (Não trabalhou, por exemplo.)")) return;
+    try{
+      if(r.origem === "automatico"){
+        // fica guardado como descartado pra o app não adicionar de novo
+        var upd = await dbUpdate("feriado_trabalhados", rid, {descartado:true}, mapFeriadoTrabalhadoFromRow);
+        var ix = state.feriadoTrabalhados.findIndex(function(x){ return x.id===rid; });
+        state.feriadoTrabalhados[ix] = upd;
+      } else {
+        await dbDelete("feriado_trabalhados", rid);
+        state.feriadoTrabalhados = state.feriadoTrabalhados.filter(function(x){ return x.id!==rid; });
+      }
+      showToast("Removido"); renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao remover");
+    }
+  }
+  async function adicionarPessoaFeriado(feriadoId, userIdP, folgaData){
+    if(!feriadoId || !userIdP){ showToast("Escolha o feriado e a pessoa"); return; }
+    var existente = (state.feriadoTrabalhados||[]).find(function(r){ return r.feriadoId===feriadoId && r.userId===userIdP; });
+    try{
+      if(existente){
+        var payload = {descartado:false, origem:"manual"};
+        if(folgaData){ payload.folga_data = folgaData; payload.folga_registrada_em = new Date().toISOString(); }
+        var upd = await dbUpdate("feriado_trabalhados", existente.id, payload, mapFeriadoTrabalhadoFromRow);
+        var ix = state.feriadoTrabalhados.findIndex(function(x){ return x.id===existente.id; });
+        state.feriadoTrabalhados[ix] = upd;
+      } else {
+        var novo = await dbInsert("feriado_trabalhados", {id:uid(), feriado_id:feriadoId, user_id:userIdP, origem:"manual", evidencia:null, descartado:false, folga_data:(folgaData||null), folga_registrada_em:(folgaData?new Date().toISOString():null)}, mapFeriadoTrabalhadoFromRow);
+        state.feriadoTrabalhados.push(novo);
+      }
+      showToast("Adicionado"); renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao adicionar");
+    }
+  }
+  async function cadastrarFeriado(nome, dataStr, abrangencia){
+    if(!nome || !dataStr){ showToast("Informe o nome e a data"); return; }
+    try{
+      var novo = await dbInsert("feriados", {id:uid(), data:dataStr, nome:nome, abrangencia:abrangencia||"nacional", direito_folga:true}, mapFeriadoFromRow);
+      state.feriados.push(novo);
+      state.feriados.sort(function(a,b){ return a.data < b.data ? -1 : 1; });
+      showToast("Feriado cadastrado"); renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao cadastrar feriado");
+    }
+  }
+  async function excluirFeriado(fid){
+    var f = feriadoPorId(fid);
+    if(!f) return;
+    if(!confirm("Excluir o feriado "+f.nome+" ("+fmtDiaMes(f.data)+")?")) return;
+    try{
+      await dbDelete("feriados", fid);
+      state.feriados = state.feriados.filter(function(x){ return x.id!==fid; });
+      showToast("Feriado excluído"); renderEquipe();
+    }catch(err){
+      console.error(err); showToast("Erro ao excluir");
     }
   }
 
