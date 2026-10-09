@@ -1821,6 +1821,7 @@
     state = await loadAllFromSupabase();
     // Feriados: confere sozinho quem trabalhou nos feriados que já passaram.
     apurarFeriados(false).catch(function(e){ console.error("apurarFeriados", e); });
+    if(podeEditar("limpeza")) reconciliarTarefasTrocaDeQuarto().then(function(n){ if(n) renderApp(); }).catch(function(e){ console.error(e); });
     // A criação das tarefas de "Preparo do quarto" do dia não depende mais
     // de alguém abrir o app — roda sozinha no servidor (Edge Function
     // "gerar-tarefas-lavagem" + agendamento), sempre a partir das 7h da
@@ -4538,9 +4539,11 @@
       if(occRes.error) throw occRes.error;
       state.estoque.hospedinOcupacao = occRes.data || [];
       hospedinRecomputeFromLocal(15, 15);
+      var movidasTroca = 0;
+      try{ movidasTroca = await reconciliarTarefasTrocaDeQuarto(); }catch(e){ console.error(e); }
 
       renderHospedinSyncStatus();
-      showToast("Sincronizado: " + (data.sincronizadas||0) + " reservas");
+      showToast("Sincronizado: " + (data.sincronizadas||0) + " reservas" + (movidasTroca ? (" · "+movidasTroca+" tarefa(s) acompanhou(aram) a troca de quarto") : ""));
       renderApp();
     }catch(err){
       console.error(err);
@@ -8081,6 +8084,80 @@
 
   // Acomodações ocupadas hoje que ainda não têm nenhum pedido de limpeza
   // (meio da estadia) registrado hoje — viram o card com cadeado.
+  // O que o Hospedin diz que acontece HOJE numa acomodação (check-in e/ou
+  // checkout) — fora renovação no mesmo quarto, que é limpeza de manutenção mesmo.
+  function movimentoHojeDaAcomodacao(id){
+    var info = classificarOcupacaoHoje()[id];
+    if(!info || (!info.checkin && !info.checkout)) return null;
+    if(computeTransferenciasHoje().mesmoQuartoIds[id]) return null;
+    var contexto = (info.checkin && info.checkout) ? "checkin_checkout" : (info.checkin ? "checkin" : "checkout");
+    var rotulo = contexto === "checkin_checkout" ? "check-in e checkout" : (contexto === "checkin" ? "check-in" : "checkout");
+    return {contexto:contexto, rotulo:rotulo, searchableCode:info.searchableCode||null};
+  }
+
+  // Recria a tarefa de lavagem de hoje de uma acomodação (quando alguém a
+  // excluiu sem querer): reativa a excluída, se houver, ou cria uma nova.
+  async function recriarTarefaLavagemHoje(acomodacaoId){
+    var mov = movimentoHojeDaAcomodacao(acomodacaoId);
+    if(!mov) return false;
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var transf = computeTransferenciasHoje();
+    var statusInicial = (mov.contexto === "checkin") ? "pendente" : "bloqueada";
+    var excluida = (state.solicitacoesExcluidas||[]).find(function(x){
+      return x.tipo === "lavagem" && x.acomodacaoId === acomodacaoId && x.criadoEm >= hojeInicio.getTime() && x.status !== "concluido";
+    });
+    var nova;
+    if(excluida){
+      nova = await dbUpdate("solicitacoes_acomodacao", excluida.id,
+        {excluido_em:null, excluido_por:null, contexto:mov.contexto, status:statusInicial, searchable_code:mov.searchableCode,
+         transferencia_de:(mov.contexto==="checkin" ? (transf.transferenciasPorAcomodacaoCheckin[acomodacaoId]||null) : null)}, mapSolicitacaoFromRow);
+      state.solicitacoesExcluidas = state.solicitacoesExcluidas.filter(function(x){ return x.id !== excluida.id; });
+    } else {
+      nova = await dbInsert("solicitacoes_acomodacao",
+        {id:uid(), acomodacao_id:acomodacaoId, tipo:"lavagem", contexto:mov.contexto, origem:"sistema", status:statusInicial,
+         searchable_code:mov.searchableCode, transferencia_de:(mov.contexto==="checkin" ? (transf.transferenciasPorAcomodacaoCheckin[acomodacaoId]||null) : null)}, mapSolicitacaoFromRow);
+    }
+    state.solicitacoes.unshift(nova);
+    return true;
+  }
+
+  // Quando a reserva muda de acomodação no Hospedin (troca de quarto antes do
+  // check-in), a tarefa de check-in que já tinha sido criada fica no quarto
+  // antigo. Aqui ela acompanha a reserva: só mexe em tarefa que ainda não
+  // começou, e só se o check-in de hoje, daquela reserva, agora está em outro quarto.
+  async function reconciliarTarefasTrocaDeQuarto(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var hojeFim = hojeInicio.getTime() + 24*3600*1000;
+    var codigoToId = {};
+    state.acomodacoes.forEach(function(a){ if(a.codigoHospedin) codigoToId[a.codigoHospedin] = a.id; });
+    var quartoPorReserva = {};
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r) || !r.searchable_code) return;
+      var ci = parseDataLocal(r.checkin).getTime();
+      if(ci >= hojeInicio.getTime() && ci < hojeFim && codigoToId[r.acomodacao]) quartoPorReserva[r.searchable_code] = codigoToId[r.acomodacao];
+    });
+    var ocupadoPorTarefa = {};
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo === "lavagem" && s.criadoEm >= hojeInicio.getTime()) ocupadoPorTarefa[s.acomodacaoId] = true;
+    });
+    var movidas = 0;
+    for(var i=0; i<state.solicitacoes.length; i++){
+      var t = state.solicitacoes[i];
+      if(t.tipo !== "lavagem" || t.contexto !== "checkin" || t.criadoEm < hojeInicio.getTime()) continue;
+      if(t.status !== "pendente" && t.status !== "bloqueada") continue;
+      if(!t.searchableCode) continue;
+      var novoId = quartoPorReserva[t.searchableCode];
+      if(!novoId || novoId === t.acomodacaoId || ocupadoPorTarefa[novoId]) continue;
+      try{
+        var upd = await dbUpdate("solicitacoes_acomodacao", t.id, {acomodacao_id:novoId}, mapSolicitacaoFromRow);
+        state.solicitacoes[i] = upd;
+        ocupadoPorTarefa[novoId] = true; delete ocupadoPorTarefa[t.acomodacaoId];
+        movidas++;
+      }catch(err){ console.error("Erro ao mover tarefa para o novo quarto:", err); }
+    }
+    return movidas;
+  }
+
   function acomodacoesLimpezaBloqueadasHoje(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var jaTemTarefaHoje = {};
@@ -8208,8 +8285,14 @@
             if(infoPlaceholder && infoPlaceholder.observacao){
               h += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">'+ic("doc")+' '+escapeHtml(infoPlaceholder.observacao)+'</p>';
             }
+            var movHoje = movimentoHojeDaAcomodacao(id);
+            if(movHoje){
+              h += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("login")+' O Hospedin mostra '+movHoje.rotulo+' hoje nessa acomodação, mas não há tarefa dela aqui.</p>';
+            }
             if(podeEditar("limpeza")){
-              h += '<div class="item-actions"><button class="btn btn-out" data-recusa-id="'+id+'">'+ic("check")+' Hóspede não quer limpeza</button></div>';
+              h += '<div class="item-actions">' +
+                (movHoje ? '<button class="btn" data-recriar-id="'+id+'">'+ic("check")+' Recriar tarefa de '+movHoje.rotulo+'</button>' : '') +
+                '<button class="btn btn-out" data-recusa-id="'+id+'">'+ic("check")+' Hóspede não quer limpeza</button></div>';
             }
             h += '</div>';
           });
@@ -8260,6 +8343,21 @@
     main.innerHTML = html;
     main.querySelectorAll("[data-lsub]").forEach(function(b){
       b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza(); };
+    });
+    main.querySelectorAll("[data-recriar-id]").forEach(function(b){
+      b.onclick = async function(){
+        if(!podeEditar("limpeza")){ showToast("Você não tem permissão para essa ação"); return; }
+        b.disabled = true;
+        try{
+          var ok = await recriarTarefaLavagemHoje(b.getAttribute("data-recriar-id"));
+          showToast(ok ? "Tarefa recriada" : "Nada a recriar nessa acomodação");
+          renderApp();
+        }catch(err){
+          console.error(err);
+          showToast(err && err.code === "23505" ? "Já existe uma tarefa de hoje pra essa acomodação (talvez concluída)" : "Erro ao recriar a tarefa");
+          b.disabled = false;
+        }
+      };
     });
     main.querySelectorAll("[data-recusa-id]").forEach(function(b){
       b.onclick = async function(){
