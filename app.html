@@ -1405,6 +1405,9 @@
   }
 
   async function loadAllFromSupabase(){
+    return filtrarEstoquePorPermissao(await loadAllFromSupabaseCompleto());
+  }
+  async function loadAllFromSupabaseCompleto(){
     var results = await Promise.all([
       sb.from("items").select("*").order("name"),
       sb.from("movements").select("*").order("date", {ascending:false}).limit(5000),
@@ -1470,9 +1473,40 @@
   // ---------- Autenticação e permissões ----------
   var currentUser = null; // {id, nome, email, role, permissoes:{estoque:{ver,editar}, ...}}
 
-  function podeVer(modulo){ return !!currentUser && (currentUser.role === "admin" || (currentUser.permissoes[modulo] && currentUser.permissoes[modulo].ver)); }
-  function podeEditar(modulo){ return !!currentUser && (currentUser.role === "admin" || (currentUser.permissoes[modulo] && currentUser.permissoes[modulo].editar)); }
-  function podeExcluir(modulo){ return !!currentUser && (currentUser.role === "admin" || (currentUser.permissoes[modulo] && currentUser.permissoes[modulo].excluir)); }
+  // Acesso ao estoque só de uma categoria (ex.: só Limpeza, só Manutenção):
+  // são permissões à parte; quem tem o "Estoque" completo vê todas as categorias.
+  var ESTOQUE_CAT_MODULO = {"Frigobar":"estoque_frigobar", "Limpeza":"estoque_limpeza", "Enxoval":"estoque_enxoval", "Manutenção":"estoque_manutencao", "Uniformes":"estoque_uniformes", "Lojinha":"estoque_lojinha", "UTV":"estoque_utv"};
+  function permFlag(modulo, flag){ return !!(currentUser && currentUser.permissoes[modulo] && currentUser.permissoes[modulo][flag]); }
+  function estoquePorCategoria(flag){
+    return Object.keys(ESTOQUE_CAT_MODULO).some(function(cat){ return permFlag(ESTOQUE_CAT_MODULO[cat], flag); });
+  }
+  function podeVer(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"ver") || (modulo==="estoque" && estoquePorCategoria("ver"))); }
+  function podeEditar(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"editar") || (modulo==="estoque" && estoquePorCategoria("editar"))); }
+  function podeExcluir(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"excluir") || (modulo==="estoque" && estoquePorCategoria("excluir"))); }
+  // Categorias do estoque que esta pessoa pode ver.
+  function estoqueCategoriasPermitidas(){
+    if(!currentUser) return [];
+    if(currentUser.role === "admin" || permFlag("estoque","ver")) return CATEGORIES.slice();
+    return CATEGORIES.filter(function(cat){ return ESTOQUE_CAT_MODULO[cat] && permFlag(ESTOQUE_CAT_MODULO[cat], "ver"); });
+  }
+  function estoqueRestrito(){ return estoqueCategoriasPermitidas().length < CATEGORIES.length; }
+  function filtrarEstoquePorPermissao(st){
+    if(!currentUser || !st || !st.estoque || !estoqueRestrito()) return st;
+    var cats = estoqueCategoriasPermitidas();
+    var manter = cats.slice();
+    // Recepção/Limpeza/Serviço Geral usam os itens do frigobar nos abastecimentos deles.
+    if(manter.indexOf("Frigobar") === -1 && (podeVer("recepcao") || podeVer("limpeza") || podeVer("servico_geral"))) manter.push("Frigobar");
+    var itens = st.estoque.items.filter(function(it){ return manter.indexOf(it.category) > -1; });
+    var ids = {}, nomes = {};
+    itens.forEach(function(it){ ids[it.id] = true; nomes[it.name] = true; });
+    st.estoque.items = itens;
+    st.estoque.movements = st.estoque.movements.filter(function(m){ return ids[m.itemId]; });
+    st.estoque.countSessions = st.estoque.countSessions.map(function(cs){
+      return {id:cs.id, date:cs.date, entries:cs.entries.filter(function(e){ return ids[e.itemId]; })};
+    }).filter(function(cs){ return cs.entries.length > 0; });
+    st.estoque.pedidosCompra = st.estoque.pedidosCompra.filter(function(p){ return p.itens.some(function(it){ return nomes[it.nome]; }); });
+    return st;
+  }
 
   async function carregarPerfil(userId){
     var profRes = await sb.from("profiles").select("*").eq("id", userId).single();
@@ -2134,7 +2168,7 @@
   }
   function isLow(it){ return it.qty <= it.min; }
   function isWarn(it){ return !isLow(it) && it.qty <= it.min * 1.3; }
-  function allLowItems(){ return state.estoque.items.filter(isLow); }
+  function allLowItems(){ var ok = estoqueCategoriasPermitidas(); return state.estoque.items.filter(function(it){ return isLow(it) && ok.indexOf(it.category) > -1; }); }
 
   function supplierById(id){
     if(!id) return null;
@@ -2271,6 +2305,11 @@
 
     if(appSection === "home") renderHome();
     if(appSection === "estoque"){
+      var catsOk = estoqueCategoriasPermitidas();
+      if(catsOk.length && catsOk.indexOf(activeCategory) === -1) activeCategory = catsOk[0];
+      if(estoqueRestrito() && activeView === "abastecimento") activeView = "items";
+      var abBtn = document.querySelector('.nav-btn[data-view="abastecimento"]');
+      if(abBtn) abBtn.style.display = estoqueRestrito() ? "none" : "";
       renderTabs();
       renderAlert();
       if(activeView==="items") renderItems();
@@ -2387,7 +2426,7 @@
       c.onclick = function(){
         var sec = c.getAttribute("data-section");
         appSection = sec;
-        if(sec === "estoque") activeView = "abastecimento";
+        if(sec === "estoque") activeView = estoqueRestrito() ? "items" : "abastecimento";
         renderApp();
       };
     });
@@ -2450,7 +2489,7 @@
   function renderTabs(){
     var nav = document.getElementById("tabs");
     nav.innerHTML = "";
-    CATEGORIES.forEach(function(cat){
+    estoqueCategoriasPermitidas().forEach(function(cat){
       var count = itemsByCategory(cat).filter(isLow).length;
       var btn = document.createElement("button");
       btn.textContent = CATEGORY_LABEL[cat];
@@ -2628,7 +2667,11 @@
   }
 
   function renderMovesInto(container){
-    var moves = state.estoque.movements.slice().sort(function(a,b){ return b.date - a.date; }).slice(0,60);
+    var okCatsMov = estoqueCategoriasPermitidas();
+    var moves = state.estoque.movements.filter(function(m){
+      var itM = state.estoque.items.find(function(i){ return i.id === m.itemId; });
+      return !itM || okCatsMov.indexOf(itM.category) > -1;
+    }).sort(function(a,b){ return b.date - a.date; }).slice(0,60);
     if(moves.length === 0){
       container.innerHTML = '<div class="empty">Nenhuma movimentação registrada ainda.</div>';
       return;
@@ -2741,7 +2784,9 @@
     var futureOccupied = hd.future_period.occupied_accommodations;
     var consumption = consumptionByItem(pastDays);
 
+    var okCatsSug = estoqueCategoriasPermitidas();
     var rows = state.estoque.items.map(function(item){
+      if(okCatsSug.indexOf(item.category) === -1) return null;
       var consumed = consumption[item.id] || 0;
       if(consumed <= 0) return null;
       var rate = pastOccupied > 0 ? (consumed / pastOccupied) : 0;
@@ -3379,7 +3424,7 @@
       'style="width:100%;padding:11px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:var(--sand-50);" ' +
       'value="'+escapeHtml(countSearchQuery)+'">';
     var hasAny = false;
-    CATEGORIES.forEach(function(cat){
+    estoqueCategoriasPermitidas().forEach(function(cat){
       var list = itemsByCategory(cat);
       if(q) list = list.filter(function(it){
         return (it.name||"").toLowerCase().indexOf(q) > -1 || (it.numeroSerie||"").toLowerCase().indexOf(q) > -1;
@@ -3488,6 +3533,12 @@
     document.getElementById("f_name").value = item ? item.name : "";
     document.getElementById("f_codigoBarras").value = item ? (item.codigoBarras||"") : "";
     document.getElementById("f_numeroSerie").value = item ? (item.numeroSerie||"") : "";
+    (function(){
+      var okCats = estoqueCategoriasPermitidas();
+      Array.prototype.forEach.call(document.getElementById("f_category").options, function(o){
+        o.hidden = o.disabled = okCats.indexOf(o.value) === -1;
+      });
+    })();
     document.getElementById("f_category").value = item ? item.category : activeCategory;
     document.getElementById("f_unit").value = item ? item.unit : "";
     document.getElementById("f_qty").value = item ? item.qty : "";
@@ -7289,7 +7340,7 @@
   // upgrade — o resto (política, pagamento, cancelamento) sai fora.
   var PALAVRAS_OBSERVACAO_BLOQUEADAS = [
     "reserva com", "reserva confirmada", "codigo promocional",
-    "parcelas", "tipo de quarto no hbook", "tipo de tarifa no hbook", "tipo de cama:",
+    "parcelas", "pagamento", " pix", "tipo de quarto no hbook", "tipo de tarifa no hbook", "tipo de cama:",
     "genius", "pequeno-almoco", "pequeno almoco", "incluido na tarifa", "regulamento",
     "bercos", "deposito", "pre-pagamento", "prepagamento", "reembolsavel",
     "pre-paid", "prepaid", "free cancellation", "cancellation", "cancelamento", "cancelar",
@@ -7301,9 +7352,23 @@
 
   function filtrarObservacaoPadrao(texto){
     if(!texto) return "";
+    // "Tipo de cama: 2 camas de solteiro" (vem do HBOOK) é informação útil pra
+    // montar o quarto — não pode ser descartada junto com o resto do bloco padrão.
+    var camaHbook = "";
+    var mCama = texto.match(/tipo de cama:\s*([^|\n]+?)\s*(?=\||\n|$|\.\s)/i);
+    if(mCama && mCama[1]){
+      camaHbook = "Cama: " + mCama[1].trim();
+      texto = texto.replace(mCama[0], " ");
+    }
+    var resto = filtrarObservacaoPadraoBase(texto);
+    return (camaHbook + (camaHbook && resto ? " · " : "") + resto).trim();
+  }
+  function filtrarObservacaoPadraoBase(texto){
+    if(!texto) return "";
     // separa por ponto final, quebra de linha, ou traço que NÃO seja parte de
     // uma palavra composta (tipo "pequeno-almoço" continua junto)
-    var partes = texto.split(/\.\s+|\n|-(?![a-zà-ÿ])|(?<![a-zà-ÿ])-/);
+    texto = texto.replace(/tipo de (quarto|tarifa) no hbook:[^|\n]*/gi, " ");
+    var partes = texto.split(/\.\s+|\n|\||-(?![a-zà-ÿ])|(?<![a-zà-ÿ])-/);
     var mantidas = partes.map(function(p){ return p.trim(); }).filter(function(p){
       if(!p || p.length < 3) return false;
       var norm = normalizarBusca(p);
@@ -9781,7 +9846,14 @@
 
   // ---------- Administração (usuários e permissões) ----------
   var MODULOS_ADMIN = [
-    {key:"estoque", label:"Estoque"},
+    {key:"estoque", label:"Estoque (todas as categorias)"},
+    {key:"estoque_frigobar", label:"Estoque — só Frigobar"},
+    {key:"estoque_limpeza", label:"Estoque — só Limpeza"},
+    {key:"estoque_enxoval", label:"Estoque — só Enxoval"},
+    {key:"estoque_manutencao", label:"Estoque — só Manutenção"},
+    {key:"estoque_uniformes", label:"Estoque — só Uniformes"},
+    {key:"estoque_lojinha", label:"Estoque — só Lojinha"},
+    {key:"estoque_utv", label:"Estoque — só UTV"},
     {key:"procedimentos", label:"Procedimentos"},
     {key:"manutencao", label:"Manutenções"},
     {key:"hospedes", label:"Hóspedes/Documentos"},
