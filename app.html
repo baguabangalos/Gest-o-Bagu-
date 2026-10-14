@@ -9794,7 +9794,7 @@
   function renderSupervisao(){
     var main = document.getElementById("supervisaoView");
     var turnosAtrasadosAgora = turnosAtrasados();
-    var abas = [["hoje","clock","Hoje"],["limpeza","broom","Limpeza"],["frigobar","cup","Frigobar"],["manutencao","wrench","Manutenção"],["turnos","clock","Turnos"],["equipamentos","gauge","Equipamentos"],["estoque","box","Outros estoques"]];
+    var abas = [["hoje","clock","Hoje"],["limpeza","broom","Limpeza"],["estoque","box","Estoque"],["manutencao","wrench","Manutenção"],["turnos","clock","Turnos"],["equipamentos","gauge","Equipamentos"]];
     if(abas.every(function(a){ return a[0]!==supervisaoTopo; })) supervisaoTopo = "hoje";
     var html = '<div style="margin-bottom:10px;"><input type="search" id="supervisaoBuscaInput" placeholder="Pesquisar na Supervisão…" value="'+escapeHtml(supervisaoBusca)+'" style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:12px;border:1px solid var(--line);font-size:15px;"></div>';
     html += '<div class="cat-tabs" style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;">' + abas.map(function(a){
@@ -9812,8 +9812,7 @@
     var content = document.getElementById("supervisaoTopoContent");
     if(supervisaoTopo === "hoje"){ content.innerHTML = buildPainelHtml(); var extra = document.createElement("div"); content.appendChild(extra); renderSupervisaoHoje(extra); }
     else if(supervisaoTopo === "limpeza") renderSupervisaoLimpeza(content);
-    else if(supervisaoTopo === "frigobar") renderSupervisaoEstoqueTopico(content, "frigobar");
-    else if(supervisaoTopo === "estoque") renderSupervisaoEstoqueTopico(content, "outros");
+    else if(supervisaoTopo === "estoque") renderSupervisaoEstoqueTopico(content);
     else if(supervisaoTopo === "manutencao") renderSupervisaoManutencaoTopico(content);
     else if(supervisaoTopo === "equipamentos") renderSupervisaoEquipamentosTopico(content);
     else renderSupervisaoTurnosTopico(content);
