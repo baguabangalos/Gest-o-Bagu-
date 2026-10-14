@@ -2049,23 +2049,60 @@
   });
 
   // ---------- Notificação sonora de pedidos novos (tempo real) ----------
+  var audioCtxAlerta = null;
+  function obterAudioCtx(){
+    try{
+      if(!audioCtxAlerta) audioCtxAlerta = new (window.AudioContext || window.webkitAudioContext)();
+      if(audioCtxAlerta.state === "suspended") audioCtxAlerta.resume();
+    }catch(err){ audioCtxAlerta = null; }
+    return audioCtxAlerta;
+  }
+  // Os navegadores só liberam o som depois do primeiro toque na tela.
+  ["click","touchstart","keydown"].forEach(function(ev){
+    document.addEventListener(ev, function(){ obterAudioCtx(); }, {once:true, passive:true});
+  });
+  // Alarme alto: dois tons alternados, em onda quadrada e volume máximo, repetidos
+  // 4 vezes (cerca de 4 segundos), mais vibração no celular.
   function playNotifySound(){
     try{
-      var ctx = new (window.AudioContext || window.webkitAudioContext)();
-      var now = ctx.currentTime;
-      [880, 1175].forEach(function(freq, i){
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.0001, now + i*0.16);
-        gain.gain.exponentialRampToValueAtTime(0.25, now + i*0.16 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + i*0.16 + 0.28);
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.start(now + i*0.16);
-        osc.stop(now + i*0.16 + 0.3);
-      });
+      var ctx = obterAudioCtx();
+      if(ctx){
+        var now = ctx.currentTime;
+        var master = ctx.createGain();
+        master.gain.value = 1.0;
+        var comp = ctx.createDynamicsCompressor();
+        master.connect(comp); comp.connect(ctx.destination);
+        for(var r = 0; r < 4; r++){
+          [988, 1319].forEach(function(freq, i){
+            var t0 = now + r*1.0 + i*0.22;
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.type = "square";
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.0001, t0);
+            gain.gain.exponentialRampToValueAtTime(0.9, t0 + 0.02);
+            gain.gain.setValueAtTime(0.9, t0 + 0.16);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+            osc.connect(gain); gain.connect(master);
+            osc.start(t0);
+            osc.stop(t0 + 0.22);
+          });
+        }
+      }
     }catch(err){ console.error("Som de notificação falhou:", err); }
+    try{ if(navigator.vibrate) navigator.vibrate([500,200,500,200,500,200,800]); }catch(e){}
+  }
+  // Aviso grande que fica na tela até a pessoa tocar nele.
+  function mostrarAlertaPedido(msg, aoTocar){
+    var antigo = document.getElementById("alertaPedidoBanner");
+    if(antigo) antigo.remove();
+    var b = document.createElement("button");
+    b.id = "alertaPedidoBanner";
+    b.type = "button";
+    b.style.cssText = "position:fixed;left:10px;right:10px;top:10px;z-index:99999;border:3px solid #fff;border-radius:14px;background:#b3432f;color:#fff;font-family:inherit;font-size:17px;font-weight:800;padding:16px 18px;text-align:left;box-shadow:0 8px 30px rgba(0,0,0,.45);cursor:pointer;";
+    b.innerHTML = '<span style="display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-bottom:4px;">Novo pedido do hóspede</span>' + escapeHtml(msg) + '<span style="display:block;font-size:12.5px;font-weight:600;margin-top:6px;opacity:.9;">Toque para fechar</span>';
+    b.onclick = function(){ b.remove(); if(aoTocar) aoTocar(); };
+    document.body.appendChild(b);
   }
 
   // ---------- Notificação push (funciona mesmo com o app fechado) ----------
@@ -2157,7 +2194,7 @@
         if(payload.new.origem === "hospede"){
           playNotifySound();
           var label = TIPO_LABEL[s.tipo] || s.tipo;
-          showToast("Novo pedido: " + label + " — " + acomodacaoNome(s.acomodacaoId));
+          mostrarAlertaPedido(label + " — " + acomodacaoNome(s.acomodacaoId));
         }
         // Não recarrega a tela se a pessoa estiver contando o estoque —
         // isso apagaria os números já digitados e ainda não salvos.
@@ -2182,7 +2219,7 @@
         var m = mapManutencaoFromRow(payload.new);
         if(!state.manutencoes.some(function(x){ return x.id===m.id; })) state.manutencoes.unshift(m);
         playNotifySound();
-        showToast("Novo pedido de reparo — " + (m.local||""));
+        mostrarAlertaPedido("Reparo — " + (m.local||""));
         if(!(appSection==="estoque" && activeView==="count")) renderApp();
       });
     }
@@ -2473,11 +2510,13 @@
         '<div><p style="margin:0;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("bell")+' Notificações</p><p id="cfgNotifStatusTxt" style="margin:2px 0 0;font-size:12.5px;color:var(--ink-600);">Verificando…</p></div>' +
         '<button type="button" id="cfgNotifToggle" style="background:var(--sand-200);border:none;border-radius:999px;width:52px;height:30px;position:relative;flex-shrink:0;"><span id="cfgNotifKnob" style="position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s;"></span></button>' +
       '</div>' +
+      '<button type="button" id="cfgTestarAlarmeBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("bell")+' Testar o alarme de pedido</button>' +
       '<button type="button" id="cfgSyncHospedinBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("link")+' Sincronizar com Hospedin<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Atualiza as reservas na hora, sem esperar o ciclo automático</span></button>' +
       '<button type="button" id="cfgSairBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">'+ic("logout")+' Sair da conta</button>';
     document.getElementById("cfgMinhaContaBtn").onclick = abrirMinhaConta;
     document.getElementById("cfgSairBtn").onclick = fazerLogout;
     document.getElementById("cfgSyncHospedinBtn").onclick = function(){ openHospedinSync(); };
+    document.getElementById("cfgTestarAlarmeBtn").onclick = function(){ playNotifySound(); mostrarAlertaPedido("Teste — Panorama 02"); };
 
     function atualizarVisualNotif(status){
       var knob = document.getElementById("cfgNotifKnob");
