@@ -1025,17 +1025,43 @@
   var HOSPEDIN_API_BASE = "https://pms-api.hospedin.com/api/v2";
 
   // ---------- Mapeamento linha do banco (snake_case) -> objeto do app (camelCase) ----------
+  function audDe(r, criadoFallback){
+    var ts = function(v){ return v ? new Date(v).getTime() : null; };
+    return {criadoEm: ts(r.criado_em || r.created_at) || criadoFallback || null,
+      criadoPorNome: r.criado_por_nome || null,
+      atualizadoEm: ts(r.atualizado_em || r.editado_em),
+      atualizadoPorNome: r.atualizado_por_nome || null};
+  }
+  // Linha "criado / editado" + botão pra ver o que mudou (histórico campo a campo).
+  function auditoriaHtml(tabela, id, titulo, aud, criadoFallback){
+    aud = aud || {};
+    var criado = aud.criadoEm || criadoFallback;
+    var h = '<p class="item-meta" style="margin:4px 0 0;font-size:11.5px;color:var(--ink-400);">';
+    h += criado ? ('Criado em '+fmtDate(criado)+(aud.criadoPorNome?' por '+escapeHtml(aud.criadoPorNome):'')) : 'Criado: data não registrada';
+    if(aud.atualizadoEm) h += '<br>Editado em '+fmtDate(aud.atualizadoEm)+(aud.atualizadoPorNome?' por '+escapeHtml(aud.atualizadoPorNome):'');
+    h += '</p>';
+    if(aud.atualizadoEm){
+      h += '<button type="button" data-hist-tab="'+escapeHtml(tabela)+'" data-hist-id="'+escapeHtml(String(id))+'" data-hist-titulo="'+escapeHtml(titulo||"")+'" style="background:none;border:none;padding:2px 0;color:var(--teal-700);font-size:12px;font-weight:800;cursor:pointer;text-align:left;">'+ic("search")+' Ver o que foi editado</button>';
+    }
+    return h;
+  }
+  document.addEventListener("click", function(ev){
+    var b = ev.target.closest && ev.target.closest("[data-hist-tab]");
+    if(!b) return;
+    ev.preventDefault(); ev.stopPropagation();
+    abrirHistoricoSheet(b.getAttribute("data-hist-tab"), b.getAttribute("data-hist-id"), b.getAttribute("data-hist-titulo"));
+  }, true);
   function mapItemFromRow(r){
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
       qtyUsado:Number(r.qty_usado||0),
       localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras,
-      criadoPor:r.criado_por, editadoPor:r.editado_por, editadoEm:(r.editado_em?new Date(r.editado_em).getTime():null)};
+      criadoPor:r.criado_por, editadoPor:r.editado_por, editadoEm:(r.editado_em?new Date(r.editado_em).getTime():null), aud:audDe(r)};
   }
   function mapMovementFromRow(r){
     return {id:r.id, itemId:r.item_id, type:r.type, qty:Number(r.qty), delta:(r.delta!=null?Number(r.delta):undefined),
       note:r.note, destino:r.destino, date:new Date(r.date).getTime(),
-      recebidoPorNome:r.recebido_por_nome, comprovanteUniforme:r.comprovante_uniforme};
+      recebidoPorNome:r.recebido_por_nome, comprovanteUniforme:r.comprovante_uniforme, aud:audDe(r)};
   }
   function mapSupplierFromRow(r){
     return {id:r.id, name:r.name, phone:r.phone, notes:r.notes, orderDays:r.order_days||[]};
@@ -1046,7 +1072,7 @@
   function mapPedidoCompraFromRow(r){
     return {id:r.id, itens:r.itens||[], foto:r.foto, observacao:r.observacao, status:r.status,
       criadoEm:new Date(r.criado_em).getTime(), criadoPor:r.criado_por,
-      recebidoEm:(r.recebido_em?new Date(r.recebido_em).getTime():null), recebidoPor:r.recebido_por};
+      recebidoEm:(r.recebido_em?new Date(r.recebido_em).getTime():null), recebidoPor:r.recebido_por, aud:audDe(r)};
   }
   function mapProcedimentoFromRow(r){
     return {id:r.id, title:r.title, text:r.text_content, photo:r.photo, fileName:r.file_name, fileData:r.file_data,
@@ -1070,7 +1096,7 @@
   function mapEquipamentoFromRow(r){
     return {id:r.id, nome:r.nome, tipo:r.tipo, local:r.local, status:r.status||"em_uso",
       prazoMeses:r.prazo_meses||null, ultimaManutencao:(r.ultima_manutencao?new Date(r.ultima_manutencao).getTime():null),
-      observacoes:r.observacoes, createdAt:new Date(r.created_at).getTime()};
+      observacoes:r.observacoes, createdAt:new Date(r.created_at).getTime(), aud:audDe(r)};
   }
   function mapEquipamentoEventoFromRow(r){
     return {id:r.id, equipamentoId:r.equipamento_id, tipo:r.tipo, local:r.local, observacao:r.observacao,
@@ -1293,7 +1319,7 @@
     description:"Descrição", resolution_note:"Nota de conclusão", responsavel:"Responsável",
     prioridade:"Prioridade", photo:"Foto", foto:"Foto", file_name:"Arquivo anexado",
     itens:"Itens", nome:"Nome", horario:"Horário", hora_inicio:"Hora de início", hora_fim:"Hora de fim",
-    dias_semana:"Dias da semana", ordem:"Ordem"
+    dias_semana:"Dias da semana", ordem:"Ordem", qty:"Quantidade", name:"Nome", unit:"Unidade", min:"Estoque mínimo", category:"Categoria", criado_em:"Data do pedido", recebido_em:"Data de chegada", prazo_meses:"Prazo (meses)", ultima_manutencao:"Última manutenção", observacoes:"Observações", destino:"Destino", note:"Observação", qty_em_uso:"Em uso", localizacao:"Localização", numero_serie:"Nº de série"
   };
   function labelCampoHistorico(campo){
     return CAMPO_LABEL_HISTORICO[campo] || campo;
@@ -2369,7 +2395,8 @@
         computeAguardandoRevisao().length +
         state.solicitacoes.filter(function(s){ return s.tipo === "frigobar" && s.status === "pendente" && ehPedidoDeHospedeHome(s); }).length +
         state.solicitacoes.filter(function(s){ return s.tipo === "sauna" && (s.status === "pendente" || s.status === "monitorando"); }).length +
-        state.solicitacoes.filter(function(s){ return s.tipo === "lenha" && s.status !== "concluido"; }).length;
+        state.solicitacoes.filter(function(s){ return s.tipo === "lenha" && s.status !== "concluido"; }).length +
+        state.manutencoes.filter(function(m){ return m.origem === "hospede" && (m.status === "pendente" || m.status === "em_andamento"); }).length;
       var recepSub = pendTotal > 0 ? (pendTotal + (pendTotal===1?" pendência":" pendências")) : "tudo em dia";
       cards.push({section:"recepcao", titulo:"Recepção", icon:ic("bell"), sub:recepSub});
     }
@@ -2597,6 +2624,7 @@
           '<div class="item-main">' +
             '<p class="item-name">'+escapeHtml(it.name)+'</p>' +
             '<p class="item-meta">'+metaText+'</p>' +
+            auditoriaHtml("items", it.id, it.name, it.aud) +
           '</div>' +
           '<div class="qty-badge '+badgeClass+'">'+fmtQty(it.qty)+' '+escapeHtml(it.unit)+'</div>' +
         '</div>' +
@@ -2658,6 +2686,7 @@
       (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
       (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">'+ic("user")+' Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
         (m.comprovanteUniforme ? '<br><button type="button" onclick="verAnexoClick(this, \''+escapeHtml(m.comprovanteUniforme)+'\')" style="margin-top:4px;background:var(--sand-100);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;">'+ic("camera")+' Ver comprovante</button>' : '') : '') +
+      (m.aud ? auditoriaHtml("movements", m.id, name, m.aud, m.date) : '') +
       '</div><div style="display:flex;align-items:center;gap:8px;">' +
       '<div class="move-date">'+fmtDate(m.date)+'</div>' +
       (podeMexer ? (
@@ -3055,7 +3084,7 @@
           '<p style="margin:0 0 4px;font-size:14px;font-weight:700;">'+itensTxt+'</p>';
         if(p.observacao) html += '<p class="item-meta" style="margin-bottom:6px;">'+escapeHtml(p.observacao)+'</p>';
         if(p.foto) html += '<img data-anexo-path="'+escapeHtml(p.foto)+'" onclick="abrirFotoViewer(this.src)" style="width:100%;max-height:120px;object-fit:cover;border-radius:9px;display:block;margin-bottom:8px;cursor:pointer;">';
-        html += '<p class="item-meta" style="margin-bottom:8px;">pedido em '+fmtDate(p.criadoEm)+' por '+escapeHtml(nomeStaff(p.criadoPor))+'</p>' +
+        html += '<p class="item-meta" style="margin-bottom:8px;">pedido em '+fmtDate(p.criadoEm)+' por '+escapeHtml(nomeStaff(p.criadoPor))+'</p>' + auditoriaHtml("pedidos_compra", p.id, "Pedido de compra", p.aud, p.criadoEm) +
           '<div style="display:flex;gap:8px;">' +
           '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="flex:1;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("check")+' Chegou</button>' +
           (podeEditar("estoque") ? '<button type="button" class="pedidoEditarBtn" data-id="'+p.id+'" style="background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px 16px;font-family:inherit;font-size:13.5px;font-weight:700;">Editar</button>' : '') +
@@ -5035,6 +5064,7 @@
           html += '<p class="item-meta">concluída em '+fmtDate(m.resolvedAt)+'</p>' +
             '<div class="item-actions"><button class="btn btn-out" data-act="reopen" data-id="'+m.id+'">↺ Reabrir</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
         }
+        html += auditoriaHtml("manutencoes", m.id, m.title, {criadoEm:m.createdAt, criadoPorNome:m.criadoPorNome, atualizadoEm:m.atualizadoEm, atualizadoPorNome:m.atualizadoPorNome});
         html += '</div>';
       });
       html += '<div class="empty" id="manutBuscaVazio" style="display:none;">Nenhuma manutenção encontrada com essa busca.</div>';
@@ -5156,6 +5186,7 @@
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(e.nome)+(e.tipo?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(e.tipo)+'</span>':'')+'</p>';
         if(e.local) html += '<p class="item-meta">'+ic("pin")+' '+escapeHtml(e.local)+'</p>';
         if(prox) html += '<p class="item-meta">próxima manutenção: '+fmtDateOnly(prox)+(isEquipamentoVencido(e)?' (vencida)':'')+'</p>';
+        html += auditoriaHtml("equipamentos", e.id, e.nome, e.aud, e.createdAt);
         html += '</div>';
       });
     }
@@ -7483,7 +7514,17 @@
       if(ci <= hojeInicio.getTime() && co > hojeInicio.getTime()) encontrada = r;
     });
     if(!encontrada) return null;
-    return {adultos:encontrada.adultos, criancas:encontrada.criancas, observacao:filtrarObservacaoPadrao(encontrada.observacao)};
+    var obsFinal = filtrarObservacaoPadrao(encontrada.observacao);
+    var totalPessoas = (Number(encontrada.adultos)||0) + (Number(encontrada.criancas)||0);
+    // 3 ou mais pessoas: lembrar de montar cama extra, a não ser que a
+    // observação já peça berço (ou já fale de cama extra).
+    var textoOrig = normalizarBusca(encontrada.observacao || "");
+    var pedeBerco = /ber[cç]o|crib|\bcot\b/.test(textoOrig);
+    var jaTemExtra = /cama extra|extra bed|colchao extra|cama adicional/.test(textoOrig);
+    if(totalPessoas >= 3 && !pedeBerco && !jaTemExtra){
+      obsFinal = (obsFinal ? obsFinal + " · " : "") + "Adicionar cama extra (" + totalPessoas + " pessoas)";
+    }
+    return {adultos:encontrada.adultos, criancas:encontrada.criancas, observacao:obsFinal};
   }
 
   function nomeStaff(id){
@@ -9332,6 +9373,27 @@
           html += '<div class="card manut-card">' + renderSolicitacaoCard(s) + '</div>';
         });
       }
+
+      // Reparos pedidos pelo hóspede: é o MESMO registro da aba Manutenções —
+      // iniciar/concluir aqui reflete lá, e vice-versa.
+      var reparosHospede = state.manutencoes.filter(function(m){ return m.origem === "hospede" && (m.status === "pendente" || m.status === "em_andamento"); })
+        .sort(function(a,b){ return (a.createdAt||0) - (b.createdAt||0); });
+      if(reparosHospede.length){
+        html += '<div class="section-title" style="margin-top:18px;">'+ic("wrench")+' Reparos pedidos pelo hóspede</div>';
+        reparosHospede.forEach(function(m){
+          var pInfoR = PRIORIDADE_INFO[m.prioridade] || PRIORIDADE_INFO.media;
+          html += '<div class="card manut-card" style="border-left:4px solid '+pInfoR.cor+';">' +
+            '<p class="item-name" style="margin:0 0 3px;">'+ic("wrench")+' '+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>' +
+            (m.description ? '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>' : '') +
+            '<p class="item-meta">'+ic("phone")+' solicitado pelo hóspede · '+(m.status==="em_andamento" ? ('em andamento há '+fmtDuration(minutesAgo(m.iniciadoEm||m.createdAt))) : ('aberto em '+fmtDate(m.createdAt)))+'</p>' +
+            ((podeEditar("recepcao") || podeEditar("manutencao")) ?
+              '<div class="item-actions">' +
+                (m.status === "pendente" ? '<button class="btn btn-in" data-act="reparoHospede" data-sub="iniciar" data-id="'+m.id+'">▶ Iniciar</button>' : '') +
+                '<button class="btn btn-in" data-act="reparoHospede" data-sub="concluir" data-id="'+m.id+'">'+ic("check")+' Concluir</button>' +
+              '</div>' : '') +
+          '</div>';
+        });
+      }
     }
 
     else if(recepcaoSubView === "avulsos"){
@@ -9419,6 +9481,26 @@
           renderApp();
         }catch(err){
           console.error(err); showToast("Erro ao marcar revisão");
+          btn.disabled = false;
+        }
+      };
+    });
+
+    main.querySelectorAll('[data-act="reparoHospede"]').forEach(function(btn){
+      btn.onclick = async function(){
+        var id = btn.getAttribute("data-id");
+        if(!(podeEditar("recepcao") || podeEditar("manutencao"))){ showToast("Você não tem permissão para essa ação"); return; }
+        btn.disabled = true;
+        try{
+          var concluir = btn.getAttribute("data-sub") === "concluir";
+          var payloadR = concluir ? {status:"concluida", resolved_at:new Date().toISOString()} : {status:"em_andamento", iniciado_em:new Date().toISOString()};
+          var mR = await dbUpdate("manutencoes", id, payloadR, mapManutencaoFromRow);
+          var idxR = state.manutencoes.findIndex(function(x){ return x.id===id; });
+          if(idxR>-1) state.manutencoes[idxR] = mR;
+          showToast(concluir ? "Reparo concluído (também na aba Manutenções)" : "Reparo iniciado");
+          renderApp();
+        }catch(err){
+          console.error(err); showToast("Erro ao atualizar o reparo");
           btn.disabled = false;
         }
       };
@@ -9628,31 +9710,117 @@
       .sort(function(a,b){ return (b.resolvedAt||0)-(a.resolvedAt||0); });
   }
 
-  var supervisaoTopo = "limpeza";
+  var supervisaoTopo = "hoje";
 
+  var supervisaoBusca = "";
+  function supervisaoAplicarBusca(){
+    var content = document.getElementById("supervisaoTopoContent");
+    if(!content) return;
+    var q = normalizarBusca(supervisaoBusca).trim();
+    content.querySelectorAll(".card, .supev").forEach(function(el){
+      if(el.closest(".card") && el.closest(".card") !== el && el.classList.contains("supev") === false) return;
+      el.style.display = (!q || normalizarBusca(el.textContent).indexOf(q) > -1) ? "" : "none";
+    });
+  }
+  // Tudo o que aconteceu hoje, em ordem do mais recente pro mais antigo.
+  function renderSupervisaoHoje(content){
+    var ini = new Date(); ini.setHours(0,0,0,0); var t0 = ini.getTime();
+    var ev = [];
+    function add(ts, icone, texto, quem){ if(ts && ts >= t0) ev.push({ts:ts, icone:icone, texto:texto, quem:quem}); }
+    state.solicitacoes.forEach(function(s){
+      var nome = (TIPO_LABEL[s.tipo]||s.tipo) + " — " + acomodacaoNome(s.acomodacaoId);
+      add(s.criadoEm, ic("plus"), "Criada: "+nome, s.criadoPorNome || (s.origem==="hospede"?"hóspede":(s.criadoPor?nomeStaff(s.criadoPor):"sistema")));
+      add(s.iniciadoEm, ic("clock"), "Iniciada: "+nome, s.iniciadoPor?nomeStaff(s.iniciadoPor):"");
+      add(s.concluidoEm, ic("check"), "Concluída: "+nome, s.concluidoPor?nomeStaff(s.concluidoPor):"");
+    });
+    state.manutencoes.forEach(function(m){
+      add(m.createdAt, ic("wrench"), "Manutenção aberta: "+m.title+(m.local?" ("+m.local+")":""), m.criadoPorNome||(m.origem==="hospede"?"hóspede":""));
+      add(m.iniciadoEm, ic("clock"), "Manutenção iniciada: "+m.title, "");
+      add(m.resolvedAt, ic("check"), "Manutenção concluída: "+m.title, "");
+    });
+    state.estoque.movements.forEach(function(m){
+      var it = state.estoque.items.find(function(i){ return i.id===m.itemId; });
+      if(!it) return;
+      add(m.date, ic("box"), (m.type==="in"?"Entrada":"Saída")+" de estoque ("+(CATEGORY_LABEL[it.category]||it.category)+"): "+m.qty+" × "+it.name+(m.destino?" → "+m.destino:""), "");
+    });
+    state.turnoExecucoes.forEach(function(e){
+      var t = state.turnos.find(function(x){ return x.id===e.turnoId; });
+      add(e.concluidoEm, ic("clock"), "Turno concluído: "+(t?t.nome:"—"), e.concluidoPor?nomeStaff(e.concluidoPor):"");
+    });
+    state.turnoAtividadeExecucoes.forEach(function(a){
+      if(a.status==="pendente") return;
+      var at = null; (state.turnoAtividades||[]).forEach(function(x){ if(x.id===a.turnoAtividadeId) at=x; });
+      add(a.marcadoEm, ic("check"), "Atividade de turno ("+a.status+"): "+(at?at.titulo:"—"), a.marcadoPor?nomeStaff(a.marcadoPor):"");
+    });
+    state.equipamentoEventos.forEach(function(e){
+      var eq = state.equipamentos.find(function(x){ return x.id===e.equipamentoId; });
+      var rot = {enviado:"enviado para conserto",retornou:"voltou do conserto",manutencao:"manutenção realizada"}[e.tipo]||e.tipo;
+      add(e.data, ic("gauge"), "Equipamento "+(eq?eq.nome:"")+": "+rot, e.registradoPor?nomeStaff(e.registradoPor):"");
+    });
+    ev.sort(function(a,b){ return b.ts-a.ts; });
+    var h = '<div class="section-title" style="margin-top:18px;">'+ic("search")+' Tudo o que aconteceu hoje ('+ev.length+')</div>';
+    if(!ev.length) h += '<div class="empty">Nada registrado hoje ainda.</div>';
+    ev.slice(0,300).forEach(function(e){
+      h += '<div class="card supev" style="margin-bottom:8px;padding:10px 12px;"><p style="margin:0;font-size:13.5px;font-weight:700;">'+e.icone+' '+escapeHtml(e.texto)+'</p>' +
+        '<p class="item-meta" style="margin:2px 0 0;">'+fmtDate(e.ts)+(e.quem?' · '+escapeHtml(e.quem):'')+'</p></div>';
+    });
+    content.innerHTML = h;
+  }
+  function renderSupervisaoEquipamentosTopico(content){
+    var h = '<div class="section-title" style="margin-top:18px;">'+ic("gauge")+' Equipamentos</div>';
+    var lista = state.equipamentos.slice().sort(function(a,b){
+      var va=(a.status==="em_conserto"||isEquipamentoVencido(a))?0:1, vb=(b.status==="em_conserto"||isEquipamentoVencido(b))?0:1;
+      return va-vb || (a.nome||"").localeCompare(b.nome||"","pt-BR");
+    });
+    if(!lista.length) h += '<div class="empty">Nenhum equipamento cadastrado.</div>';
+    lista.forEach(function(e){
+      var info = equipamentoStatusInfo(e), prox = proximaManutencaoTs(e);
+      h += '<div class="card" style="margin-bottom:8px;border-left:4px solid '+info.cor+';"><span style="font-size:11px;font-weight:800;color:'+info.cor+';">'+info.label+'</span>' +
+        '<p class="item-name" style="margin:2px 0;">'+escapeHtml(e.nome)+(e.local?' <span class="item-meta">— '+escapeHtml(e.local)+'</span>':'')+'</p>' +
+        (prox?'<p class="item-meta">próxima manutenção: '+fmtDateOnly(prox)+(isEquipamentoVencido(e)?' (vencida)':'')+'</p>':'') +
+        '<p class="item-meta">Criado em '+fmtDate(e.createdAt)+'</p></div>';
+    });
+    h += '<div class="section-title" style="margin-top:18px;">Histórico de eventos</div>';
+    var evs = state.equipamentoEventos.slice().sort(function(a,b){ return b.data-a.data; }).slice(0,80);
+    if(!evs.length) h += '<div class="empty">Nenhum evento registrado.</div>';
+    evs.forEach(function(e){
+      var eq = state.equipamentos.find(function(x){ return x.id===e.equipamentoId; });
+      var rot = {enviado:"Enviado para conserto",retornou:"Voltou do conserto",manutencao:"Manutenção realizada"}[e.tipo]||e.tipo;
+      h += '<div class="card" style="margin-bottom:8px;padding:10px 12px;"><p style="margin:0;font-size:13.5px;font-weight:700;">'+escapeHtml(eq?eq.nome:"—")+' · '+escapeHtml(rot)+'</p>' +
+        '<p class="item-meta" style="margin:2px 0 0;">'+fmtDate(e.data)+(e.registradoPor?' · '+escapeHtml(nomeStaff(e.registradoPor)):'')+(e.observacao?' · '+escapeHtml(e.observacao):'')+'</p></div>';
+    });
+    content.innerHTML = h;
+  }
   function renderSupervisao(){
     var main = document.getElementById("supervisaoView");
-    var html = buildPainelHtml();
     var turnosAtrasadosAgora = turnosAtrasados();
-    html += '<div class="seg-toggle" style="margin-top:18px;">' +
-      '<button data-stopo="limpeza" class="'+(supervisaoTopo==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza</button>' +
-      '<button data-stopo="estoque" class="'+(supervisaoTopo==="estoque"?"active":"")+'">'+ic("box")+' Estoque</button>' +
-      '<button data-stopo="manutencao" class="'+(supervisaoTopo==="manutencao"?"active":"")+'">'+ic("wrench")+' Manutenção</button>' +
-      '<button data-stopo="turnos" class="'+(supervisaoTopo==="turnos"?"active":"")+'">'+ic("clock")+' Turnos'+(turnosAtrasadosAgora.length?(' <span style="background:var(--red-600);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;margin-left:3px;">'+turnosAtrasadosAgora.length+'</span>'):'')+'</button>' +
-    '</div>';
+    var abas = [["hoje","clock","Hoje"],["limpeza","broom","Limpeza"],["frigobar","cup","Frigobar"],["manutencao","wrench","Manutenção"],["turnos","clock","Turnos"],["equipamentos","gauge","Equipamentos"],["estoque","box","Outros estoques"]];
+    if(abas.every(function(a){ return a[0]!==supervisaoTopo; })) supervisaoTopo = "hoje";
+    var html = '<div style="margin-bottom:10px;"><input type="search" id="supervisaoBuscaInput" placeholder="Pesquisar na Supervisão…" value="'+escapeHtml(supervisaoBusca)+'" style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:12px;border:1px solid var(--line);font-size:15px;"></div>';
+    html += '<div class="cat-tabs" style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;">' + abas.map(function(a){
+      var ativo = supervisaoTopo===a[0];
+      var badge = (a[0]==="turnos" && turnosAtrasadosAgora.length) ? ' <span style="background:var(--red-600);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;">'+turnosAtrasadosAgora.length+'</span>' : '';
+      return '<button data-stopo="'+a[0]+'" style="white-space:nowrap;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:'+(ativo?'800':'700')+';border:none;color:'+(ativo?'#fff':'var(--ink-600)')+';background:'+(ativo?'var(--teal-700)':'var(--sand-100)')+';">'+ic(a[1])+' '+a[2]+badge+'</button>';
+    }).join("") + '</div>';
     html += '<div id="supervisaoTopoContent"></div>';
     main.innerHTML = html;
     main.querySelectorAll("[data-stopo]").forEach(function(b){
       b.onclick = function(){ supervisaoTopo = b.getAttribute("data-stopo"); renderSupervisao(); };
     });
+    var inp = document.getElementById("supervisaoBuscaInput");
+    inp.oninput = function(){ supervisaoBusca = inp.value; supervisaoAplicarBusca(); };
     var content = document.getElementById("supervisaoTopoContent");
-    if(supervisaoTopo === "limpeza") renderSupervisaoLimpeza(content);
-    else if(supervisaoTopo === "estoque") renderSupervisaoEstoqueTopico(content);
+    if(supervisaoTopo === "hoje"){ content.innerHTML = buildPainelHtml(); var extra = document.createElement("div"); content.appendChild(extra); renderSupervisaoHoje(extra); }
+    else if(supervisaoTopo === "limpeza") renderSupervisaoLimpeza(content);
+    else if(supervisaoTopo === "frigobar") renderSupervisaoEstoqueTopico(content, "frigobar");
+    else if(supervisaoTopo === "estoque") renderSupervisaoEstoqueTopico(content, "outros");
     else if(supervisaoTopo === "manutencao") renderSupervisaoManutencaoTopico(content);
+    else if(supervisaoTopo === "equipamentos") renderSupervisaoEquipamentosTopico(content);
     else renderSupervisaoTurnosTopico(content);
+    supervisaoAplicarBusca();
     if(!supervisaoTurnosInterval){
       supervisaoTurnosInterval = setInterval(function(){
-        if(appSection === "supervisao" && supervisaoTopo === "turnos") renderSupervisao();
+        if(appSection === "supervisao" && supervisaoTopo === "turnos" && document.activeElement && document.activeElement.id !== "supervisaoBuscaInput") renderSupervisao();
       }, 60000);
     }
   }
@@ -9795,13 +9963,16 @@
     wireSolicitacaoActions(content);
   }
 
-  function renderSupervisaoEstoqueTopico(content){
+  function renderSupervisaoEstoqueTopico(content, modo){
+    var catsLista = CATEGORIES.filter(function(c){ return modo==="outros" ? c!=="Frigobar" : true; });
+    if(modo==="frigobar") supervisaoEstoqueCategoria = "Frigobar";
+    else if(modo==="outros" && supervisaoEstoqueCategoria==="Frigobar") supervisaoEstoqueCategoria = catsLista[0];
     // Sub-abas por categoria (Frigobar, Limpeza, Enxoval, Manutenção,
     // Uniformes) — cada uma mostra seu próprio histórico de Entradas e
     // Saídas. Os relatórios específicos de abastecimento/compra (que só
     // fazem sentido pro Frigobar) ficam só dentro dessa aba.
-    var catTabsHtml = '<div class="cat-tabs" style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;margin-top:14px;">' +
-      CATEGORIES.map(function(cat){
+    var catTabsHtml = modo==="frigobar" ? '' : '<div class="cat-tabs" style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;margin-top:14px;">' +
+      catsLista.map(function(cat){
         var active = supervisaoEstoqueCategoria === cat;
         return '<button data-scat="'+cat+'" style="white-space:nowrap;padding:7px 13px;border-radius:20px;font-size:12.5px;font-weight:'+(active?'800':'700')+';border:none;color:'+(active?'#fff':'var(--ink-600)')+';background:'+(active?'var(--teal-700)':'var(--sand-100)')+';">'+escapeHtml(CATEGORY_LABEL[cat])+'</button>';
       }).join("") + '</div>';
@@ -10281,7 +10452,7 @@
     return digits.slice(0,3)+"."+digits.slice(3,6)+"."+digits.slice(6,9)+"-"+digits.slice(9);
   }
   function mapHospedeFromRow(r){
-    return {id:r.id, nome:r.nome, cpf:r.cpf, passaporte:r.passaporte, fotos:r.fotos||[], observacoes:r.observacoes};
+    return {id:r.id, nome:r.nome, cpf:r.cpf, passaporte:r.passaporte, fotos:r.fotos||[], observacoes:r.observacoes, aud:audDe(r)};
   }
 
   var editingHospedeId = null;
