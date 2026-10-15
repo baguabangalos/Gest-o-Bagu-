@@ -2188,10 +2188,21 @@
     realtimeChannel = sb.channel("pedidos-hospedes");
 
     if(podeVer("recepcao")){
-      carregarPreCheckins().then(function(){ if(appSection==="recepcao") renderRecepcao(); });
+      carregarPreCheckins().then(function(){
+        if(appSection==="recepcao") renderRecepcao();
+        try{
+          var hojeChave = isoLocal(new Date());
+          var qtd = preCheckinsNaoVistos().length;
+          if(qtd > 0 && localStorage.getItem("preCheckinAvisoDia") !== hojeChave){
+            localStorage.setItem("preCheckinAvisoDia", hojeChave);
+            showToast(qtd + (qtd===1 ? " pedido de chegada" : " pedidos de chegada") + " nos próximos "+PRECHECKIN_JANELA_DIAS+" dias — veja em Recepção › Chegadas", 6000);
+          }
+        }catch(e){}
+      });
       realtimeChannel.on("postgres_changes", {event:"*", schema:"public", table:"pre_checkins"}, function(payload){
         carregarPreCheckins().then(function(){
-          if(payload.eventType === "INSERT"){
+          var novoDias = (payload.new && payload.new.checkin) ? preCheckinDias({checkin:payload.new.checkin}) : null;
+          if(payload.eventType === "INSERT" && (novoDias === null || novoDias <= PRECHECKIN_JANELA_DIAS)){
             playNotifySound();
             mostrarAlertaPedido("Pedido de chegada — " + ((payload.new && (payload.new.hospede_nome || payload.new.acomodacao_nome)) || "novo hóspede"), function(){
               appSection = "recepcao"; recepcaoSubView = "chegadas"; renderApp();
@@ -9292,17 +9303,35 @@
   // ---------- Pré-check-in do hóspede (vem do site bagua.ia.br via Edge Function) ----------
   var preCheckins = [];
   var preCheckinsErro = false;
+  var PRECHECKIN_JANELA_DIAS = 4; // só os próximos 4 dias aparecem em destaque / avisam
+  function isoLocal(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  // Quantos dias faltam para a chegada (0 = hoje, negativo = já passou). null = sem data.
+  function preCheckinDias(p){
+    if(!p.checkin) return null;
+    var hoje = new Date(); hoje.setHours(0,0,0,0);
+    return Math.round((parseDataLocal(p.checkin).getTime() - hoje.getTime()) / 86400000);
+  }
   async function carregarPreCheckins(){
     try{
-      var desde = new Date(); desde.setDate(desde.getDate() - 30);
-      var res = await sb.from("pre_checkins").select("*").gte("recebido_em", desde.toISOString()).order("recebido_em", {ascending:false}).limit(500);
+      // Busca pela DATA DE CHEGADA (não pela data em que o pedido chegou): um pedido feito hoje
+      // para daqui a 3 meses continua guardado e aparece quando a data se aproximar.
+      var corte = new Date(); corte.setDate(corte.getDate() - 30);
+      var corteIso = isoLocal(corte);
+      var res = await sb.from("pre_checkins").select("*")
+        .or("checkin.gte."+corteIso+",and(checkin.is.null,recebido_em.gte."+corte.toISOString()+")")
+        .order("checkin", {ascending:true, nullsFirst:true}).limit(1000);
       if(res.error) throw res.error;
       preCheckins = res.data || [];
       preCheckinsErro = false;
     }catch(err){ preCheckinsErro = true; console.error("pre_checkins:", err); }
   }
+  // Pedidos que pedem atenção agora: não feitos, e que chegam hoje, nos próximos 4 dias, ou já passaram sem marcar.
   function preCheckinsNaoVistos(){
-    return preCheckins.filter(function(p){ return !p.visto_em; });
+    return preCheckins.filter(function(p){
+      if(p.visto_em) return false;
+      var d = preCheckinDias(p);
+      return d === null || d <= PRECHECKIN_JANELA_DIAS;
+    });
   }
   // Descobre qual acomodação do app é a do pedido: pela reserva do Hospedin
   // (código), ou pelo nome que o site mandou.
@@ -9328,17 +9357,26 @@
     var p = String(d).slice(0,10).split("-");
     return p.length===3 ? p[2]+"/"+p[1] : String(d);
   }
+  function preCheckinRotuloDia(p){
+    var d = preCheckinDias(p);
+    if(d === null) return "Sem data de chegada";
+    if(d < 0) return "Chegou " + dataBr(p.checkin) + " — ainda não marcado";
+    if(d === 0) return "Chega HOJE";
+    if(d === 1) return "Chega amanhã (" + dataBr(p.checkin) + ")";
+    return "Chega " + dataBr(p.checkin) + " (em " + d + " dias)";
+  }
   function renderPreCheckinCard(p){
     var ac = preCheckinAcomodacao(p);
     var nomeAc = ac ? ac.nome : (p.acomodacao_nome || "Acomodação não identificada");
-    var html = '<div class="card" style="margin-bottom:10px;'+(p.visto_em?'opacity:.75;':'border-left:4px solid var(--teal-700);')+'">';
+    var d = preCheckinDias(p);
+    var destaque = !p.visto_em && d !== null && d <= 0;
+    var html = '<div class="card" style="margin-bottom:10px;'+(p.visto_em?'opacity:.75;':(destaque?'border-left:4px solid var(--red-600);':'border-left:4px solid var(--teal-700);'))+'">';
     html += '<p class="item-name" style="margin:0 0 3px;">'+ic("bed")+' '+escapeHtml(nomeAc)+
       (p.hospede_nome ? ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(p.hospede_nome)+'</span>' : '')+'</p>';
-    var quando = [];
-    if(p.checkin) quando.push("Chegada " + dataBr(p.checkin) + (p.horario_chegada ? " às " + escapeHtml(p.horario_chegada) : ""));
-    else if(p.horario_chegada) quando.push("Horário previsto: " + escapeHtml(p.horario_chegada));
-    if(p.checkout) quando.push("Saída " + dataBr(p.checkout));
-    if(quando.length) html += '<p class="item-meta">'+ic("calendar")+' '+quando.join(" · ")+'</p>';
+    var quando = [preCheckinRotuloDia(p)];
+    if(p.horario_chegada) quando.push("às " + escapeHtml(p.horario_chegada));
+    if(p.checkout) quando.push("saída " + dataBr(p.checkout));
+    html += '<p class="item-meta" style="'+(destaque?'font-weight:800;color:var(--red-600);':'')+'">'+ic("calendar")+' '+quando.join(" · ")+'</p>';
     var pedidos = Array.isArray(p.pedidos) ? p.pedidos : [];
     pedidos.forEach(function(x){
       var rotulo = PRECHECKIN_TIPO_LABEL[x.tipo] || (x.tipo ? String(x.tipo) : "Pedido");
@@ -9353,26 +9391,46 @@
       html += '<p class="item-meta"><b>'+escapeHtml(k.replace(/_/g," "))+':</b> '+escapeHtml(String(v))+'</p>';
     });
     html += '<p class="item-meta" style="font-size:11px;color:var(--ink-400);">Recebido em '+fmtDate(new Date(p.recebido_em).getTime())+
-      (p.visto_em ? ' · visto por '+escapeHtml(p.visto_por_nome||"alguém")+' em '+fmtDate(new Date(p.visto_em).getTime()) : '')+'</p>';
-    if(!p.visto_em && podeEditar("recepcao")){
-      html += '<button type="button" class="btn-primary precheckinVistoBtn" data-id="'+escapeHtml(p.id)+'" style="width:100%;margin-top:8px;">'+ic("check")+' Marcar como visto</button>';
+      (p.visto_em ? ' · feito por '+escapeHtml(p.visto_por_nome||"alguém")+' em '+fmtDate(new Date(p.visto_em).getTime()) : '')+'</p>';
+    // "Feito" só aparece no dia da chegada (ou depois, se ficou sem marcar). Antes disso o pedido só fica guardado.
+    if(!p.visto_em && d !== null && d <= 0 && podeEditar("recepcao")){
+      html += '<button type="button" class="btn-primary precheckinVistoBtn" data-id="'+escapeHtml(p.id)+'" style="width:100%;margin-top:8px;">'+ic("check")+' Feito</button>';
     }
     html += '</div>';
     return html;
   }
+  var MESES_PT = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   function renderPreCheckinsHtml(){
     if(preCheckinsErro){
       return '<div class="empty">Não consegui carregar os pedidos de chegada. Se for a primeira vez, rode a migração <b>migracao_pre_checkins_v18.sql</b> no Supabase.</div>';
     }
-    var novos = preCheckinsNaoVistos();
-    var vistos = preCheckins.filter(function(p){ return !!p.visto_em; });
+    var porData = function(a,b){ return String(a.checkin||"0000").localeCompare(String(b.checkin||"0000")) || String(a.recebido_em).localeCompare(String(b.recebido_em)); };
+    var pendentes = preCheckins.filter(function(p){ return !p.visto_em; });
+    var atrasados = pendentes.filter(function(p){ var d = preCheckinDias(p); return d !== null && d < 0; }).sort(porData);
+    var janela = pendentes.filter(function(p){ var d = preCheckinDias(p); return d === null || (d >= 0 && d <= PRECHECKIN_JANELA_DIAS); }).sort(porData);
+    var futuros = pendentes.filter(function(p){ var d = preCheckinDias(p); return d !== null && d > PRECHECKIN_JANELA_DIAS; }).sort(porData);
+    var feitos = preCheckins.filter(function(p){ return !!p.visto_em; }).sort(function(a,b){ return String(b.visto_em).localeCompare(String(a.visto_em)); });
+
     var html = '';
-    html += '<p class="section-title">Pedidos novos'+(novos.length?' ('+novos.length+')':'')+'</p>';
-    html += novos.length ? novos.slice().sort(function(a,b){ return String(a.checkin||"9999").localeCompare(String(b.checkin||"9999")); }).map(renderPreCheckinCard).join("")
-      : '<div class="empty">Nenhum pedido novo de hóspede antes da chegada.</div>';
-    if(vistos.length){
-      html += '<p class="section-title" style="margin-top:18px;">Já vistos (últimos 30 dias)</p>';
-      html += vistos.map(renderPreCheckinCard).join("");
+    if(atrasados.length){
+      html += '<p class="section-title" style="color:var(--red-600);">Sem marcar de dias anteriores ('+atrasados.length+')</p>' + atrasados.map(renderPreCheckinCard).join("");
+    }
+    html += '<p class="section-title">Hoje e próximos '+PRECHECKIN_JANELA_DIAS+' dias'+(janela.length?' ('+janela.length+')':'')+'</p>';
+    html += janela.length ? janela.map(renderPreCheckinCard).join("") : '<div class="empty">Nenhum pedido de hóspede para os próximos '+PRECHECKIN_JANELA_DIAS+' dias.</div>';
+
+    if(futuros.length){
+      html += '<details style="margin-top:14px;"><summary class="section-title" style="cursor:pointer;">Mais para frente — guardados ('+futuros.length+')</summary>';
+      var mesAtual = "";
+      futuros.forEach(function(p){
+        var dt = parseDataLocal(p.checkin);
+        var mes = MESES_PT[dt.getMonth()] + " de " + dt.getFullYear();
+        if(mes !== mesAtual){ mesAtual = mes; html += '<p class="item-meta" style="font-weight:800;margin:12px 0 6px;text-transform:capitalize;">'+mes+'</p>'; }
+        html += renderPreCheckinCard(p);
+      });
+      html += '</details>';
+    }
+    if(feitos.length){
+      html += '<details style="margin-top:14px;"><summary class="section-title" style="cursor:pointer;">Já feitos — últimos 30 dias ('+feitos.length+')</summary>' + feitos.map(renderPreCheckinCard).join("") + '</details>';
     }
     return html;
   }
@@ -9623,7 +9681,7 @@
           await dbUpdate("pre_checkins", btn.getAttribute("data-id"), {visto_em:new Date().toISOString(), visto_por:(currentUser?currentUser.id:null), visto_por_nome:(currentUser?currentUser.nome:null)}, function(r){ return r; });
           await carregarPreCheckins();
           renderRecepcao();
-        }catch(err){ console.error(err); showToast("Não consegui marcar como visto"); btn.disabled = false; }
+        }catch(err){ console.error(err); showToast("Não consegui marcar como feito"); btn.disabled = false; }
       };
     });
 
