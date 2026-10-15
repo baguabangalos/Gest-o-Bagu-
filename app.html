@@ -2061,8 +2061,8 @@
   ["click","touchstart","keydown"].forEach(function(ev){
     document.addEventListener(ev, function(){ obterAudioCtx(); }, {once:true, passive:true});
   });
-  // Alarme alto: dois tons alternados, em onda quadrada e volume máximo, repetidos
-  // 4 vezes (cerca de 4 segundos), mais vibração no celular.
+  // Alarme alto: dois tons alternados, em onda quadrada e volume máximo, tocados
+  // uma única vez (cerca de 1 segundo), mais vibração no celular.
   function playNotifySound(){
     try{
       var ctx = obterAudioCtx();
@@ -2072,7 +2072,7 @@
         master.gain.value = 1.0;
         var comp = ctx.createDynamicsCompressor();
         master.connect(comp); comp.connect(ctx.destination);
-        for(var r = 0; r < 4; r++){
+        for(var r = 0; r < 1; r++){
           [988, 1319].forEach(function(freq, i){
             var t0 = now + r*1.0 + i*0.22;
             var osc = ctx.createOscillator();
@@ -2090,7 +2090,7 @@
         }
       }
     }catch(err){ console.error("Som de notificação falhou:", err); }
-    try{ if(navigator.vibrate) navigator.vibrate([500,200,500,200,500,200,800]); }catch(e){}
+    try{ if(navigator.vibrate) navigator.vibrate([800]); }catch(e){}
   }
   // Aviso grande que fica na tela até a pessoa tocar nele.
   function mostrarAlertaPedido(msg, aoTocar){
