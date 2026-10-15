@@ -9852,6 +9852,7 @@
 
   var supervisaoPeriod = "7"; // '1' | '7' | '30'
   var supervisaoEstoqueCategoria = "Frigobar"; // aba de categoria dentro de Supervisão > Estoque
+  var supervisaoEstoqueAba = "periodo"; // Frigobar: "periodo" (Hoje/7/30 dias) ou "compras"
 
   function computeHistoricoSolicitacoes(days, tipos){
     var since = Date.now() - days*24*3600*1000;
@@ -10195,21 +10196,27 @@
       }).join("") + '</div>';
 
     var isFrigobar = supervisaoEstoqueCategoria === "Frigobar";
+    // 4ª opção ao lado de Hoje / 7 dias / 30 dias: "Compras" (só no Frigobar) — reúne o
+    // relatório, a sugestão de compra e os pedidos de compra feitos.
+    var emCompras = isFrigobar && supervisaoEstoqueAba === "compras";
 
     content.innerHTML =
       catTabsHtml +
       '<div class="period-chips" style="margin-top:10px;">' + ["1","7","30"].map(function(p){
         var label = p==="1" ? "Hoje" : (p==="7" ? "7 dias" : "30 dias");
-        return '<button data-hperiod="'+p+'" class="'+(supervisaoPeriod===p?"active":"")+'">'+label+'</button>';
-      }).join("") + '</div>' +
-      (isFrigobar ? (
+        return '<button data-hperiod="'+p+'" class="'+((!emCompras && supervisaoPeriod===p)?"active":"")+'">'+label+'</button>';
+      }).join("") +
+      (isFrigobar ? '<button data-hcompras="1" class="'+(emCompras?"active":"")+'">Compras</button>' : '') + '</div>' +
+      ((isFrigobar && !emCompras) ? (
         '<div id="supEstoqueHistoricoSolic"></div>' +
         '<div class="section-title" style="margin-top:22px;">⏱️ Tempo médio de abastecimento</div>' +
         '<div id="supEstoqueTempoAbastecimento"></div>'
       ) : '') +
-      '<div class="section-title" style="margin-top:22px;">Movimentações — '+escapeHtml(CATEGORY_LABEL[supervisaoEstoqueCategoria])+'</div>' +
-      '<div id="supEstoqueMovimentacoes"></div>' +
-      (isFrigobar ? (
+      (!emCompras ? (
+        '<div class="section-title" style="margin-top:22px;">Movimentações — '+escapeHtml(CATEGORY_LABEL[supervisaoEstoqueCategoria])+'</div>' +
+        '<div id="supEstoqueMovimentacoes"></div>'
+      ) : '') +
+      (emCompras ? (
         '<div class="section-title" style="margin-top:22px;">Relatório e sugestão de compra</div>' +
         '<div id="reportText" class="report-box"></div>' +
         '<div class="share-row">' +
@@ -10226,10 +10233,13 @@
       b.onclick = function(){ supervisaoEstoqueCategoria = b.getAttribute("data-scat"); renderSupervisao(); };
     });
     content.querySelectorAll("[data-hperiod]").forEach(function(b){
-      b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); renderSupervisao(); };
+      b.onclick = function(){ supervisaoPeriod = b.getAttribute("data-hperiod"); supervisaoEstoqueAba = "periodo"; renderSupervisao(); };
+    });
+    content.querySelectorAll("[data-hcompras]").forEach(function(b){
+      b.onclick = function(){ supervisaoEstoqueAba = "compras"; renderSupervisao(); };
     });
 
-    if(isFrigobar){
+    if(isFrigobar && !emCompras){
       var histSolic = computeHistoricoSolicitacoes(parseInt(supervisaoPeriod,10), ["frigobar"]);
       var histEl = document.getElementById("supEstoqueHistoricoSolic");
       if(histSolic.items.length === 0){
@@ -10270,9 +10280,9 @@
       }
     }
 
-    renderSupervisaoMovesPorCategoria(document.getElementById("supEstoqueMovimentacoes"), supervisaoEstoqueCategoria);
+    if(!emCompras) renderSupervisaoMovesPorCategoria(document.getElementById("supEstoqueMovimentacoes"), supervisaoEstoqueCategoria);
 
-    if(isFrigobar){
+    if(emCompras){
       var text = buildReportText();
       document.getElementById("reportText").textContent = text;
       document.getElementById("sendWa").onclick = function(){
