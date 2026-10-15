@@ -14,7 +14,7 @@ tag: data.tag || "bagua-pedido",
 renotify: true,
 requireInteraction: true,
 silent: false,
-vibrate: [500, 200, 500, 200, 500, 200, 800],
+vibrate: [800],
 icon: "icon-192.png",
 badge: "icon-192.png"
 };
