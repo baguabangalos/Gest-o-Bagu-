@@ -465,6 +465,7 @@
 <main id="limpezaView" style="display:none;"></main>
 <main id="recepcaoView" style="display:none;"></main>
 <main id="servicoGeralView" style="display:none;"></main>
+<main id="restauranteView" style="display:none;"></main>
 <main id="supervisaoView" style="display:none;"></main>
 <main id="configuracoesView" style="display:none;"></main>
 
@@ -2311,6 +2312,10 @@
         h1.textContent = "Recepção";
         sub.textContent = "Acompanhamento dos pedidos em andamento";
         alertPill.style.display = "none";
+      } else if(appSection === "restaurante"){
+        h1.textContent = "Restaurante";
+        sub.textContent = "Limão Galego Bistrô · comandas e consumo";
+        alertPill.style.display = "none";
       } else if(appSection === "servicogeral"){
         h1.textContent = "Serviço Geral";
         sub.textContent = "Jacuzzi e manutenção predial";
@@ -2347,6 +2352,7 @@
     if(sec==="limpeza") return "limpeza";
     if(sec==="recepcao") return "recepcao";
     if(sec==="servicogeral") return "servico_geral";
+    if(sec==="restaurante") return "restaurante";
     if(sec==="equipamentos") return "equipamentos";
     if(sec==="checklistturno") return "checklist_turno";
     if(sec==="escala") return "escala_trabalho";
@@ -2371,6 +2377,7 @@
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
     document.getElementById("recepcaoView").style.display = appSection==="recepcao" ? "block":"none";
     document.getElementById("servicoGeralView").style.display = appSection==="servicogeral" ? "block":"none";
+    document.getElementById("restauranteView").style.display = appSection==="restaurante" ? "block":"none";
     document.getElementById("equipamentosView").style.display = appSection==="equipamentos" ? "block":"none";
     document.getElementById("checklistTurnoView").style.display = appSection==="checklistturno" ? "block":"none";
     document.getElementById("escalaView").style.display = appSection==="escala" ? "block":"none";
@@ -2420,6 +2427,7 @@
     if(appSection === "limpeza") renderLimpeza();
     if(appSection === "recepcao") renderRecepcao();
     if(appSection === "servicogeral") renderServicoGeral();
+    if(appSection === "restaurante") renderRestaurante();
     if(appSection === "supervisao") renderSupervisao();
     if(appSection === "configuracoes") renderConfiguracoes();
   }
@@ -2469,6 +2477,10 @@
     }
     if(podeVer("servico_geral")){
       cards.push({section:"servicogeral", titulo:"Serviço Geral", icon:ic("gear"), sub:"jacuzzi e manutenção predial"});
+    }
+    if(podeVer("restaurante")){
+      var restAbertasN = rest.carregado ? rest.comandas.filter(function(c){ return c.status==="aberta"; }).length : 0;
+      cards.push({section:"restaurante", titulo:"Restaurante", icon:ic("cup"), sub:(restAbertasN ? (restAbertasN+(restAbertasN===1?" comanda aberta":" comandas abertas")) : "cardápio, comandas e consumo")});
     }
     if(podeVer("equipamentos")){
       var equipAlertCount = state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length;
@@ -9251,6 +9263,440 @@
 
   var servicoGeralFotosPendentes = {};
 
+
+  // ================= Restaurante (Limão Galego Bistrô) =================
+  // Cardápio, comandas por número (mesa/acomodação), fechar conta ou lançar na conta
+  // da acomodação, e consumo interno da equipe. Dados em restaurante_itens /
+  // restaurante_comandas / restaurante_pedido_itens (migração v20).
+  var REST_MESAS = [
+    ["50","Day use 01"],["51","Day use 02"],["52","Day use 03"],["69","Guilherme"],
+    ["81","Bagua 01"],["82","Bagua 02"],["83","Bagua 03"],["84","Bagua 04"],
+    ["85","Safari 01"],["86","Safari 02"],["87","Cerrado 01"],["88","Cerrado 02"],
+    ["89","Panorama 01"],["90","Panorama 02"],["91","Preguiça"],["92","João de barro"],
+    ["93","Amora"],["94","Zazu 01"],["95","Zazu 02"],["96","Zazu 03"],["97","Cafofo"],["98","Loft"],
+    ["101","Yaya 01"],["102","Yaya 02"],["103","Yaya 03"],["104","Casa maria"],["240","Pousada"]
+  ];
+  var REST_PAGAMENTOS = [["dinheiro","Dinheiro"],["pix","Pix"],["debito","Cartão de débito"],["credito","Cartão de crédito"],["outro","Outro"]];
+  var rest = {itens:[], comandas:[], linhas:{}, carregado:false, erro:false};
+  var restSub = "abertas";
+  var restComandaId = null;
+  var restCat = "";
+  var restBusca = "";
+  var restCanal = null;
+
+  function restIdent(r){ return r; }
+  function restMoney(v){ return Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+  function restNomeMesa(num){
+    var m = REST_MESAS.find(function(x){ return x[0]===String(num); });
+    return m ? m[1] : null;
+  }
+  // Se o número é de uma acomodação cadastrada, devolve o id dela (para lançar na conta).
+  function restAcomodacaoDaMesa(num){
+    var nome = restNomeMesa(num);
+    if(!nome || /day use|guilherme|pousada/i.test(nome)) return null;
+    var alvo = normalizarBusca(nome);
+    var a = (state.acomodacoes||[]).find(function(x){ return normalizarBusca(x.nome).indexOf(alvo) > -1; });
+    return a ? a.id : null;
+  }
+  function restTitulo(c){
+    var nome = restNomeMesa(c.mesa);
+    return "Mesa " + c.mesa + (nome ? " — " + nome : "");
+  }
+  function restLinhasDe(id){ return rest.linhas[id] || []; }
+  function restSubtotal(id){ return restLinhasDe(id).reduce(function(a,l){ return a + Number(l.preco_unit)*Number(l.quantidade); }, 0); }
+  function restTotal(c){
+    if(c.status === "aberta") return restSubtotal(c.id);
+    return c.total != null ? Number(c.total) : restSubtotal(c.id);
+  }
+  function restQtdItens(id){ return restLinhasDe(id).reduce(function(a,l){ return a + Number(l.quantidade); }, 0); }
+
+  async function carregarRestaurante(){
+    try{
+      var corte = new Date(); corte.setDate(corte.getDate() - 7);
+      var r1 = await sb.from("restaurante_itens").select("*").order("ordem").order("nome");
+      if(r1.error) throw r1.error;
+      var iso = corte.toISOString();
+      var r2 = await sb.from("restaurante_comandas").select("*")
+        .or("status.in.(aberta,lancada),fechada_em.gte."+iso+",cobrada_em.gte."+iso)
+        .order("aberta_em", {ascending:false}).limit(500);
+      if(r2.error) throw r2.error;
+      rest.itens = r1.data || [];
+      rest.comandas = r2.data || [];
+      rest.linhas = {};
+      var ids = rest.comandas.filter(function(c){ return c.status==="aberta" || c.status==="lancada"; }).map(function(c){ return c.id; });
+      if(ids.length){
+        var r3 = await sb.from("restaurante_pedido_itens").select("*").in("comanda_id", ids).order("criado_em");
+        if(r3.error) throw r3.error;
+        (r3.data||[]).forEach(function(l){ (rest.linhas[l.comanda_id] = rest.linhas[l.comanda_id] || []).push(l); });
+      }
+      rest.carregado = true; rest.erro = false;
+    }catch(err){ rest.erro = true; console.error("restaurante:", err); }
+  }
+  async function restCarregarLinhas(id){
+    try{
+      var r = await sb.from("restaurante_pedido_itens").select("*").eq("comanda_id", id).order("criado_em");
+      if(!r.error) rest.linhas[id] = r.data || [];
+    }catch(e){}
+  }
+  function restLigarTempoReal(){
+    if(restCanal) return;
+    try{
+      restCanal = sb.channel("restaurante-tempo-real");
+      ["restaurante_comandas","restaurante_pedido_itens","restaurante_itens"].forEach(function(t){
+        restCanal.on("postgres_changes", {event:"*", schema:"public", table:t}, function(){
+          if(appSection !== "restaurante") return;
+          clearTimeout(restLigarTempoReal._t);
+          restLigarTempoReal._t = setTimeout(function(){
+            carregarRestaurante().then(function(){ if(appSection==="restaurante" && !document.getElementById("restOverlay")) renderRestaurante(); });
+          }, 600);
+        });
+      });
+      restCanal.subscribe();
+    }catch(e){ restCanal = null; }
+  }
+
+  function restAbrirSheet(titulo, corpoHtml){
+    var antigo = document.getElementById("restOverlay"); if(antigo) antigo.remove();
+    document.body.insertAdjacentHTML("beforeend",
+      '<div class="sheet-overlay open" id="restOverlay"><div class="sheet">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 style="margin:0;">'+escapeHtml(titulo)+'</h2>' +
+      '<button type="button" id="restSheetFechar" style="background:none;border:none;padding:4px;color:var(--ink-600);cursor:pointer;">'+ic("close")+'</button></div>' +
+      corpoHtml + '</div></div>');
+    var ov = document.getElementById("restOverlay");
+    document.getElementById("restSheetFechar").onclick = function(){ ov.remove(); };
+    ov.addEventListener("click", function(e){ if(e.target===ov) ov.remove(); });
+    return ov;
+  }
+  function restFecharSheet(){ var ov = document.getElementById("restOverlay"); if(ov) ov.remove(); }
+  var REST_INPUT = 'width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:var(--sand-50);box-sizing:border-box;';
+
+  function renderRestaurante(){
+    var main = document.getElementById("restauranteView");
+    restLigarTempoReal();
+    if(!rest.carregado && !rest.erro){
+      main.innerHTML = '<div class="empty">Carregando restaurante…</div>';
+      carregarRestaurante().then(function(){ if(appSection === "restaurante") renderRestaurante(); });
+      return;
+    }
+    if(rest.erro){
+      main.innerHTML = '<div class="empty">Não consegui carregar o restaurante. Confira se a migração v20 já foi rodada no Supabase.<br><button class="btn btn-in" id="restRetry" style="margin-top:10px;">Tentar de novo</button></div>';
+      document.getElementById("restRetry").onclick = function(){ rest.erro = false; rest.carregado = false; renderRestaurante(); };
+      return;
+    }
+    if(restComandaId){ renderRestComanda(main); return; }
+
+    var abertas = rest.comandas.filter(function(c){ return c.status === "aberta"; });
+    var lancadas = rest.comandas.filter(function(c){ return c.status === "lancada"; });
+    var html = '<div class="seg-toggle">' +
+      '<button data-rsub="abertas" class="'+(restSub==="abertas"?"active":"")+'">Comandas'+(abertas.length?(' · '+abertas.length):'')+'</button>' +
+      '<button data-rsub="contas" class="'+(restSub==="contas"?"active":"")+'">Acomodações'+(lancadas.length?(' · '+lancadas.length):'')+'</button>' +
+      '<button data-rsub="historico" class="'+(restSub==="historico"?"active":"")+'">Histórico</button>' +
+      '<button data-rsub="cardapio" class="'+(restSub==="cardapio"?"active":"")+'">Cardápio</button>' +
+    '</div>';
+
+    if(restSub === "abertas"){
+      if(podeEditar("restaurante")) html += '<button class="btn btn-in" id="restNova" style="width:100%;margin-bottom:12px;padding:13px;">+ Nova comanda</button>';
+      if(!abertas.length) html += '<div class="empty">Nenhuma comanda aberta.</div>';
+      abertas.forEach(function(c){
+        html += '<div class="card rest-card" data-id="'+c.id+'" style="cursor:pointer;">' +
+          '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(restTitulo(c))+(c.consumo_interno?' <span style="font-size:11px;font-weight:800;color:var(--amber-600);">CONSUMO INTERNO</span>':'')+'</p>' +
+          '<p class="item-meta">'+restQtdItens(c.id)+' item(ns) · aberta às '+new Date(c.aberta_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+(c.criado_por_nome?(' · '+escapeHtml(c.criado_por_nome)):'')+'</p>' +
+          '<p style="margin:4px 0 0;font-size:16px;font-weight:800;">'+restMoney(restTotal(c))+'</p></div>';
+      });
+    } else if(restSub === "contas"){
+      html += '<p class="item-meta" style="margin-bottom:10px;">Consumos lançados na conta da acomodação, para cobrar no checkout.</p>';
+      if(!lancadas.length) html += '<div class="empty">Nada pendente de cobrança.</div>';
+      var porAco = {};
+      lancadas.forEach(function(c){ (porAco[c.acomodacao_id||c.mesa] = porAco[c.acomodacao_id||c.mesa] || []).push(c); });
+      Object.keys(porAco).forEach(function(k){
+        var lista = porAco[k]; var soma = lista.reduce(function(a,c){ return a + restTotal(c); }, 0);
+        html += '<div class="card"><p class="item-name" style="margin:0 0 6px;">'+escapeHtml(lista[0].acomodacao_id ? acomodacaoNome(lista[0].acomodacao_id) : restTitulo(lista[0]))+'</p>';
+        lista.forEach(function(c){
+          html += '<div class="rest-card" data-id="'+c.id+'" style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);cursor:pointer;font-size:14px;"><span>'+new Date(c.lancada_em||c.aberta_em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+' · '+restQtdItens(c.id)+' item(ns)</span><strong>'+restMoney(restTotal(c))+'</strong></div>';
+        });
+        html += '<p style="margin:8px 0;font-size:16px;font-weight:800;">Total a cobrar: '+restMoney(soma)+'</p>' +
+          (podeEditar("restaurante") ? '<button class="btn btn-in restCobrar" data-ids="'+lista.map(function(c){ return c.id; }).join(",")+'">'+ic("check")+' Marcar como cobrado</button>' : '') + '</div>';
+      });
+    } else if(restSub === "historico"){
+      var fechadas = rest.comandas.filter(function(c){ return c.status==="fechada" || c.status==="cobrada"; })
+        .sort(function(a,b){ return new Date(b.fechada_em||b.cobrada_em||b.aberta_em) - new Date(a.fechada_em||a.cobrada_em||a.aberta_em); });
+      html += '<p class="item-meta" style="margin-bottom:10px;">Últimos 7 dias.</p>';
+      if(!fechadas.length) html += '<div class="empty">Nenhuma comanda encerrada ainda.</div>';
+      var diaAtual = "", totalDia = 0;
+      fechadas.forEach(function(c){
+        var dt = new Date(c.fechada_em||c.cobrada_em||c.aberta_em);
+        var dia = dt.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"});
+        if(dia !== diaAtual){
+          diaAtual = dia;
+          var somaDia = fechadas.filter(function(x){ var d2 = new Date(x.fechada_em||x.cobrada_em||x.aberta_em); return d2.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"})===dia && !x.consumo_interno; }).reduce(function(a,x){ return a + restTotal(x); }, 0);
+          html += '<p class="item-meta" style="font-weight:800;margin:14px 0 6px;text-transform:capitalize;">'+dia+' · vendido '+restMoney(somaDia)+'</p>';
+        }
+        var forma = c.consumo_interno ? "consumo interno" : (c.status==="cobrada" ? "cobrado na acomodação" : (REST_PAGAMENTOS.filter(function(p){ return p[0]===c.forma_pagamento; })[0]||[0,"—"])[1]);
+        html += '<div class="card rest-card" data-id="'+c.id+'" style="cursor:pointer;"><div style="display:flex;justify-content:space-between;"><span class="item-name" style="margin:0;">'+escapeHtml(restTitulo(c))+'</span><strong>'+restMoney(restTotal(c))+'</strong></div><p class="item-meta" style="margin:2px 0 0;">'+dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+' · '+forma+'</p></div>';
+      });
+    } else {
+      var editar = podeEditar("restaurante");
+      html += (editar ? '<button class="btn btn-in" id="restNovoItem" style="width:100%;margin-bottom:12px;padding:13px;">+ Novo item no cardápio</button>' : '');
+      var catAtual = "";
+      rest.itens.forEach(function(it){
+        if(it.categoria !== catAtual){ catAtual = it.categoria; html += '<p class="item-meta" style="font-weight:800;margin:14px 0 6px;">'+escapeHtml(catAtual)+'</p>'; }
+        html += '<div class="card" style="padding:10px 12px;'+(it.ativo?'':'opacity:.55;')+'"><div style="display:flex;justify-content:space-between;gap:8px;"><span class="item-name" style="margin:0;">'+escapeHtml(it.nome)+(it.ativo?'':' (indisponível)')+'</span><strong>'+restMoney(it.preco)+'</strong></div>' +
+          (it.descricao?'<p class="item-meta" style="margin:3px 0 0;">'+escapeHtml(it.descricao)+'</p>':'') +
+          (editar ? '<div class="item-actions" style="margin-top:6px;"><button class="btn btn-out restEditItem" data-id="'+it.id+'">Editar</button><button class="btn btn-out restToggleItem" data-id="'+it.id+'">'+(it.ativo?'Marcar indisponível':'Voltar ao cardápio')+'</button></div>' : '') + '</div>';
+      });
+    }
+    main.innerHTML = html;
+
+    main.querySelectorAll("[data-rsub]").forEach(function(b){ b.onclick = function(){ restSub = b.getAttribute("data-rsub"); renderRestaurante(); }; });
+    main.querySelectorAll(".rest-card").forEach(function(c){
+      c.onclick = async function(){
+        restComandaId = c.getAttribute("data-id");
+        if(!rest.linhas[restComandaId]) await restCarregarLinhas(restComandaId);
+        restCat = ""; restBusca = ""; renderRestaurante();
+      };
+    });
+    var nova = document.getElementById("restNova"); if(nova) nova.onclick = restNovaComandaSheet;
+    main.querySelectorAll(".restCobrar").forEach(function(b){
+      b.onclick = async function(){
+        b.disabled = true;
+        try{
+          var ids = b.getAttribute("data-ids").split(",");
+          for(var i=0;i<ids.length;i++){
+            var c = rest.comandas.find(function(x){ return x.id===ids[i]; });
+            var upd = await dbUpdate("restaurante_comandas", ids[i], {status:"cobrada", cobrada_em:new Date().toISOString()}, restIdent);
+            Object.assign(c, upd);
+          }
+          showToast("Marcado como cobrado"); renderRestaurante();
+        }catch(err){ console.error(err); showToast("Erro ao marcar como cobrado"); b.disabled = false; }
+      };
+    });
+    var novoItem = document.getElementById("restNovoItem"); if(novoItem) novoItem.onclick = function(){ restItemSheet(null); };
+    main.querySelectorAll(".restEditItem").forEach(function(b){ b.onclick = function(){ restItemSheet(rest.itens.find(function(x){ return x.id===b.getAttribute("data-id"); })); }; });
+    main.querySelectorAll(".restToggleItem").forEach(function(b){
+      b.onclick = async function(){
+        var it = rest.itens.find(function(x){ return x.id===b.getAttribute("data-id"); });
+        try{ var u = await dbUpdate("restaurante_itens", it.id, {ativo:!it.ativo}, restIdent); Object.assign(it, u); renderRestaurante(); }
+        catch(err){ console.error(err); showToast("Erro ao atualizar o item"); }
+      };
+    });
+  }
+
+  function restNovaComandaSheet(){
+    var opcoes = REST_MESAS.map(function(m){ return '<option value="'+m[0]+'">'+m[0]+' — '+escapeHtml(m[1])+'</option>'; }).join("");
+    var ov = restAbrirSheet("Nova comanda",
+      '<label style="display:block;margin-bottom:10px;font-size:13.5px;">Mesa / número<br><select id="restMesaSel" style="'+REST_INPUT+'"><option value="">Escolha…</option>'+opcoes+'<option value="__outra">Outra mesa (digitar o número)…</option></select></label>' +
+      '<label id="restMesaOutraBox" style="display:none;margin-bottom:10px;font-size:13.5px;">Número ou nome da mesa<br><input type="text" id="restMesaOutra" style="'+REST_INPUT+'"></label>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:14px;"><input type="checkbox" id="restInterno"> Consumo interno (equipe)</label>' +
+      '<div class="sheet-actions"><button class="btn-primary" id="restCriar">Abrir comanda</button></div>');
+    var sel = document.getElementById("restMesaSel");
+    sel.onchange = function(){ document.getElementById("restMesaOutraBox").style.display = sel.value==="__outra" ? "block" : "none"; };
+    document.getElementById("restCriar").onclick = async function(){
+      var mesa = sel.value === "__outra" ? document.getElementById("restMesaOutra").value.trim() : sel.value;
+      if(!mesa){ showToast("Escolha a mesa"); return; }
+      var existente = rest.comandas.find(function(c){ return c.status==="aberta" && String(c.mesa)===String(mesa); });
+      if(existente){ restFecharSheet(); restComandaId = existente.id; showToast("Essa mesa já tem comanda aberta"); renderRestaurante(); return; }
+      this.disabled = true;
+      try{
+        var acoId = restAcomodacaoDaMesa(mesa);
+        var c = await dbInsert("restaurante_comandas", {id:uid(), tipo:(acoId?"acomodacao":"mesa"), mesa:mesa, acomodacao_id:acoId, consumo_interno:document.getElementById("restInterno").checked, status:"aberta"}, restIdent);
+        rest.comandas.unshift(c); rest.linhas[c.id] = [];
+        restFecharSheet(); restComandaId = c.id; restCat = ""; restBusca = ""; renderRestaurante();
+      }catch(err){ console.error(err); showToast("Erro ao abrir a comanda (rodou a migração v20?)"); this.disabled = false; }
+    };
+  }
+
+  function restItemSheet(it){
+    var cats = []; rest.itens.forEach(function(x){ if(cats.indexOf(x.categoria)===-1) cats.push(x.categoria); });
+    var ov = restAbrirSheet(it ? "Editar item" : "Novo item",
+      '<label style="display:block;margin-bottom:10px;font-size:13.5px;">Nome<br><input type="text" id="riNome" value="'+escapeHtml(it?it.nome:"")+'" style="'+REST_INPUT+'"></label>' +
+      '<label style="display:block;margin-bottom:10px;font-size:13.5px;">Categoria<br><input type="text" id="riCat" list="riCats" value="'+escapeHtml(it?it.categoria:"")+'" style="'+REST_INPUT+'"><datalist id="riCats">'+cats.map(function(c){ return '<option value="'+escapeHtml(c)+'">'; }).join("")+'</datalist></label>' +
+      '<label style="display:block;margin-bottom:10px;font-size:13.5px;">Preço (R$)<br><input type="number" step="0.5" min="0" id="riPreco" value="'+(it?it.preco:"")+'" style="'+REST_INPUT+'"></label>' +
+      '<label style="display:block;margin-bottom:10px;font-size:13.5px;">Descrição (opcional)<br><input type="text" id="riDesc" value="'+escapeHtml(it&&it.descricao?it.descricao:"")+'" style="'+REST_INPUT+'"></label>' +
+      '<div class="sheet-actions"><button class="btn-primary" id="riSalvar">Salvar</button></div>');
+    document.getElementById("riSalvar").onclick = async function(){
+      var nome = document.getElementById("riNome").value.trim(), cat = document.getElementById("riCat").value.trim();
+      var preco = parseFloat(document.getElementById("riPreco").value);
+      if(!nome || !cat || isNaN(preco)){ showToast("Preencha nome, categoria e preço"); return; }
+      this.disabled = true;
+      try{
+        var payload = {nome:nome, categoria:cat, preco:preco, descricao:(document.getElementById("riDesc").value.trim()||null)};
+        if(it){ var u = await dbUpdate("restaurante_itens", it.id, payload, restIdent); Object.assign(it, u); }
+        else { payload.id = uid(); payload.ativo = true; payload.ordem = 1000 + rest.itens.length; var n = await dbInsert("restaurante_itens", payload, restIdent); rest.itens.push(n); }
+        restFecharSheet(); renderRestaurante();
+      }catch(err){ console.error(err); showToast("Erro ao salvar o item"); this.disabled = false; }
+    };
+  }
+
+  function renderRestComanda(main){
+    var c = rest.comandas.find(function(x){ return x.id === restComandaId; });
+    if(!c){ restComandaId = null; renderRestaurante(); return; }
+    var aberta = c.status === "aberta";
+    var editar = podeEditar("restaurante");
+    var linhas = restLinhasDe(c.id);
+    var html = '<button class="btn btn-out" id="restVoltar" style="margin-bottom:10px;">‹ Voltar</button>' +
+      '<div class="card"><p class="item-name" style="margin:0 0 3px;font-size:17px;">'+escapeHtml(restTitulo(c))+'</p>' +
+      '<p class="item-meta" style="margin:0;">'+(c.consumo_interno?'<strong style="color:var(--amber-600);">Consumo interno</strong> · ':'')+
+        (c.status==="aberta"?'Aberta':(c.status==="lancada"?'Lançada na conta da acomodação':(c.status==="cobrada"?'Cobrada na acomodação':'Fechada')))+
+        (c.forma_pagamento && !c.consumo_interno && c.status==="fechada" ? (' · '+((REST_PAGAMENTOS.filter(function(p){ return p[0]===c.forma_pagamento; })[0]||[0,""])[1])) : '')+'</p></div>';
+
+    html += '<div class="section-title" style="margin-top:14px;">Itens da comanda</div>';
+    if(!linhas.length) html += '<div class="empty">Nenhum item ainda.</div>';
+    linhas.forEach(function(l){
+      html += '<div class="card" style="padding:10px 12px;"><div style="display:flex;justify-content:space-between;gap:8px;"><span class="item-name" style="margin:0;">'+escapeHtml(l.nome)+'</span><strong>'+restMoney(Number(l.preco_unit)*Number(l.quantidade))+'</strong></div>' +
+        (l.obs?'<p class="item-meta" style="margin:2px 0 0;">'+escapeHtml(l.obs)+'</p>':'') +
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:6px;">' +
+          (aberta && editar ? '<button class="btn btn-out restQtd" data-id="'+l.id+'" data-d="-1" style="min-width:40px;">−</button><span style="font-weight:800;min-width:20px;text-align:center;">'+l.quantidade+'</span><button class="btn btn-out restQtd" data-id="'+l.id+'" data-d="1" style="min-width:40px;">+</button><button class="btn btn-out restObs" data-id="'+l.id+'" style="margin-left:auto;">Obs.</button>' : '<span class="item-meta" style="margin:0;">'+l.quantidade+' × '+restMoney(l.preco_unit)+'</span>') +
+        '</div></div>';
+    });
+    var sub = restSubtotal(c.id);
+    html += '<div class="card"><div style="display:flex;justify-content:space-between;font-size:17px;font-weight:800;"><span>'+(aberta?'Subtotal':'Total')+'</span><span>'+restMoney(aberta?sub:restTotal(c))+'</span></div>' +
+      (!aberta && Number(c.servico_pct)>0 ? '<p class="item-meta" style="margin:4px 0 0;">Inclui '+Number(c.servico_pct)+'% de serviço</p>' : '') + '</div>';
+
+    if(aberta && editar){
+      html += '<div class="item-actions" style="margin:6px 0 14px;"><button class="btn btn-in" id="restFechar" '+(linhas.length?'':'disabled')+' style="flex:1;padding:13px;">'+(c.acomodacao_id && !c.consumo_interno ? 'Fechar / lançar na acomodação' : 'Fechar conta')+'</button></div>';
+      var cats = []; rest.itens.forEach(function(x){ if(x.ativo && cats.indexOf(x.categoria)===-1) cats.push(x.categoria); });
+      html += '<div class="section-title">Adicionar itens</div>' +
+        '<input type="text" id="restBusca" placeholder="Buscar no cardápio…" value="'+escapeHtml(restBusca)+'" style="'+REST_INPUT+'margin-bottom:8px;">' +
+        '<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;">' +
+          '<button class="btn '+(restCat===""?'btn-in':'btn-out')+' restCat" data-c="" style="white-space:nowrap;">Todos</button>' +
+          cats.map(function(k){ return '<button class="btn '+(restCat===k?'btn-in':'btn-out')+' restCat" data-c="'+escapeHtml(k)+'" style="white-space:nowrap;">'+escapeHtml(k)+'</button>'; }).join("") + '</div>' +
+        '<div id="restLista"></div>';
+    } else if(c.status === "fechada" && editar){
+      html += '<div class="item-actions"><button class="btn btn-out" id="restReabrir">↺ Reabrir comanda</button></div>';
+    }
+    main.innerHTML = html;
+
+    document.getElementById("restVoltar").onclick = function(){ restComandaId = null; renderRestaurante(); };
+    var reab = document.getElementById("restReabrir");
+    if(reab) reab.onclick = async function(){
+      try{ var u = await dbUpdate("restaurante_comandas", c.id, {status:"aberta", fechada_em:null, total:null, forma_pagamento:null, servico_pct:0}, restIdent); Object.assign(c, u); await restCarregarLinhas(c.id); renderRestaurante(); }
+      catch(err){ console.error(err); showToast("Erro ao reabrir"); }
+    };
+    if(!(aberta && editar)) return;
+
+    function pintarLista(){
+      var q = normalizarBusca(restBusca.trim());
+      var lista = rest.itens.filter(function(x){
+        if(!x.ativo) return false;
+        if(restCat && x.categoria !== restCat) return false;
+        return !q || normalizarBusca(x.nome + " " + (x.descricao||"") + " " + x.categoria).indexOf(q) > -1;
+      });
+      var box = document.getElementById("restLista");
+      box.innerHTML = lista.length ? lista.map(function(x){
+        return '<div class="card restAdd" data-id="'+x.id+'" style="padding:10px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;"><span><span class="item-name" style="margin:0;display:block;">'+escapeHtml(x.nome)+'</span><span class="item-meta" style="margin:0;">'+escapeHtml(x.categoria)+' · '+restMoney(x.preco)+'</span></span><span style="font-size:22px;font-weight:800;color:var(--teal-700);">+</span></div>';
+      }).join("") : '<div class="empty">Nada encontrado.</div>';
+      box.querySelectorAll(".restAdd").forEach(function(el){
+        el.onclick = function(){
+          var x = rest.itens.find(function(i){ return i.id===el.getAttribute("data-id"); });
+          if(x.opcoes && x.opcoes.length) restEscolherOpcao(c, x); else restAdicionarItem(c, x, null);
+        };
+      });
+    }
+    pintarLista();
+    var busca = document.getElementById("restBusca");
+    busca.addEventListener("input", function(){ restBusca = busca.value; pintarLista(); });
+    main.querySelectorAll(".restCat").forEach(function(b){ b.onclick = function(){ restCat = b.getAttribute("data-c"); renderRestaurante(); }; });
+    main.querySelectorAll(".restQtd").forEach(function(b){
+      b.onclick = async function(){
+        var l = linhas.find(function(x){ return x.id===b.getAttribute("data-id"); });
+        var nq = Number(l.quantidade) + Number(b.getAttribute("data-d"));
+        try{
+          if(nq <= 0){ await dbDelete("restaurante_pedido_itens", l.id); rest.linhas[c.id] = linhas.filter(function(x){ return x.id!==l.id; }); }
+          else { var u = await dbUpdate("restaurante_pedido_itens", l.id, {quantidade:nq}, restIdent); Object.assign(l, u); }
+          renderRestaurante();
+        }catch(err){ console.error(err); showToast("Erro ao alterar a quantidade"); }
+      };
+    });
+    main.querySelectorAll(".restObs").forEach(function(b){
+      b.onclick = function(){
+        var l = linhas.find(function(x){ return x.id===b.getAttribute("data-id"); });
+        restAbrirSheet("Observação — "+l.nome,
+          '<input type="text" id="roTxt" value="'+escapeHtml(l.obs||"")+'" placeholder="Ex.: sem cebola, ponto da carne" style="'+REST_INPUT+'">' +
+          '<div class="sheet-actions"><button class="btn-primary" id="roSalvar">Salvar</button></div>');
+        document.getElementById("roSalvar").onclick = async function(){
+          try{ var u = await dbUpdate("restaurante_pedido_itens", l.id, {obs:(document.getElementById("roTxt").value.trim()||null)}, restIdent); Object.assign(l, u); restFecharSheet(); renderRestaurante(); }
+          catch(err){ console.error(err); showToast("Erro ao salvar a observação"); }
+        };
+      };
+    });
+    var fechar = document.getElementById("restFechar");
+    if(fechar) fechar.onclick = function(){ restFecharContaSheet(c); };
+  }
+
+  function restEscolherOpcao(c, item){
+    restAbrirSheet(item.nome,
+      '<p class="item-meta" style="margin-bottom:8px;">Escolha uma opção:</p>' +
+      item.opcoes.map(function(o,i){ return '<button class="btn btn-out restOpc" data-i="'+i+'" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px;">'+escapeHtml(o)+'</button>'; }).join("") +
+      '<button class="btn btn-out restOpc" data-i="-1" style="display:block;width:100%;text-align:left;">Sem opção específica</button>');
+    document.querySelectorAll("#restOverlay .restOpc").forEach(function(b){
+      b.onclick = function(){
+        var i = parseInt(b.getAttribute("data-i"),10);
+        restFecharSheet();
+        restAdicionarItem(c, item, i>=0 ? item.opcoes[i] : null);
+      };
+    });
+  }
+
+  async function restAdicionarItem(c, item, obs){
+    try{
+      var linhas = restLinhasDe(c.id);
+      var igual = linhas.find(function(l){ return l.item_id===item.id && (l.obs||null)===(obs||null); });
+      if(igual){
+        var u = await dbUpdate("restaurante_pedido_itens", igual.id, {quantidade:Number(igual.quantidade)+1}, restIdent);
+        Object.assign(igual, u);
+      } else {
+        var n = await dbInsert("restaurante_pedido_itens", {id:uid(), comanda_id:c.id, item_id:item.id, nome:item.nome, preco_unit:item.preco, quantidade:1, obs:(obs||null)}, restIdent);
+        (rest.linhas[c.id] = rest.linhas[c.id] || []).push(n);
+      }
+      showToast(item.nome + " adicionado");
+      renderRestaurante();
+    }catch(err){ console.error(err); showToast("Erro ao adicionar o item"); }
+  }
+
+  function restFecharContaSheet(c){
+    var sub = restSubtotal(c.id);
+    var temAco = !!c.acomodacao_id && !c.consumo_interno;
+    var corpo = '<p style="margin:0 0 10px;font-size:15px;"><strong>'+escapeHtml(restTitulo(c))+'</strong> · subtotal '+restMoney(sub)+'</p>';
+    if(c.consumo_interno){
+      corpo += '<p class="item-meta" style="margin-bottom:10px;">Consumo interno: fecha sem cobrar o cliente e fica registrado no histórico.</p>';
+    } else {
+      corpo += '<label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:14px;"><input type="checkbox" id="rfServ"> Incluir 10% de serviço</label>' +
+        '<p id="rfTotal" style="margin:0 0 12px;font-size:18px;font-weight:800;">Total: '+restMoney(sub)+'</p>';
+      if(temAco){
+        corpo += '<div class="sheet-actions" style="margin-top:0;"><button class="btn-primary" id="rfLancar" style="flex:1;">Lançar na conta de '+escapeHtml(acomodacaoNome(c.acomodacao_id))+'</button></div>' +
+          '<p class="item-meta" style="margin:10px 0 6px;text-align:center;">ou pagar agora</p>';
+      }
+      corpo += '<label style="display:block;margin-bottom:10px;font-size:13.5px;">Forma de pagamento<br><select id="rfForma" style="'+REST_INPUT+'">' + REST_PAGAMENTOS.map(function(p){ return '<option value="'+p[0]+'">'+p[1]+'</option>'; }).join("") + '</select></label>';
+    }
+    corpo += '<div class="sheet-actions"><button class="btn-primary" id="rfFechar">'+(c.consumo_interno?'Fechar como consumo interno':'Fechar conta')+'</button></div>';
+    restAbrirSheet("Fechar comanda", corpo);
+    function pct(){ var s = document.getElementById("rfServ"); return (s && s.checked) ? 10 : 0; }
+    function totalComServico(){ return Math.round(sub * (1 + pct()/100) * 100) / 100; }
+    var serv = document.getElementById("rfServ");
+    if(serv) serv.onchange = function(){ document.getElementById("rfTotal").textContent = "Total: " + restMoney(totalComServico()); };
+    async function gravar(payload, btn){
+      btn.disabled = true;
+      try{
+        var u = await dbUpdate("restaurante_comandas", c.id, payload, restIdent);
+        Object.assign(c, u);
+        restFecharSheet(); restComandaId = null;
+        showToast(payload.status==="lancada" ? "Lançado na conta da acomodação" : "Conta fechada");
+        await restCarregarLinhas(c.id);
+        renderRestaurante();
+      }catch(err){ console.error(err); showToast("Erro ao fechar a comanda"); btn.disabled = false; }
+    }
+    document.getElementById("rfFechar").onclick = function(){
+      var agora = new Date().toISOString();
+      if(c.consumo_interno) gravar({status:"fechada", fechada_em:agora, total:sub, servico_pct:0, forma_pagamento:"consumo_interno"}, this);
+      else gravar({status:"fechada", fechada_em:agora, total:totalComServico(), servico_pct:pct(), forma_pagamento:document.getElementById("rfForma").value}, this);
+    };
+    var lancar = document.getElementById("rfLancar");
+    if(lancar) lancar.onclick = function(){
+      var agora = new Date().toISOString();
+      gravar({status:"lancada", lancada_em:agora, fechada_em:agora, total:totalComServico(), servico_pct:pct(), forma_pagamento:"conta_acomodacao"}, this);
+    };
+  }
+
   function renderServicoGeral(){
     var main = document.getElementById("servicoGeralView");
     var html = '<div class="seg-toggle">' +
@@ -10468,6 +10914,7 @@
     {key:"limpeza", label:"Limpeza (pedidos dos hóspedes)"},
     {key:"recepcao", label:"Recepção (painel de acompanhamento)"},
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
+    {key:"restaurante", label:"Restaurante (comandas, cardápio e consumo)"},
     {key:"equipamentos", label:"Equipamentos (ar-condicionados, bombas etc.)"},
     {key:"checklist_turno", label:"Checklist de Turno"},
     {key:"checklist_turno_gestao", label:"Checklist de Turno — gestão (criar/editar turnos e atividades, ver equipe)"},
