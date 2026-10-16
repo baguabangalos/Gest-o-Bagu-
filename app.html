@@ -9283,6 +9283,14 @@
   var restCat = "";
   var restBusca = "";
   var restCanal = null;
+  var REST_MESA_POUSADA = "240";
+  var REST_MOTIVOS = ["Cortesia","Aniversário","Problema na acomodação","Comemoração","Outro"];
+  function restEhPousada(c){ return String(c.mesa) === REST_MESA_POUSADA; }
+  function restMotivoTexto(l){
+    if(!l.motivo) return "";
+    var ref = l.acomodacao_ref ? (" · " + acomodacaoNome(l.acomodacao_ref)) : "";
+    return l.motivo + ref;
+  }
 
   function restIdent(r){ return r; }
   function restMoney(v){ return Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -9432,7 +9440,7 @@
           html += '<p class="item-meta" style="font-weight:800;margin:14px 0 6px;text-transform:capitalize;">'+dia+' · vendido '+restMoney(somaDia)+'</p>';
         }
         var forma = c.consumo_interno ? "consumo interno" : (c.status==="cobrada" ? "cobrado na acomodação" : (REST_PAGAMENTOS.filter(function(p){ return p[0]===c.forma_pagamento; })[0]||[0,"—"])[1]);
-        html += '<div class="card rest-card" data-id="'+c.id+'" style="cursor:pointer;"><div style="display:flex;justify-content:space-between;"><span class="item-name" style="margin:0;">'+escapeHtml(restTitulo(c))+'</span><strong>'+restMoney(restTotal(c))+'</strong></div><p class="item-meta" style="margin:2px 0 0;">'+dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+' · '+forma+'</p></div>';
+        html += '<div class="card rest-card" data-id="'+c.id+'" style="cursor:pointer;"><div style="display:flex;justify-content:space-between;"><span class="item-name" style="margin:0;">'+escapeHtml(restTitulo(c))+'</span><strong>'+restMoney(restTotal(c))+'</strong></div><p class="item-meta" style="margin:2px 0 0;">'+dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+' · '+forma+'</p>'+(c.consumo_interno && restLinhasDe(c.id).length ? '' : '')+'</div>';
       });
     } else {
       var editar = podeEditar("restaurante");
@@ -9489,7 +9497,7 @@
       '<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:14px;"><input type="checkbox" id="restInterno"> Consumo interno (equipe)</label>' +
       '<div class="sheet-actions"><button class="btn-primary" id="restCriar">Abrir comanda</button></div>');
     var sel = document.getElementById("restMesaSel");
-    sel.onchange = function(){ document.getElementById("restMesaOutraBox").style.display = sel.value==="__outra" ? "block" : "none"; };
+    sel.onchange = function(){ document.getElementById("restMesaOutraBox").style.display = sel.value==="__outra" ? "block" : "none"; var ck = document.getElementById("restInterno"); if(sel.value===REST_MESA_POUSADA){ ck.checked = true; ck.disabled = true; } else { ck.disabled = false; } };
     document.getElementById("restCriar").onclick = async function(){
       var mesa = sel.value === "__outra" ? document.getElementById("restMesaOutra").value.trim() : sel.value;
       if(!mesa){ showToast("Escolha a mesa"); return; }
@@ -9498,7 +9506,7 @@
       this.disabled = true;
       try{
         var acoId = restAcomodacaoDaMesa(mesa);
-        var c = await dbInsert("restaurante_comandas", {id:uid(), tipo:(acoId?"acomodacao":"mesa"), mesa:mesa, acomodacao_id:acoId, consumo_interno:document.getElementById("restInterno").checked, status:"aberta"}, restIdent);
+        var c = await dbInsert("restaurante_comandas", {id:uid(), tipo:(acoId?"acomodacao":"mesa"), mesa:mesa, acomodacao_id:acoId, consumo_interno:(String(mesa)===REST_MESA_POUSADA || document.getElementById("restInterno").checked), status:"aberta"}, restIdent);
         rest.comandas.unshift(c); rest.linhas[c.id] = [];
         restFecharSheet(); restComandaId = c.id; restCat = ""; restBusca = ""; renderRestaurante();
       }catch(err){ console.error(err); showToast("Erro ao abrir a comanda (rodou a migração v20?)"); this.disabled = false; }
@@ -9544,6 +9552,7 @@
     linhas.forEach(function(l){
       html += '<div class="card" style="padding:10px 12px;"><div style="display:flex;justify-content:space-between;gap:8px;"><span class="item-name" style="margin:0;">'+escapeHtml(l.nome)+'</span><strong>'+restMoney(Number(l.preco_unit)*Number(l.quantidade))+'</strong></div>' +
         (l.obs?'<p class="item-meta" style="margin:2px 0 0;">'+escapeHtml(l.obs)+'</p>':'') +
+        (l.motivo?'<p class="item-meta" style="margin:2px 0 0;color:var(--amber-600);font-weight:700;">Motivo: '+escapeHtml(restMotivoTexto(l))+(l.motivo_detalhe?(' — '+escapeHtml(l.motivo_detalhe)):'')+'</p>':'') +
         '<div style="display:flex;align-items:center;gap:10px;margin-top:6px;">' +
           (aberta && editar ? '<button class="btn btn-out restQtd" data-id="'+l.id+'" data-d="-1" style="min-width:40px;">−</button><span style="font-weight:800;min-width:20px;text-align:center;">'+l.quantidade+'</span><button class="btn btn-out restQtd" data-id="'+l.id+'" data-d="1" style="min-width:40px;">+</button><button class="btn btn-out restObs" data-id="'+l.id+'" style="margin-left:auto;">Obs.</button>' : '<span class="item-meta" style="margin:0;">'+l.quantidade+' × '+restMoney(l.preco_unit)+'</span>') +
         '</div></div>';
@@ -9552,6 +9561,7 @@
     html += '<div class="card"><div style="display:flex;justify-content:space-between;font-size:17px;font-weight:800;"><span>'+(aberta?'Subtotal':'Total')+'</span><span>'+restMoney(aberta?sub:restTotal(c))+'</span></div>' +
       (!aberta && Number(c.servico_pct)>0 ? '<p class="item-meta" style="margin:4px 0 0;">Inclui '+Number(c.servico_pct)+'% de serviço</p>' : '') + '</div>';
 
+    html += restResumoMotivosHtml(c);
     if(aberta && editar){
       html += '<div class="item-actions" style="margin:6px 0 14px;"><button class="btn btn-in" id="restFechar" '+(linhas.length?'':'disabled')+' style="flex:1;padding:13px;">'+(c.acomodacao_id && !c.consumo_interno ? 'Fechar / lançar na acomodação' : 'Fechar conta')+'</button></div>';
       var cats = []; rest.itens.forEach(function(x){ if(x.ativo && cats.indexOf(x.categoria)===-1) cats.push(x.categoria); });
@@ -9588,7 +9598,7 @@
       box.querySelectorAll(".restAdd").forEach(function(el){
         el.onclick = function(){
           var x = rest.itens.find(function(i){ return i.id===el.getAttribute("data-id"); });
-          if(x.opcoes && x.opcoes.length) restEscolherOpcao(c, x); else restAdicionarItem(c, x, null);
+          if(x.opcoes && x.opcoes.length) restEscolherOpcao(c, x); else restPedirMotivoEAdicionar(c, x, null);
         };
       });
     }
@@ -9632,20 +9642,67 @@
       b.onclick = function(){
         var i = parseInt(b.getAttribute("data-i"),10);
         restFecharSheet();
-        restAdicionarItem(c, item, i>=0 ? item.opcoes[i] : null);
+        restPedirMotivoEAdicionar(c, item, i>=0 ? item.opcoes[i] : null);
       };
     });
   }
 
-  async function restAdicionarItem(c, item, obs){
+  // Na mesa 240 (pousada) todo item precisa de um motivo antes de entrar na conta.
+  function restPedirMotivoEAdicionar(c, item, obs){
+    if(!restEhPousada(c)){ restAdicionarItem(c, item, obs, null); return; }
+    var acoOpts = '<option value="">Nenhuma / não se aplica</option>' + (state.acomodacoes||[]).map(function(a){ return '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(a.nome)+'</option>'; }).join("");
+    restAbrirSheet("Motivo — " + item.nome,
+      '<p class="item-meta" style="margin-bottom:8px;">Mesa 240 é a mesa da pousada. Por que este item está sendo lançado aqui?</p>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;" id="rmChips">' +
+        REST_MOTIVOS.map(function(m){ return '<button type="button" class="btn btn-out rmChip" data-m="'+escapeHtml(m)+'">'+escapeHtml(m)+'</button>'; }).join("") + '</div>' +
+      '<label style="display:block;margin-bottom:10px;font-size:13.5px;">Detalhe (obrigatório)<br><input type="text" id="rmDetalhe" placeholder="Ex.: chuveiro sem água quente, aniversário da Maria" style="'+REST_INPUT+'"></label>' +
+      '<label style="display:block;margin-bottom:6px;font-size:13.5px;">Acomodação envolvida (opcional)<br><select id="rmAco" style="'+REST_INPUT+'">'+acoOpts+'</select></label>' +
+      '<div class="sheet-actions"><button class="btn-primary" id="rmOk">Adicionar à conta</button></div>');
+    var escolhido = "";
+    document.querySelectorAll("#restOverlay .rmChip").forEach(function(b){
+      b.onclick = function(){
+        escolhido = b.getAttribute("data-m");
+        document.querySelectorAll("#restOverlay .rmChip").forEach(function(x){ x.className = "btn rmChip " + (x===b ? "btn-in" : "btn-out"); });
+      };
+    });
+    document.getElementById("rmOk").onclick = function(){
+      var det = document.getElementById("rmDetalhe").value.trim();
+      if(!escolhido){ showToast("Escolha o motivo"); return; }
+      if(!det){ showToast("Escreva o detalhe do motivo"); return; }
+      var ref = document.getElementById("rmAco").value || null;
+      restFecharSheet();
+      restAdicionarItem(c, item, obs, {motivo:escolhido, motivo_detalhe:det, acomodacao_ref:ref});
+    };
+  }
+
+  // Resumo "por que foi lançado" — agrupa os itens pelo motivo (usado na comanda e no fechamento).
+  function restResumoMotivosHtml(c){
+    var linhas = restLinhasDe(c.id).filter(function(l){ return !!l.motivo; });
+    if(!linhas.length) return "";
+    var grupos = {};
+    linhas.forEach(function(l){
+      var k = restMotivoTexto(l) + (l.motivo_detalhe ? " — " + l.motivo_detalhe : "");
+      (grupos[k] = grupos[k] || []).push(l);
+    });
+    var h = '<div class="card" style="border-left:4px solid var(--amber-600);"><p class="item-name" style="margin:0 0 6px;">Por que foram lançados</p>';
+    Object.keys(grupos).forEach(function(k){
+      var soma = grupos[k].reduce(function(a,l){ return a + Number(l.preco_unit)*Number(l.quantidade); }, 0);
+      h += '<div style="margin-bottom:8px;"><p style="margin:0;font-size:14px;font-weight:700;">'+escapeHtml(k)+' <span style="font-weight:600;color:var(--ink-600);">· '+restMoney(soma)+'</span></p>' +
+        '<p class="item-meta" style="margin:2px 0 0;">'+grupos[k].map(function(l){ return l.quantidade+'× '+escapeHtml(l.nome); }).join(", ")+'</p></div>';
+    });
+    return h + '</div>';
+  }
+
+  async function restAdicionarItem(c, item, obs, motivo){
     try{
       var linhas = restLinhasDe(c.id);
-      var igual = linhas.find(function(l){ return l.item_id===item.id && (l.obs||null)===(obs||null); });
+      var mv = motivo || {};
+      var igual = linhas.find(function(l){ return l.item_id===item.id && (l.obs||null)===(obs||null) && (l.motivo||null)===(mv.motivo||null) && (l.motivo_detalhe||null)===(mv.motivo_detalhe||null) && (l.acomodacao_ref||null)===(mv.acomodacao_ref||null); });
       if(igual){
         var u = await dbUpdate("restaurante_pedido_itens", igual.id, {quantidade:Number(igual.quantidade)+1}, restIdent);
         Object.assign(igual, u);
       } else {
-        var n = await dbInsert("restaurante_pedido_itens", {id:uid(), comanda_id:c.id, item_id:item.id, nome:item.nome, preco_unit:item.preco, quantidade:1, obs:(obs||null)}, restIdent);
+        var n = await dbInsert("restaurante_pedido_itens", {id:uid(), comanda_id:c.id, item_id:item.id, nome:item.nome, preco_unit:item.preco, quantidade:1, obs:(obs||null), motivo:(mv.motivo||null), motivo_detalhe:(mv.motivo_detalhe||null), acomodacao_ref:(mv.acomodacao_ref||null)}, restIdent);
         (rest.linhas[c.id] = rest.linhas[c.id] || []).push(n);
       }
       showToast(item.nome + " adicionado");
@@ -9656,7 +9713,7 @@
   function restFecharContaSheet(c){
     var sub = restSubtotal(c.id);
     var temAco = !!c.acomodacao_id && !c.consumo_interno;
-    var corpo = '<p style="margin:0 0 10px;font-size:15px;"><strong>'+escapeHtml(restTitulo(c))+'</strong> · subtotal '+restMoney(sub)+'</p>';
+    var corpo = '<p style="margin:0 0 10px;font-size:15px;"><strong>'+escapeHtml(restTitulo(c))+'</strong> · subtotal '+restMoney(sub)+'</p>' + restResumoMotivosHtml(c);
     if(c.consumo_interno){
       corpo += '<p class="item-meta" style="margin-bottom:10px;">Consumo interno: fecha sem cobrar o cliente e fica registrado no histórico.</p>';
     } else {
