@@ -217,6 +217,23 @@
     statusACaminho: {pt:"Equipe a caminho", en:"Team on the way", es:"Equipo en camino", fr:"Équipe en route"},
     statusAguardandoLiberacao: {pt:"Aguardando liberação", en:"Awaiting release", es:"Esperando liberación", fr:"En attente de libération"},
     statusAguardandoEquipe: {pt:"Aguardando equipe", en:"Awaiting team", es:"Esperando al equipo", fr:"En attente de l'équipe"},
+    estaAcomodacao: {pt:"Você está na acomodação agora?", en:"Are you in the room right now?", es:"¿Está en el alojamiento ahora?", fr:"Êtes-vous dans le logement en ce moment ?"},
+    simEstou: {pt:"Sim, estou aqui", en:"Yes, I'm here", es:"Sí, estoy aquí", fr:"Oui, je suis là"},
+    naoSai: {pt:"Não, saí", en:"No, I stepped out", es:"No, salí", fr:"Non, je suis sorti(e)"},
+    avisoLimpeza: {pt:"Só um pedido: durante a limpeza, pedimos que vocês aguardem na área externa da acomodação. Assim as meninas conseguem fazer uma limpeza mais cuidadosa e caprichada, sem atrapalhar o descanso de vocês.",
+      en:"Just one request: during cleaning, we kindly ask that you wait outside the accommodation. This way our team can clean more carefully and thoroughly, without disturbing your rest.",
+      es:"Solo un pedido: durante la limpieza, les pedimos que esperen en el área exterior del alojamiento. Así las chicas pueden hacer una limpieza más cuidadosa y esmerada, sin molestar su descanso.",
+      fr:"Une petite demande : pendant le ménage, nous vous prions d'attendre à l'extérieur du logement. Ainsi notre équipe peut nettoyer plus soigneusement, sans perturber votre repos."},
+    equipePodeEntrar: {pt:"Nossa equipe pode entrar?", en:"Can our team come in?", es:"¿Nuestro equipo puede entrar?", fr:"Notre équipe peut-elle entrer ?"},
+    podeAgora: {pt:"Pode entrar agora", en:"Yes, come in now", es:"Puede entrar ahora", fr:"Vous pouvez entrer maintenant"},
+    podeAgoraSemMim: {pt:"Pode entrar agora, mesmo sem mim", en:"Come in now, even without me", es:"Puede entrar ahora, aunque no esté", fr:"Vous pouvez entrer maintenant, même sans moi"},
+    outroHorario: {pt:"Prefiro em outro horário", en:"I prefer another time", es:"Prefiero otro horario", fr:"Je préfère un autre horaire"},
+    qualHorario: {pt:"Em que horário fica melhor?", en:"What time works best?", es:"¿A qué hora le queda mejor?", fr:"À quelle heure cela vous convient-il ?"},
+    ouEscolhaHorario: {pt:"Ou escolha o horário:", en:"Or pick a time:", es:"O elija la hora:", fr:"Ou choisissez l'heure :"},
+    algumRecado: {pt:"Algum recado? (opcional)", en:"Any message? (optional)", es:"¿Algún recado? (opcional)", fr:"Un message ? (facultatif)"},
+    recadoPlaceholder: {pt:"Ex.: pode deixar a chave na recepção", en:"E.g.: you can leave the key at the front desk", es:"Ej.: puede dejar la llave en recepción", fr:"Ex. : vous pouvez laisser la clé à la réception"},
+    escolhaOpcao: {pt:"Escolha uma opção para continuar", en:"Choose an option to continue", es:"Elija una opción para continuar", fr:"Choisissez une option pour continuer"},
+    escolhaHorario: {pt:"Escolha o horário", en:"Pick a time", es:"Elija la hora", fr:"Choisissez l'heure"},
     tipoLimpeza: {pt:"Arrumação do quarto", en:"Room cleaning", es:"Arreglo de la habitación", fr:"Ménage de la chambre"},
     tipoReparo: {pt:"Reparo / manutenção", en:"Repair / maintenance", es:"Reparación / mantenimiento", fr:"Réparation / entretien"},
     tipoFrigobar: {pt:"Frigobar & cesta de doces", en:"Minibar & snack basket", es:"Minibar y cesta de dulces", fr:"Minibar et panier de friandises"}
@@ -381,6 +398,7 @@
       b.onclick = function(){
         var tipo = b.getAttribute("data-tipo");
         if(tipo === "reparo") renderReparoForm();
+        else if(tipo === "limpeza") renderLimpezaForm();
         else enviarSolicitacao(tipo);
       };
     });
@@ -442,23 +460,111 @@
     };
   }
 
+  var HORARIOS_RAPIDOS = ["16:00","17:00","18:00","19:00"];
+
+  function chipsPresencaHtml(sel){
+    return '<div style="display:flex;gap:8px;">' +
+      '<button type="button" class="btn-opt" data-pres="dentro" style="flex:1;margin:0;'+(sel==="dentro"?'background:var(--teal-100);border-color:var(--teal-500);':'')+'"><span><span>'+t("simEstou")+'</span></span></button>' +
+      '<button type="button" class="btn-opt" data-pres="fora" style="flex:1;margin:0;'+(sel==="fora"?'background:var(--teal-100);border-color:var(--teal-500);':'')+'"><span><span>'+t("naoSai")+'</span></span></button>' +
+    '</div>';
+  }
+
+  function renderLimpezaForm(){
+    var pres = null;
+    function pintar(){
+      content.innerHTML =
+        '<div class="card">' +
+          '<p style="margin:0 0 10px;font-size:15px;font-weight:700;">'+t("estaAcomodacao")+'</p>' +
+          chipsPresencaHtml(pres) +
+          (pres === "dentro" ? '<div style="margin-top:14px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.5;color:var(--ink-900);">'+escapeHtml(t("avisoLimpeza"))+'</div>' : '') +
+          '<button class="btn-primary" id="limpEnviar" style="margin-top:14px;"'+(pres?'':' disabled')+'>'+t("enviarPedido")+'</button>' +
+          '<button class="btn-ghost" id="limpVoltar">'+t("voltar")+'</button>' +
+        '</div>';
+      document.getElementById("limpVoltar").onclick = renderMenu;
+      content.querySelectorAll("[data-pres]").forEach(function(b){
+        b.onclick = function(){ pres = b.getAttribute("data-pres"); pintar(); };
+      });
+      document.getElementById("limpEnviar").onclick = function(){ if(pres) enviarSolicitacao("limpeza", {hospede_presenca:pres}); };
+    }
+    pintar();
+  }
+
   function renderReparoForm(){
-    content.innerHTML =
-      '<div class="card">' +
+    var est = {texto:"", pres:null, entrada:null, horario:null, recado:""};
+    function pintar(){
+      var h = '<div class="card">' +
         '<p style="margin:0 0 10px;font-size:14px;color:var(--ink-600);">'+t("conteReparo")+'</p>' +
-        '<textarea id="reparoTexto" placeholder="'+escapeHtml(t("reparoPlaceholder"))+'"></textarea>' +
+        '<textarea id="reparoTexto" placeholder="'+escapeHtml(t("reparoPlaceholder"))+'">'+escapeHtml(est.texto)+'</textarea>' +
+        '<p style="margin:16px 0 8px;font-size:15px;font-weight:700;">'+t("estaAcomodacao")+'</p>' +
+        chipsPresencaHtml(est.pres);
+      if(est.pres){
+        h += '<p style="margin:16px 0 8px;font-size:15px;font-weight:700;">'+t("equipePodeEntrar")+'</p>' +
+          '<button type="button" class="btn-opt" data-ent="agora" style="margin-bottom:8px;'+(est.entrada==="agora"?'background:var(--teal-100);border-color:var(--teal-500);':'')+'"><span><span>'+t(est.pres==="fora"?"podeAgoraSemMim":"podeAgora")+'</span></span></button>' +
+          '<button type="button" class="btn-opt" data-ent="depois" style="margin-bottom:0;'+(est.entrada==="depois"?'background:var(--teal-100);border-color:var(--teal-500);':'')+'"><span><span>'+t("outroHorario")+'</span></span></button>';
+      }
+      if(est.entrada === "depois"){
+        h += '<p style="margin:16px 0 8px;font-size:15px;font-weight:700;">'+t("qualHorario")+'</p><div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+          HORARIOS_RAPIDOS.map(function(x){
+            return '<button type="button" class="btn-opt" data-hor="'+x+'" style="flex:0 0 auto;width:auto;margin:0;padding:10px 16px;'+(est.horario===x?'background:var(--teal-100);border-color:var(--teal-500);':'')+'"><span><span>'+x+'</span></span></button>';
+          }).join("") + '</div>' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-top:10px;"><span style="font-size:13.5px;color:var(--ink-600);">'+t("ouEscolhaHorario")+'</span>' +
+          '<input type="time" id="reparoHora" value="'+(/^\d\d:\d\d$/.test(est.horario||"")?est.horario:"")+'" style="min-height:44px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:15px;font-family:inherit;"></div>';
+      }
+      h += '<p style="margin:16px 0 8px;font-size:15px;font-weight:700;">'+t("algumRecado")+'</p>' +
+        '<textarea id="reparoRecado" placeholder="'+escapeHtml(t("recadoPlaceholder"))+'">'+escapeHtml(est.recado)+'</textarea>' +
         '<button class="btn-primary" id="reparoEnviar">'+t("enviarPedido")+'</button>' +
         '<button class="btn-ghost" id="reparoVoltar">'+t("voltar")+'</button>' +
       '</div>';
-    document.getElementById("reparoVoltar").onclick = renderMenu;
-    document.getElementById("reparoEnviar").onclick = function(){
-      var texto = document.getElementById("reparoTexto").value.trim();
-      if(!texto){ showToast(t("descrevaProblema")); return; }
-      enviarReparo(texto);
-    };
+      content.innerHTML = h;
+      function guardarCampos(){
+        est.texto = document.getElementById("reparoTexto").value;
+        est.recado = document.getElementById("reparoRecado").value;
+      }
+      document.getElementById("reparoVoltar").onclick = renderMenu;
+      content.querySelectorAll("[data-pres]").forEach(function(b){
+        b.onclick = function(){ guardarCampos(); est.pres = b.getAttribute("data-pres"); est.entrada = null; est.horario = null; pintar(); };
+      });
+      content.querySelectorAll("[data-ent]").forEach(function(b){
+        b.onclick = function(){ guardarCampos(); est.entrada = b.getAttribute("data-ent"); est.horario = null; pintar(); };
+      });
+      content.querySelectorAll("[data-hor]").forEach(function(b){
+        b.onclick = function(){ guardarCampos(); est.horario = b.getAttribute("data-hor"); pintar(); };
+      });
+      var hora = document.getElementById("reparoHora");
+      if(hora) hora.onchange = function(){ guardarCampos(); est.horario = hora.value || null; pintar(); };
+      document.getElementById("reparoEnviar").onclick = function(){
+        guardarCampos();
+        var texto = est.texto.trim();
+        if(!texto){ showToast(t("descrevaProblema")); return; }
+        if(!est.pres || !est.entrada){ showToast(t("escolhaOpcao")); return; }
+        if(est.entrada === "depois" && !est.horario){ showToast(t("escolhaHorario")); return; }
+        enviarReparo(texto, {hospede_presenca:est.pres, hospede_entrada:est.entrada, hospede_horario:(est.entrada==="depois"?est.horario:null), hospede_recado:(est.recado.trim()||null)});
+      };
+    }
+    pintar();
   }
 
-  async function enviarSolicitacao(tipo){
+  // Insere o pedido com as respostas do hóspede (presença, horário...). Se o
+  // banco ainda não tiver as colunas novas, tenta de novo sem elas pra o pedido
+  // nunca deixar de chegar (as respostas vão junto na descrição do reparo).
+  async function inserirComExtras(tabela, payload, extras){
+    var comExtras = Object.assign({}, payload, extras || {});
+    var res = await sb.from(tabela).insert(comExtras);
+    if(res.error && extras && /column|schema cache/i.test(String(res.error.message||""))){
+      var semExtras = Object.assign({}, payload);
+      if(tabela === "manutencoes"){
+        var linhas = [];
+        linhas.push("Hóspede: " + (extras.hospede_presenca === "dentro" ? "está na acomodação" : "não está na acomodação"));
+        if(extras.hospede_entrada) linhas.push("Equipe pode entrar: " + (extras.hospede_entrada === "agora" ? "agora" : ("em outro horário" + (extras.hospede_horario ? " (" + extras.hospede_horario + ")" : ""))));
+        if(extras.hospede_recado) linhas.push("Recado: " + extras.hospede_recado);
+        semExtras.description = (payload.description || "") + "\n\n" + linhas.join("\n");
+      }
+      res = await sb.from(tabela).insert(semExtras);
+    }
+    return res;
+  }
+
+  async function enviarSolicitacao(tipo, extras){
     content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">'+t("enviando")+'</div>';
     try{
       var id = uid();
@@ -470,7 +576,7 @@
         origem: "hospede",
         status: "pendente"
       };
-      var res = await sb.from("solicitacoes_acomodacao").insert(payload);
+      var res = await inserirComExtras("solicitacoes_acomodacao", payload, extras);
       if(res.error) throw res.error;
       salvarPedidoLocal(id, "solicitacoes_acomodacao", TIPO_LABEL_KEY[tipo] || tipo);
       renderAcompanhamento();
@@ -506,7 +612,7 @@
     }
   }
 
-  async function enviarReparo(texto){
+  async function enviarReparo(texto, extras){
     content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">'+t("enviando")+'</div>';
     try{
       var id = uid();
@@ -518,7 +624,7 @@
         status: "pendente",
         origem: "hospede"
       };
-      var res = await sb.from("manutencoes").insert(payload);
+      var res = await inserirComExtras("manutencoes", payload, extras);
       if(res.error) throw res.error;
       salvarPedidoLocal(id, "manutencoes", "tipoReparo");
       renderAcompanhamento();

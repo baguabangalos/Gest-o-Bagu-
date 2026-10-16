@@ -1086,6 +1086,9 @@
       createdAt:new Date(r.created_at).getTime(), resolvedAt:(r.resolved_at?new Date(r.resolved_at).getTime():null),
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
       resolutionNote:r.resolution_note, origem:r.origem, itemId:r.item_id, responsavel:r.responsavel, prioridade:r.prioridade||"media",
+      hospedePresenca:r.hospede_presenca||null, hospedeEntrada:r.hospede_entrada||null, hospedeHorario:r.hospede_horario||null, hospedeRecado:r.hospede_recado||null,
+      confPresenca:r.conf_presenca||null, confPode:r.conf_pode||null, confHorario:r.conf_horario||null, confAutoriza:!!r.conf_autoriza, confRecado:r.conf_recado||null,
+      confEm:(r.conf_em?new Date(r.conf_em).getTime():null), confPorNome:r.conf_por_nome||null, pausadoEm:(r.pausado_em?new Date(r.pausado_em).getTime():null),
       criadoPor:r.criado_por||null, criadoPorNome:r.criado_por_nome||null,
       atualizadoPor:r.atualizado_por||null, atualizadoPorNome:r.atualizado_por_nome||null,
       atualizadoEm:(r.atualizado_em?new Date(r.atualizado_em).getTime():null)};
@@ -1256,6 +1259,7 @@
   }
   function mapSolicitacaoFromRow(r){
     return {id:r.id, acomodacaoId:r.acomodacao_id, tipo:r.tipo, contexto:r.contexto, origem:r.origem,
+      hospedePresenca:r.hospede_presenca||null,
       status:r.status, criadoEm:new Date(r.criado_em).getTime(),
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
       concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null),
@@ -5091,6 +5095,98 @@
     "Repor controle remoto", "Chuveiro/água quente com problema", "Ar-condicionado com problema"
   ];
 
+  // ---------- Reparo pedido pelo hóspede: respostas dele + conferência da recepção ----------
+  function reparoTemRespostaHospede(m){ return !!(m && m.origem === "hospede" && m.hospedePresenca); }
+  function reparoHoraValida(h){ return /^\d\d:\d\d$/.test(h||""); }
+  function reparoHoraChegou(h){
+    if(!reparoHoraValida(h)) return true;
+    var agora = new Date();
+    return (agora.getHours()*60 + agora.getMinutes()) >= (parseInt(h.slice(0,2),10)*60 + parseInt(h.slice(3),10));
+  }
+  // null = pode iniciar; texto = motivo de ainda não poder
+  function reparoMotivoNaoIniciar(m){
+    if(!reparoTemRespostaHospede(m)) return null;
+    if(!m.confEm) return "A recepção ainda precisa conferir com o hóspede";
+    if(m.confPode === "aguardar" && reparoHoraValida(m.confHorario) && !reparoHoraChegou(m.confHorario)) return "Combinado com o hóspede para às "+m.confHorario;
+    if(m.confPode === "aguardar" && !reparoHoraValida(m.confHorario)) return null;
+    return null;
+  }
+  function reparoHospedeInfoHtml(m){
+    if(!reparoTemRespostaHospede(m)) return "";
+    var h = '<div style="background:var(--sand-100);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 8px;font-size:13px;line-height:1.5;">' +
+      '<div><strong>Hóspede respondeu:</strong> ' + (m.hospedePresenca==="dentro" ? 'está na acomodação' : 'não está na acomodação') + '</div>';
+    if(m.hospedeEntrada) h += '<div>Equipe pode entrar: <strong>' + (m.hospedeEntrada==="agora" ? (m.hospedePresenca==="fora" ? 'agora, mesmo sem ele' : 'agora') : ('em outro horário'+(m.hospedeHorario?(' — '+escapeHtml(m.hospedeHorario)):''))) + '</strong></div>';
+    if(m.hospedeRecado) h += '<div>Recado: <em>'+escapeHtml(m.hospedeRecado)+'</em></div>';
+    h += '</div>';
+    if(m.confEm){
+      var pode = m.confPode === "agora" ? 'Pode ir agora' : ('Aguardar'+(m.confHorario?(' — '+escapeHtml(m.confHorario)):''));
+      var corOk = m.confPode === "agora" ? 'var(--teal-700)' : 'var(--amber-600)';
+      h += '<p class="item-meta" style="color:'+corOk+';font-weight:700;margin:0 0 4px;">'+ic("check")+' Confirmado pela recepção'+(m.confPorNome?(' ('+escapeHtml(m.confPorNome)+')'):'')+': '+pode+
+        (m.confPresenca==="dentro"?' · hóspede na acomodação':(m.confPresenca==="fora"?' · hóspede fora':''))+(m.confAutoriza?' · autorizou entrar sem ele':'')+'</p>';
+      if(m.confRecado) h += '<p class="item-meta" style="margin:0 0 4px;">Recado para a equipe: <em>'+escapeHtml(m.confRecado)+'</em></p>';
+    } else if(m.pausadoEm){
+      h += '<p class="item-meta" style="color:var(--red-600);font-weight:700;margin:0 0 4px;">'+ic("warning")+' Pausado — o hóspede voltou. A recepção precisa confirmar de novo.</p>';
+    } else if(m.status === "pendente"){
+      var preP = m.hospedePresenca || "";
+      var prePode = m.hospedeEntrada === "depois" ? "aguardar" : (m.hospedeEntrada === "agora" ? "agora" : "");
+      var preH = m.hospedeHorario || "";
+      var podeConf = podeEditar("recepcao");
+      h += '<div class="rep-conf" data-id="'+m.id+'" style="border:1px dashed var(--ink-400);border-radius:10px;padding:10px 12px;margin:0 0 8px;font-size:13px;">' +
+        '<div style="font-weight:800;margin-bottom:6px;">Conferir com o hóspede</div>' +
+        '<label style="display:block;margin-bottom:6px;">O hóspede está na acomodação?<br><select data-conf="pres" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">' +
+          ['dentro|Está dentro','fora|Não está','nao_sei|Não sei'].map(function(o){ var a=o.split("|"); return '<option value="'+a[0]+'"'+(a[0]===preP?' selected':'')+'>'+a[1]+'</option>'; }).join("") + '</select></label>' +
+        '<label style="display:block;margin-bottom:6px;">Pode ir agora?<br><select data-conf="pode" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">' +
+          '<option value="">Escolha…</option>' + ['agora|Pode ir agora','aguardar|Aguardar'].map(function(o){ var a=o.split("|"); return '<option value="'+a[0]+'"'+(a[0]===prePode?' selected':'')+'>'+a[1]+'</option>'; }).join("") + '</select></label>' +
+        '<label style="display:block;margin-bottom:6px;">Horário combinado (se for aguardar)<br><input type="time" data-conf="hora" value="'+(reparoHoraValida(preH)?preH:'')+'" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;"></label>' +
+        '<label style="display:block;margin-bottom:6px;"><input type="checkbox" data-conf="autoriza"'+((m.hospedePresenca==="fora" && m.hospedeEntrada==="agora")?' checked':'')+'> O hóspede autorizou entrar sem ele</label>' +
+        '<label style="display:block;margin-bottom:8px;">Recado para a equipe (opcional)<br><input type="text" data-conf="recado" value="'+escapeHtml(m.hospedeRecado||"")+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;box-sizing:border-box;"></label>' +
+        (podeConf ? '<button class="btn btn-in" data-act="confirmarReparo" data-id="'+m.id+'">Confirmar e avisar a equipe</button>' : '<p class="item-meta" style="margin:0;">Só a recepção confirma.</p>') +
+      '</div>';
+    }
+    if(m.status === "em_andamento"){
+      h += '<div class="item-actions" style="margin-bottom:6px;"><button class="btn btn-out" data-act="pausarReparo" data-id="'+m.id+'">'+ic("warning")+' O hóspede chegou — pausar e avisar a recepção</button></div>';
+    }
+    return h;
+  }
+  function ligarReparoHospedeBotoes(root){
+    root.querySelectorAll('[data-act="confirmarReparo"]').forEach(function(btn){
+      btn.onclick = async function(e){
+        e.stopPropagation();
+        if(!podeEditar("recepcao")){ showToast("Só a recepção confirma"); return; }
+        var id = btn.getAttribute("data-id");
+        var box = btn.closest(".rep-conf");
+        function v(k){ var el = box.querySelector('[data-conf="'+k+'"]'); return el ? el.value : ""; }
+        var pode = v("pode"), pres = v("pres"), hora = v("hora");
+        if(!pode){ showToast("Escolha se a equipe pode ir agora ou aguardar"); return; }
+        if(pode === "aguardar" && !hora){ showToast("Informe o horário combinado"); return; }
+        btn.disabled = true;
+        try{
+          var nome = (currentUser && state.staffNames && state.staffNames[currentUser.id]) || (currentUser && currentUser.email) || null;
+          var payload = {conf_presenca:pres, conf_pode:pode, conf_horario:(pode==="aguardar"?hora:null),
+            conf_autoriza:!!box.querySelector('[data-conf="autoriza"]').checked, conf_recado:(v("recado").trim()||null),
+            conf_em:new Date().toISOString(), conf_por_nome:nome, pausado_em:null};
+          var mm = await dbUpdate("manutencoes", id, payload, mapManutencaoFromRow);
+          var ix = state.manutencoes.findIndex(function(x){ return x.id===id; });
+          if(ix>-1) state.manutencoes[ix] = mm;
+          showToast("Confirmado — equipe avisada"); renderApp();
+        }catch(err){ console.error(err); showToast("Erro ao confirmar (rodou a migração v19?)"); btn.disabled = false; }
+      };
+    });
+    root.querySelectorAll('[data-act="pausarReparo"]').forEach(function(btn){
+      btn.onclick = async function(e){
+        e.stopPropagation();
+        var id = btn.getAttribute("data-id");
+        btn.disabled = true;
+        try{
+          var mm = await dbUpdate("manutencoes", id, {status:"pendente", iniciado_em:null, conf_em:null, conf_pode:null, conf_horario:null, pausado_em:new Date().toISOString()}, mapManutencaoFromRow);
+          var ix = state.manutencoes.findIndex(function(x){ return x.id===id; });
+          if(ix>-1) state.manutencoes[ix] = mm;
+          showToast("Reparo pausado — a recepção vai confirmar de novo"); renderApp();
+        }catch(err){ console.error(err); showToast("Erro ao pausar"); btn.disabled = false; }
+      };
+    });
+  }
+
   function renderManutencoes(){
     var main = document.getElementById("manutencoesView");
     var pend = state.manutencoes.filter(function(m){ return m.status==="pendente" || m.status==="em_andamento"; }).sort(function(a,b){
@@ -5118,6 +5214,7 @@
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
         if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("user")+' '+escapeHtml(m.responsavel)+'</p>';
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
+        html += reparoHospedeInfoHtml(m);
         if(m.status === "pendente"){
           html += '<p class="item-meta">aberta em '+fmtDate(m.createdAt)+'</p>' +
             '<div class="item-actions"><button class="btn btn-in" data-act="iniciarManut" data-id="'+m.id+'">▶ Iniciar</button>'+lixoManut.replace("{ID}", m.id)+'</div>';
@@ -5156,9 +5253,10 @@
       buscaInp.addEventListener("input", function(){ manutencaoBusca = buscaInp.value; aplicarFiltroManutencoes(); });
       aplicarFiltroManutencoes();
     }
+    ligarReparoHospedeBotoes(main);
     main.querySelectorAll(".manut-card").forEach(function(c){
       c.addEventListener("click", function(e){
-        if(e.target.closest("button[data-act]")) return;
+        if(e.target.closest("button[data-act]") || e.target.closest(".rep-conf")) return;
         var m = state.manutencoes.find(function(x){ return x.id===c.getAttribute("data-id"); });
         if(m) openManutencaoSheet(m);
       });
@@ -5177,6 +5275,8 @@
         }
         try{
           if(act === "iniciarManut"){
+            var motivo0 = reparoMotivoNaoIniciar(m);
+            if(motivo0){ showToast(motivo0); return; }
             var m0 = await dbUpdate("manutencoes", id, {status:"em_andamento", iniciado_em:new Date().toISOString()}, mapManutencaoFromRow);
             var idx0 = state.manutencoes.findIndex(function(x){ return x.id===id; });
             if(idx0>-1) state.manutencoes[idx0] = m0;
@@ -7681,6 +7781,11 @@
       }
     }
     if(s.origem === "hospede") html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("phone")+' Solicitado pelo hóspede (link)</p>';
+    if(s.origem === "hospede" && s.tipo === "limpeza" && s.hospedePresenca){
+      html += s.hospedePresenca === "dentro"
+        ? '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">'+ic("warning")+' Hóspede está na acomodação — foi pedido que aguarde na área externa durante a limpeza</p>'
+        : '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("check")+' Hóspede não está na acomodação</p>';
+    }
     else if(s.criadoPor) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("user")+' Solicitado pela conta de '+escapeHtml(nomeStaff(s.criadoPor))+' (equipe)</p>';
     else if(s.origem === "sistema") html += '<p class="item-meta">'+ic("wrench")+' Gerado automaticamente pelo sistema</p>';
     if(s.liberadoPor) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("lockOpen")+' Liberado pela conta de '+escapeHtml(nomeStaff(s.liberadoPor))+' (equipe)</p>';
@@ -9586,6 +9691,7 @@
           html += '<div class="card manut-card" style="border-left:4px solid '+pInfoR.cor+';">' +
             '<p class="item-name" style="margin:0 0 3px;">'+ic("wrench")+' '+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>' +
             (m.description ? '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>' : '') +
+            reparoHospedeInfoHtml(m) +
             '<p class="item-meta">'+ic("phone")+' solicitado pelo hóspede · '+(m.status==="em_andamento" ? ('em andamento há '+fmtDuration(minutesAgo(m.iniciadoEm||m.createdAt))) : ('aberto em '+fmtDate(m.createdAt)))+'</p>' +
             ((podeEditar("recepcao") || podeEditar("manutencao")) ?
               '<div class="item-actions">' +
@@ -9704,6 +9810,7 @@
       };
     });
 
+    ligarReparoHospedeBotoes(main);
     main.querySelectorAll('[data-act="reparoHospede"]').forEach(function(btn){
       btn.onclick = async function(){
         var id = btn.getAttribute("data-id");
@@ -9711,6 +9818,11 @@
         btn.disabled = true;
         try{
           var concluir = btn.getAttribute("data-sub") === "concluir";
+          if(!concluir){
+            var mAtual = state.manutencoes.find(function(x){ return x.id===id; });
+            var motivoR = reparoMotivoNaoIniciar(mAtual);
+            if(motivoR){ showToast(motivoR); btn.disabled = false; return; }
+          }
           var payloadR = concluir ? {status:"concluida", resolved_at:new Date().toISOString()} : {status:"em_andamento", iniciado_em:new Date().toISOString()};
           var mR = await dbUpdate("manutencoes", id, payloadR, mapManutencaoFromRow);
           var idxR = state.manutencoes.findIndex(function(x){ return x.id===id; });
