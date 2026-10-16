@@ -220,10 +220,10 @@
     estaAcomodacao: {pt:"Você está na acomodação agora?", en:"Are you in the room right now?", es:"¿Está en el alojamiento ahora?", fr:"Êtes-vous dans le logement en ce moment ?"},
     simEstou: {pt:"Sim, estou aqui", en:"Yes, I'm here", es:"Sí, estoy aquí", fr:"Oui, je suis là"},
     naoSai: {pt:"Não, saí", en:"No, I stepped out", es:"No, salí", fr:"Non, je suis sorti(e)"},
-    avisoLimpeza: {pt:"Só um pedido: durante a limpeza, pedimos que vocês aguardem na área externa da acomodação. Assim as meninas conseguem fazer uma limpeza mais cuidadosa e caprichada, sem atrapalhar o descanso de vocês.",
-      en:"Just one request: during cleaning, we kindly ask that you wait outside the accommodation. This way our team can clean more carefully and thoroughly, without disturbing your rest.",
-      es:"Solo un pedido: durante la limpieza, les pedimos que esperen en el área exterior del alojamiento. Así las chicas pueden hacer una limpieza más cuidadosa y esmerada, sin molestar su descanso.",
-      fr:"Une petite demande : pendant le ménage, nous vous prions d'attendre à l'extérieur du logement. Ainsi notre équipe peut nettoyer plus soigneusement, sans perturber votre repos."},
+    avisoLimpeza: {pt:"Olá! Será um prazer providenciar a limpeza da sua acomodação. Informamos apenas que, por norma da pousada, a limpeza é realizada sem a presença dos hóspedes dentro da acomodação. Isso garante a sua segurança, pois utilizamos produtos e equipamentos que exigem ventilação e espaço livre, e permite que nossa equipe trabalhe de forma completa e mais ágil. Se desejar, pode aguardar na varanda ou nas áreas comuns da Baguá enquanto preparamos tudo com todo o capricho. Agradecemos a sua compreensão! Qualquer necessidade, estamos à disposição.",
+      en:"Hello! We'll be glad to take care of cleaning your accommodation. Please note that, as per the inn's policy, cleaning is carried out without guests inside the accommodation. This ensures your safety, since we use products and equipment that require ventilation and free space, and it allows our team to work more thoroughly and quickly. If you wish, you can wait on the porch or in the common areas of Baguá while we prepare everything with great care. Thank you for your understanding! If you need anything, we're at your disposal.",
+      es:"¡Hola! Será un placer encargarnos de la limpieza de su alojamiento. Le informamos que, por norma de la posada, la limpieza se realiza sin la presencia de los huéspedes dentro del alojamiento. Esto garantiza su seguridad, ya que utilizamos productos y equipos que requieren ventilación y espacio libre, y permite que nuestro equipo trabaje de forma completa y más ágil. Si lo desea, puede esperar en la terraza o en las áreas comunes de Baguá mientras preparamos todo con mucho esmero. ¡Agradecemos su comprensión! Para cualquier necesidad, estamos a su disposición.",
+      fr:"Bonjour ! Nous serons ravis de nous occuper du ménage de votre logement. Nous vous informons que, selon le règlement de la pousada, le ménage s'effectue sans la présence des clients à l'intérieur du logement. Cela garantit votre sécurité, car nous utilisons des produits et équipements qui nécessitent de la ventilation et de l'espace libre, et permet à notre équipe de travailler de façon plus complète et plus rapide. Si vous le souhaitez, vous pouvez patienter sur la terrasse ou dans les espaces communs de Baguá pendant que nous préparons tout avec soin. Merci de votre compréhension ! Pour toute demande, nous restons à votre disposition."},
     equipePodeEntrar: {pt:"Nossa equipe pode entrar?", en:"Can our team come in?", es:"¿Nuestro equipo puede entrar?", fr:"Notre équipe peut-elle entrer ?"},
     podeAgora: {pt:"Pode entrar agora", en:"Yes, come in now", es:"Puede entrar ahora", fr:"Vous pouvez entrer maintenant"},
     podeAgoraSemMim: {pt:"Pode entrar agora, mesmo sem mim", en:"Come in now, even without me", es:"Puede entrar ahora, aunque no esté", fr:"Vous pouvez entrer maintenant, même sans moi"},
@@ -474,9 +474,9 @@
     function pintar(){
       content.innerHTML =
         '<div class="card">' +
+          '<div style="margin-bottom:16px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.5;color:var(--ink-900);">'+escapeHtml(t("avisoLimpeza"))+'</div>' +
           '<p style="margin:0 0 10px;font-size:15px;font-weight:700;">'+t("estaAcomodacao")+'</p>' +
           chipsPresencaHtml(pres) +
-          (pres === "dentro" ? '<div style="margin-top:14px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.5;color:var(--ink-900);">'+escapeHtml(t("avisoLimpeza"))+'</div>' : '') +
           '<button class="btn-primary" id="limpEnviar" style="margin-top:14px;"'+(pres?'':' disabled')+'>'+t("enviarPedido")+'</button>' +
           '<button class="btn-ghost" id="limpVoltar">'+t("voltar")+'</button>' +
         '</div>';
