@@ -474,9 +474,9 @@
     function pintar(){
       content.innerHTML =
         '<div class="card">' +
-          '<div style="margin-bottom:16px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.5;color:var(--ink-900);">'+escapeHtml(t("avisoLimpeza"))+'</div>' +
           '<p style="margin:0 0 10px;font-size:15px;font-weight:700;">'+t("estaAcomodacao")+'</p>' +
           chipsPresencaHtml(pres) +
+          (pres === "dentro" ? '<div style="margin-top:14px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.5;color:var(--ink-900);">'+escapeHtml(t("avisoLimpeza"))+'</div>' : '') +
           '<button class="btn-primary" id="limpEnviar" style="margin-top:14px;"'+(pres?'':' disabled')+'>'+t("enviarPedido")+'</button>' +
           '<button class="btn-ghost" id="limpVoltar">'+t("voltar")+'</button>' +
         '</div>';
