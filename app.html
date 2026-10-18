@@ -523,6 +523,9 @@
         <label>Quantidade no estoque (usado)</label>
         <input type="number" id="f_qtyUsado" step="0.01" value="0">
       </div>
+      <label>Links de compra / indicações (opcional)</label>
+      <div id="f_linksList"></div>
+      <button type="button" class="link-btn" id="f_linksAdd">+ Adicionar link</button>
       <label>Fornecedor (opcional)</label>
       <select id="f_supplier">
         <option value="">Nenhum</option>
@@ -1056,7 +1059,7 @@
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
       qtyUsado:Number(r.qty_usado||0),
-      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras,
+      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras, links:(Array.isArray(r.links_compra)?r.links_compra:[]),
       criadoPor:r.criado_por, editadoPor:r.editado_por, editadoEm:(r.editado_em?new Date(r.editado_em).getTime():null), aud:audDe(r)};
   }
   function mapMovementFromRow(r){
@@ -1507,13 +1510,38 @@
   // Acesso ao estoque só de uma categoria (ex.: só Limpeza, só Manutenção):
   // são permissões à parte; quem tem o "Estoque" completo vê todas as categorias.
   var ESTOQUE_CAT_MODULO = {"Frigobar":"estoque_frigobar", "Limpeza":"estoque_limpeza", "Enxoval":"estoque_enxoval", "Manutenção":"estoque_manutencao", "Uniformes":"estoque_uniformes", "Lojinha":"estoque_lojinha", "UTV":"estoque_utv"};
+  // Permissões detalhadas por aba e ações especiais (mesmo modelo do estoque):
+  // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
+  var PERM_ABAS = {
+    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio"}},
+    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", qr:"recepcao_qr"}},
+    servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
+    escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
+    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao"}},
+    manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas"}}
+  };
+  var PERM_ACOES = {
+    restaurante:["restaurante_acao_240","restaurante_acao_fechar","restaurante_acao_lancar_conta","restaurante_acao_cobrar"],
+    recepcao:["recepcao_acao_confirmar_reparo"]
+  };
+  function permFilhos(modulo){
+    var a = PERM_ABAS[modulo]; if(!a) return [];
+    return Object.keys(a.abas).map(function(k){ return a.abas[k]; });
+  }
+  function permFilhoFlag(modulo, flag){ return permFilhos(modulo).some(function(k){ return permFlag(k, flag); }); }
+  function abaChave(modulo, aba){ return PERM_ABAS[modulo] && PERM_ABAS[modulo].abas[aba]; }
+  function podeVerAba(modulo, aba){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"ver") || permFlag(abaChave(modulo,aba),"ver")); }
+  function podeEditarAba(modulo, aba){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"editar") || permFlag(abaChave(modulo,aba),"editar")); }
+  function podeExcluirAba(modulo, aba){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"excluir") || permFlag(abaChave(modulo,aba),"excluir")); }
+  // Ação especial (ex.: lançar na mesa 240, fechar conta): módulo completo com "editar" ou a permissão própria da ação.
+  function podeAcao(modulo, acao){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"editar") || permFlag(acao,"ver")); }
   function permFlag(modulo, flag){ return !!(currentUser && currentUser.permissoes[modulo] && currentUser.permissoes[modulo][flag]); }
   function estoquePorCategoria(flag){
     return Object.keys(ESTOQUE_CAT_MODULO).some(function(cat){ return permFlag(ESTOQUE_CAT_MODULO[cat], flag); });
   }
-  function podeVer(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"ver") || (modulo==="estoque" && estoquePorCategoria("ver"))); }
-  function podeEditar(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"editar") || (modulo==="estoque" && estoquePorCategoria("editar"))); }
-  function podeExcluir(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"excluir") || (modulo==="estoque" && estoquePorCategoria("excluir"))); }
+  function podeVer(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"ver") || (modulo==="estoque" && estoquePorCategoria("ver")) || permFilhoFlag(modulo,"ver")); }
+  function podeEditar(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"editar") || (modulo==="estoque" && estoquePorCategoria("editar")) || permFilhoFlag(modulo,"editar")); }
+  function podeExcluir(modulo){ return !!currentUser && (currentUser.role === "admin" || permFlag(modulo,"excluir") || (modulo==="estoque" && estoquePorCategoria("excluir")) || permFilhoFlag(modulo,"excluir")); }
   // Categorias do estoque que esta pessoa pode ver.
   function estoqueCategoriasPermitidas(){
     if(!currentUser) return [];
@@ -2345,6 +2373,32 @@
   }
   document.getElementById("homeBackBtn").onclick = function(){ appSection = "home"; renderApp(); };
 
+  // Esconde as abas que a pessoa não pode ver e, se a aba atual não é permitida, vai pra primeira permitida.
+  var PERM_ABAS_RENDER = {restaurante:function(){ renderRestaurante(); }, recepcao:function(){ renderRecepcao(); }, servico_geral:function(){ renderServicoGeral(); }, escala_trabalho:function(){ renderEquipe(); }, limpeza:function(){ renderLimpeza(); }, manutencao:function(){ renderManutencoes(); }};
+  function permAbaAtual(m){ return m==="restaurante"?restSub : m==="recepcao"?recepcaoSubView : m==="servico_geral"?servicoGeralSubView : m==="escala_trabalho"?equipeSubView : m==="limpeza"?limpezaSubView : manutencaoSubView; }
+  function permAbaDefinir(m,v){ if(m==="restaurante") restSub=v; else if(m==="recepcao") recepcaoSubView=v; else if(m==="servico_geral") servicoGeralSubView=v; else if(m==="escala_trabalho") equipeSubView=v; else if(m==="limpeza") limpezaSubView=v; else manutencaoSubView=v; }
+  var permAbasBusy = false;
+  function aplicarPermAbas(m){
+    if(permAbasBusy || !currentUser || currentUser.role==="admin") return;
+    var cfg = PERM_ABAS[m]; var v = document.getElementById(cfg.view); if(!v) return;
+    var botoes = v.querySelectorAll("["+cfg.attr+"]"); if(!botoes.length) return;
+    permAbasBusy = true;
+    try{
+      var permitidas = Object.keys(cfg.abas).filter(function(a){ return podeVerAba(m,a); });
+      botoes.forEach(function(b){ if(permitidas.indexOf(b.getAttribute(cfg.attr)) === -1) b.remove(); });
+      var atual = permAbaAtual(m);
+      if(permitidas.length && permitidas.indexOf(atual) === -1){
+        permAbaDefinir(m, permitidas[0]);
+        setTimeout(function(){ permAbasBusy=false; PERM_ABAS_RENDER[m](); }, 0);
+        return;
+      }
+    } finally { if(permAbasBusy) setTimeout(function(){ permAbasBusy=false; }, 0); }
+  }
+  Object.keys(PERM_ABAS).forEach(function(m){
+    var el = document.getElementById(PERM_ABAS[m].view);
+    if(el && window.MutationObserver) new MutationObserver(function(){ aplicarPermAbas(m); }).observe(el, {childList:true});
+  });
+
   function moduloDaSecao(sec){
     if(sec==="estoque") return "estoque";
     if(sec==="manutencoes") return "manutencao";
@@ -2705,6 +2759,7 @@
           '<div class="item-main">' +
             '<p class="item-name">'+escapeHtml(it.name)+'</p>' +
             '<p class="item-meta">'+metaText+'</p>' +
+            linksCompraHtml(it, "Comprar:") +
             auditoriaHtml("items", it.id, it.name, it.aud) +
           '</div>' +
           '<div class="qty-badge '+badgeClass+'">'+fmtQty(it.qty)+' '+escapeHtml(it.unit)+'</div>' +
@@ -3098,6 +3153,10 @@
       if(toBuy.length > 0){
         toBuy.forEach(function(r){
           lines.push("  "+r.item.name+": comprar "+fmtQty(r.suggestedPurchase)+" "+r.item.unit+" (ideal: "+fmtQty(r.idealMin)+"–"+fmtQty(r.idealMax)+" "+r.item.unit+")");
+          (r.item.links||[]).forEach(function(l){
+            var u = linkCompraUrlSegura(l.url);
+            if(u) lines.push("     ↳ "+linkCompraRotulo(l)+": "+u);
+          });
         });
       } else {
         lines.push("  Estoque suficiente para o período previsto em todos os itens.");
@@ -3517,6 +3576,7 @@
           '<span class="suggest-buy-badge '+(buy?"":"ok")+'">'+(buy ? ("Comprar "+fmtQty(r.suggestedPurchase)+" "+escapeHtml(r.item.unit)) : "Estoque OK")+'</span>' +
         '</div>' +
         '<p class="suggest-row-meta">Estoque atual: '+fmtQty(r.item.qty)+' '+escapeHtml(r.item.unit)+' · ideal: '+fmtQty(r.idealMin)+'–'+fmtQty(r.idealMax)+' '+escapeHtml(r.item.unit)+'</p>' +
+        (buy ? linksCompraHtml(r.item, "Onde comprar:") : '') +
       '</div>';
     });
     html += '</div>';
@@ -3638,12 +3698,55 @@
     });
     sel.value = selectedId || "";
   }
+  // ---------- Links de compra (indicações de onde comprar) ----------
+  function linkCompraUrlSegura(u){
+    u = String(u||"").trim();
+    if(!u) return null;
+    if(!/^https?:\/\//i.test(u)) u = "https://" + u;
+    try{ var x = new URL(u); return (x.protocol==="http:"||x.protocol==="https:") ? x.href : null; }catch(e){ return null; }
+  }
+  function linkCompraRotulo(l){
+    if(l.titulo) return l.titulo;
+    try{ return new URL(l.url).hostname.replace(/^www\./,""); }catch(e){ return "Link"; }
+  }
+  function linksCompraHtml(it, rotuloIntro){
+    var ls = (it.links||[]).filter(function(l){ return linkCompraUrlSegura(l.url); });
+    if(!ls.length) return "";
+    return '<div class="item-links" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 0;">' +
+      (rotuloIntro ? '<span style="font-size:12px;color:var(--ink-600);font-weight:700;">'+rotuloIntro+'</span>' : '') +
+      ls.map(function(l){
+        return '<a href="'+escapeHtml(linkCompraUrlSegura(l.url))+'" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:5px 10px;border:1px solid var(--teal-700);border-radius:999px;font-size:12.5px;font-weight:700;color:var(--teal-700);text-decoration:none;">'+escapeHtml(linkCompraRotulo(l))+' ↗</a>';
+      }).join("") + '</div>';
+  }
+  function addLinkRow(titulo, url){
+    var list = document.getElementById("f_linksList");
+    var row = document.createElement("div");
+    row.className = "f-link-row";
+    row.style.cssText = "display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap;";
+    row.innerHTML = '<input type="text" class="f-link-titulo" placeholder="Nome (ex: Mercado Livre)" value="'+escapeHtml(titulo||"")+'" style="flex:1 1 120px;min-width:0;">' +
+      '<input type="url" class="f-link-url" placeholder="https://..." value="'+escapeHtml(url||"")+'" style="flex:2 1 180px;min-width:0;">' +
+      '<button type="button" class="btn-danger-text f-link-del" style="margin:0;padding:6px 8px;">Remover</button>';
+    row.querySelector(".f-link-del").onclick = function(){ row.remove(); };
+    list.appendChild(row);
+  }
+  function lerLinksDoForm(){
+    var out = [];
+    document.querySelectorAll("#f_linksList .f-link-row").forEach(function(r){
+      var u = linkCompraUrlSegura(r.querySelector(".f-link-url").value);
+      if(u) out.push({titulo:(r.querySelector(".f-link-titulo").value.trim()||null), url:u});
+    });
+    return out;
+  }
+  document.getElementById("f_linksAdd").onclick = function(){ addLinkRow("", ""); };
+
   function openItemSheet(item){
     editingItemId = item ? item.id : null;
     document.getElementById("itemSheetTitle").textContent = item ? "Editar item" : "Novo item";
     document.getElementById("f_name").value = item ? item.name : "";
     document.getElementById("f_codigoBarras").value = item ? (item.codigoBarras||"") : "";
     document.getElementById("f_numeroSerie").value = item ? (item.numeroSerie||"") : "";
+    document.getElementById("f_linksList").innerHTML = "";
+    ((item && item.links) || []).forEach(function(l){ addLinkRow(l.titulo, l.url); });
     (function(){
       var okCats = estoqueCategoriasPermitidas();
       Array.prototype.forEach.call(document.getElementById("f_category").options, function(o){
@@ -3723,7 +3826,7 @@
     try{
       var photoParaSalvar = await uploadAnexoParaStorage(pendingPhoto, "items");
       var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:photoParaSalvar,
-        supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null};
+        supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null, links_compra:lerLinksDoForm()};
       if(editingItemId){
         payload.editado_por = currentUser ? currentUser.id : null;
         payload.editado_em = new Date().toISOString();
@@ -3776,7 +3879,7 @@
     else { openMoveSheet(item, act === "in" ? "entrada" : "saida"); }
   });
 
-  var DESTINOS_FIXOS = ["Recepção", "Welcome drink", "Venda avulsa", "Empréstimo restaurante", "Guilherme", "Funcionário", "Prestadores de serviço", "Marcella", "Vencidos"];
+  var DESTINOS_FIXOS = ["Recepção", "Welcome drink", "Venda avulsa", "Empréstimo restaurante", "Guilherme", "Funcionário", "Governança", "Prestadores de serviço", "Marcella", "Vencidos"];
   // Nomes sugeridos ao registrar quem recebeu um uniforme — ainda dá pra
   // digitar qualquer outro nome que não esteja nessa lista.
   var FUNCIONARIOS_CONHECIDOS = ["Guilherme"];
@@ -9403,7 +9506,7 @@
     '</div>';
 
     if(restSub === "abertas"){
-      if(podeEditar("restaurante")) html += '<button class="btn btn-in" id="restNova" style="width:100%;margin-bottom:12px;padding:13px;">+ Nova comanda</button>';
+      if(podeEditarAba("restaurante","abertas")) html += '<button class="btn btn-in" id="restNova" style="width:100%;margin-bottom:12px;padding:13px;">+ Nova comanda</button>';
       if(!abertas.length) html += '<div class="empty">Nenhuma comanda aberta.</div>';
       abertas.forEach(function(c){
         html += '<div class="card rest-card" data-id="'+c.id+'" style="cursor:pointer;">' +
@@ -9423,7 +9526,7 @@
           html += '<div class="rest-card" data-id="'+c.id+'" style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);cursor:pointer;font-size:14px;"><span>'+new Date(c.lancada_em||c.aberta_em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+' · '+restQtdItens(c.id)+' item(ns)</span><strong>'+restMoney(restTotal(c))+'</strong></div>';
         });
         html += '<p style="margin:8px 0;font-size:16px;font-weight:800;">Total a cobrar: '+restMoney(soma)+'</p>' +
-          (podeEditar("restaurante") ? '<button class="btn btn-in restCobrar" data-ids="'+lista.map(function(c){ return c.id; }).join(",")+'">'+ic("check")+' Marcar como cobrado</button>' : '') + '</div>';
+          (podeEditarAba("restaurante","contas") && podeAcao("restaurante","restaurante_acao_cobrar") ? '<button class="btn btn-in restCobrar" data-ids="'+lista.map(function(c){ return c.id; }).join(",")+'">'+ic("check")+' Marcar como cobrado</button>' : '') + '</div>';
       });
     } else if(restSub === "historico"){
       var fechadas = rest.comandas.filter(function(c){ return c.status==="fechada" || c.status==="cobrada"; })
@@ -9443,7 +9546,7 @@
         html += '<div class="card rest-card" data-id="'+c.id+'" style="cursor:pointer;"><div style="display:flex;justify-content:space-between;"><span class="item-name" style="margin:0;">'+escapeHtml(restTitulo(c))+'</span><strong>'+restMoney(restTotal(c))+'</strong></div><p class="item-meta" style="margin:2px 0 0;">'+dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+' · '+forma+'</p>'+(c.consumo_interno && restLinhasDe(c.id).length ? '' : '')+'</div>';
       });
     } else {
-      var editar = podeEditar("restaurante");
+      var editar = podeEditarAba("restaurante","cardapio");
       html += (editar ? '<button class="btn btn-in" id="restNovoItem" style="width:100%;margin-bottom:12px;padding:13px;">+ Novo item no cardápio</button>' : '');
       var catAtual = "";
       rest.itens.forEach(function(it){
@@ -9539,7 +9642,7 @@
     var c = rest.comandas.find(function(x){ return x.id === restComandaId; });
     if(!c){ restComandaId = null; renderRestaurante(); return; }
     var aberta = c.status === "aberta";
-    var editar = podeEditar("restaurante");
+    var editar = podeEditarAba("restaurante","abertas");
     var linhas = restLinhasDe(c.id);
     var html = '<button class="btn btn-out" id="restVoltar" style="margin-bottom:10px;">‹ Voltar</button>' +
       '<div class="card"><p class="item-name" style="margin:0 0 3px;font-size:17px;">'+escapeHtml(restTitulo(c))+'</p>' +
@@ -9650,6 +9753,7 @@
   // Na mesa 240 (pousada) todo item precisa de um motivo antes de entrar na conta.
   function restPedirMotivoEAdicionar(c, item, obs){
     if(!restEhPousada(c)){ restAdicionarItem(c, item, obs, null); return; }
+    if(!podeAcao("restaurante","restaurante_acao_240")){ showToast("Você não tem permissão para lançar na mesa 240"); return; }
     var acoOpts = '<option value="">Nenhuma / não se aplica</option>' + (state.acomodacoes||[]).map(function(a){ return '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(a.nome)+'</option>'; }).join("");
     restAbrirSheet("Motivo — " + item.nome,
       '<p class="item-meta" style="margin-bottom:8px;">Mesa 240 é a mesa da pousada. Por que este item está sendo lançado aqui?</p>' +
@@ -9712,7 +9816,8 @@
 
   function restFecharContaSheet(c){
     var sub = restSubtotal(c.id);
-    var temAco = !!c.acomodacao_id && !c.consumo_interno;
+    var temAco = !!c.acomodacao_id && !c.consumo_interno && podeAcao("restaurante","restaurante_acao_lancar_conta");
+    if(!podeAcao("restaurante","restaurante_acao_fechar") && !temAco){ showToast("Você não tem permissão para fechar contas"); return; }
     var corpo = '<p style="margin:0 0 10px;font-size:15px;"><strong>'+escapeHtml(restTitulo(c))+'</strong> · subtotal '+restMoney(sub)+'</p>' + restResumoMotivosHtml(c);
     if(c.consumo_interno){
       corpo += '<p class="item-meta" style="margin-bottom:10px;">Consumo interno: fecha sem cobrar o cliente e fica registrado no histórico.</p>';
@@ -9742,6 +9847,7 @@
         renderRestaurante();
       }catch(err){ console.error(err); showToast("Erro ao fechar a comanda"); btn.disabled = false; }
     }
+    if(!podeAcao("restaurante","restaurante_acao_fechar")){ var bf = document.getElementById("rfFechar"); if(bf) bf.style.display = "none"; }
     document.getElementById("rfFechar").onclick = function(){
       var agora = new Date().toISOString();
       if(c.consumo_interno) gravar({status:"fechada", fechada_em:agora, total:sub, servico_pct:0, forma_pagamento:"consumo_interno"}, this);
@@ -10967,15 +11073,41 @@
     {key:"estoque_utv", label:"Estoque — só UTV"},
     {key:"procedimentos", label:"Procedimentos"},
     {key:"manutencao", label:"Manutenções"},
+    {key:"manutencao_pendentes", label:"Manutenções — só Pendentes", sub:true},
+    {key:"manutencao_concluidas", label:"Manutenções — só Concluídas", sub:true},
     {key:"hospedes", label:"Hóspedes/Documentos"},
     {key:"limpeza", label:"Limpeza (pedidos dos hóspedes)"},
+    {key:"limpeza_abertos", label:"Limpeza — só Em aberto", sub:true},
+    {key:"limpeza_concluidos", label:"Limpeza — só Concluídos hoje", sub:true},
+    {key:"limpeza_previsao", label:"Limpeza — só Previsão 7 dias", sub:true},
     {key:"recepcao", label:"Recepção (painel de acompanhamento)"},
+    {key:"recepcao_solicitacoes", label:"Recepção — só Solicitações", sub:true},
+    {key:"recepcao_limpeza", label:"Recepção — só Limpeza", sub:true},
+    {key:"recepcao_avulsos", label:"Recepção — só Avulsos", sub:true},
+    {key:"recepcao_chegadas", label:"Recepção — só Chegadas (pré-check-in)", sub:true},
+    {key:"recepcao_qr", label:"Recepção — só QR Code", sub:true},
+    {key:"recepcao_acao_confirmar_reparo", label:"Recepção — confirmar/pausar reparo com o hóspede", acao:true},
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
+    {key:"servico_geral_jacuzzi", label:"Serviço Geral — só Jacuzzi", sub:true},
+    {key:"servico_geral_predial", label:"Serviço Geral — só Manutenção Predial", sub:true},
     {key:"restaurante", label:"Restaurante (comandas, cardápio e consumo)"},
+    {key:"restaurante_comandas", label:"Restaurante — só Comandas", sub:true},
+    {key:"restaurante_acomodacoes", label:"Restaurante — só Acomodações (contas)", sub:true},
+    {key:"restaurante_historico", label:"Restaurante — só Histórico", sub:true},
+    {key:"restaurante_cardapio", label:"Restaurante — só Cardápio (itens e preços)", sub:true},
+    {key:"restaurante_acao_240", label:"Restaurante — lançar itens na mesa 240 (cortesia)", acao:true},
+    {key:"restaurante_acao_fechar", label:"Restaurante — fechar conta", acao:true},
+    {key:"restaurante_acao_lancar_conta", label:"Restaurante — lançar na conta da acomodação", acao:true},
+    {key:"restaurante_acao_cobrar", label:"Restaurante — marcar conta da acomodação como cobrada", acao:true},
     {key:"equipamentos", label:"Equipamentos (ar-condicionados, bombas etc.)"},
     {key:"checklist_turno", label:"Checklist de Turno"},
     {key:"checklist_turno_gestao", label:"Checklist de Turno — gestão (criar/editar turnos e atividades, ver equipe)"},
-    {key:"escala_trabalho", label:"Equipe"}
+    {key:"escala_trabalho", label:"Equipe"},
+    {key:"escala_horarios", label:"Equipe — só Horários", sub:true},
+    {key:"escala_folga", label:"Equipe — só Folga", sub:true},
+    {key:"escala_guarda", label:"Equipe — só Guarda", sub:true},
+    {key:"escala_feriados", label:"Equipe — só Feriados", sub:true},
+    {key:"escala_setor", label:"Equipe — só Setor", sub:true}
   ];
   var adminUsersCache = null; // [{id,nome,email,role,ativo,permissoes:{modulo:{ver,editar}}}]
 
@@ -11112,8 +11244,16 @@
         html += '<table class="admin-perm-table"><tr><th></th><th>Ver</th><th>Editar</th><th>Excluir</th></tr>';
         MODULOS_ADMIN.forEach(function(m){
           var perm = u.permissoes[m.key] || {ver:false, editar:false, excluir:false};
+          if(m.acao){
+            html += '<tr data-modulo="'+m.key+'" data-acao="1">' +
+              '<td style="text-align:left;padding-left:18px;font-size:12.5px;">'+m.label+'</td>' +
+              '<td><input type="checkbox" class="perm-ver" '+(perm.ver?"checked":"")+'></td>' +
+              '<td colspan="2" style="font-size:11px;color:var(--ink-600);">permitir</td>' +
+            '</tr>';
+            return;
+          }
           html += '<tr data-modulo="'+m.key+'">' +
-            '<td>'+m.label+'</td>' +
+            '<td style="text-align:left;'+(m.sub?'padding-left:18px;font-size:12.5px;':'font-weight:700;')+'">'+m.label+'</td>' +
             '<td><input type="checkbox" class="perm-ver" '+(perm.ver?"checked":"")+'></td>' +
             '<td><input type="checkbox" class="perm-editar" '+(perm.editar?"checked":"")+'></td>' +
             '<td><input type="checkbox" class="perm-excluir" '+(perm.excluir?"checked":"")+'></td>' +
@@ -11252,7 +11392,13 @@
         var verBox = row.querySelector(".perm-ver");
         var editarBox = row.querySelector(".perm-editar");
         var excluirBox = row.querySelector(".perm-excluir");
+        var ehAcao = row.getAttribute("data-acao") === "1";
         function salvarPermissao(){
+          if(ehAcao){
+            sb.from("permissoes").upsert({user_id:uid, modulo:modulo, pode_ver:verBox.checked, pode_editar:false, pode_excluir:false}, {onConflict:"user_id,modulo"})
+              .then(function(res){ if(res.error){ console.error(res.error); showToast("Erro ao salvar permissão"); } else { showToast("Permissão atualizada"); } });
+            return;
+          }
           if(editarBox.checked) verBox.checked = true; // editar sem ver não faz sentido
           if(excluirBox.checked) verBox.checked = true; // excluir sem ver também não
           sb.from("permissoes").upsert(
@@ -11264,8 +11410,8 @@
           });
         }
         verBox.addEventListener("change", salvarPermissao);
-        editarBox.addEventListener("change", salvarPermissao);
-        excluirBox.addEventListener("change", salvarPermissao);
+        if(editarBox) editarBox.addEventListener("change", salvarPermissao);
+        if(excluirBox) excluirBox.addEventListener("change", salvarPermissao);
       });
 
       var roleBtn = card.querySelector(".admin-role-btn");
