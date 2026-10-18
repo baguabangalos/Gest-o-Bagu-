@@ -461,6 +461,7 @@
 <main id="escalaView" style="display:none;"></main>
 <main id="scanLimpezaView" style="display:none;"></main>
 <main id="adminView" style="display:none;"></main>
+<main id="personalizarView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
 <main id="recepcaoView" style="display:none;"></main>
@@ -1877,6 +1878,7 @@
     hideLogin();
     document.getElementById("appShell").style.display = "";
     document.getElementById("userBadge").textContent = currentUser.nome + (currentUser.role==="admin" ? " · admin" : "");
+    await carregarAppConfig();
     state = await loadAllFromSupabase();
     // Feriados: confere sozinho quem trabalhou nos feriados que já passaram.
     apurarFeriados(false).catch(function(e){ console.error("apurarFeriados", e); });
@@ -2360,6 +2362,10 @@
         h1.textContent = "Equipe";
         sub.textContent = "Horários, folga e setor";
         alertPill.style.display = "none";
+      } else if(appSection === "personalizar"){
+        h1.textContent = "Personalizar";
+        sub.textContent = "Abas, cards da tela inicial e listas";
+        alertPill.style.display = "none";
       } else if(appSection === "supervisao"){
         h1.textContent = "Supervisão";
         sub.textContent = "Painel geral e histórico";
@@ -2379,25 +2385,121 @@
   function permAbaDefinir(m,v){ if(m==="restaurante") restSub=v; else if(m==="recepcao") recepcaoSubView=v; else if(m==="servico_geral") servicoGeralSubView=v; else if(m==="escala_trabalho") equipeSubView=v; else if(m==="limpeza") limpezaSubView=v; else manutencaoSubView=v; }
   var permAbasBusy = false;
   function aplicarPermAbas(m){
-    if(permAbasBusy || !currentUser || currentUser.role==="admin") return;
+    if(permAbasBusy || !currentUser) return;
     var cfg = PERM_ABAS[m]; var v = document.getElementById(cfg.view); if(!v) return;
     var botoes = v.querySelectorAll("["+cfg.attr+"]"); if(!botoes.length) return;
     permAbasBusy = true;
+    var trocar = false;
     try{
-      var permitidas = Object.keys(cfg.abas).filter(function(a){ return podeVerAba(m,a); });
-      botoes.forEach(function(b){ if(permitidas.indexOf(b.getAttribute(cfg.attr)) === -1) b.remove(); });
-      var atual = permAbaAtual(m);
-      if(permitidas.length && permitidas.indexOf(atual) === -1){
-        permAbaDefinir(m, permitidas[0]);
-        setTimeout(function(){ permAbasBusy=false; PERM_ABAS_RENDER[m](); }, 0);
-        return;
+      var c = ((cfgGet("abas",{}))[m]) || {};
+      var ocultas = c.ocultas || [], nomes = c.nomes || {}, notas = c.notas || {};
+      var ids = Object.keys(cfg.abas);
+      var visiveis = ids.filter(function(a){ return podeVerAba(m,a) && ocultas.indexOf(a) === -1; });
+      var padrao = ABAS_ROTULOS[m] || {};
+      var restantes = [];
+      botoes.forEach(function(b){
+        var id = b.getAttribute(cfg.attr);
+        if(visiveis.indexOf(id) === -1){ b.remove(); return; }
+        restantes.push(b);
+        var novo = nomes[id], base = padrao[id];
+        if(novo && base){
+          for(var i=0;i<b.childNodes.length;i++){
+            var nd = b.childNodes[i];
+            if(nd.nodeType === 3 && nd.nodeValue.trim().indexOf(base) === 0){ nd.nodeValue = nd.nodeValue.replace(base, novo); break; }
+          }
+        }
+      });
+      if(restantes.length){
+        var ordem = c.ordem || ids;
+        restantes.sort(function(x,y){
+          var ix = ordem.indexOf(x.getAttribute(cfg.attr)), iy = ordem.indexOf(y.getAttribute(cfg.attr));
+          return (ix<0?999:ix) - (iy<0?999:iy);
+        });
+        var cont = restantes[0].parentNode;
+        restantes.forEach(function(b){ cont.appendChild(b); });
+        v.querySelectorAll(".aba-nota").forEach(function(n){ n.remove(); });
+        var atual0 = permAbaAtual(m);
+        if(notas[atual0] && visiveis.indexOf(atual0) > -1){
+          var nota = document.createElement("p");
+          nota.className = "aba-nota item-meta";
+          nota.style.cssText = "margin:0 0 12px;font-size:13.5px;";
+          nota.textContent = notas[atual0];
+          cont.parentNode.insertBefore(nota, cont.nextSibling);
+        }
       }
-    } finally { if(permAbasBusy) setTimeout(function(){ permAbasBusy=false; }, 0); }
+      var atual = permAbaAtual(m);
+      if(visiveis.length && visiveis.indexOf(atual) === -1){ permAbaDefinir(m, visiveis[0]); trocar = true; }
+    } finally {
+      setTimeout(function(){ permAbasBusy = false; if(trocar) PERM_ABAS_RENDER[m](); }, 0);
+    }
   }
   Object.keys(PERM_ABAS).forEach(function(m){
     var el = document.getElementById(PERM_ABAS[m].view);
     if(el && window.MutationObserver) new MutationObserver(function(){ aplicarPermAbas(m); }).observe(el, {childList:true});
   });
+
+  // ---------- Personalização feita pelo administrador (tabela app_config) ----------
+  var ABAS_ROTULOS = {
+    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio"},
+    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", qr:"QR Code"},
+    servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
+    escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
+    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias"},
+    manutencao:{pendentes:"Pendentes", concluidas:"Concluídas"}
+  };
+  var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
+  var HOME_PADRAO = [
+    ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
+    ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],["equipamentos","Equipamentos"],
+    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
+  ];
+  var HOME_FIXOS = ["admin","personalizar","configuracoes"];
+  var appConfig = {};
+  var LISTAS_PADRAO = null;
+  function cfgGet(k, def){ var v = appConfig[k]; return (v && typeof v === "object") ? v : def; }
+  async function carregarAppConfig(){
+    try{
+      var r = await sb.from("app_config").select("*");
+      if(r.error) throw r.error;
+      appConfig = {};
+      (r.data||[]).forEach(function(x){ appConfig[x.chave] = x.valor; });
+    }catch(e){ console.warn("app_config indisponível (migração v23 rodou?)", e); appConfig = {}; }
+    aplicarListasConfig();
+  }
+  async function cfgSalvar(k, v){
+    appConfig[k] = v;
+    aplicarListasConfig();
+    var r = await sb.from("app_config").upsert({chave:k, valor:v, atualizado_em:new Date().toISOString(), atualizado_por_nome:(currentUser&&currentUser.nome)||null}, {onConflict:"chave"});
+    if(r.error){ console.error(r.error); showToast("Não salvou — rode a migração v23 no Supabase"); return false; }
+    showToast("Salvo");
+    return true;
+  }
+  function aplicarListasConfig(){
+    if(!LISTAS_PADRAO) LISTAS_PADRAO = {destinos:DESTINOS_FIXOS.slice(), motivos:REST_MOTIVOS.slice(), pagamentos:REST_PAGAMENTOS.map(function(x){return x.slice();}), mesas:REST_MESAS.map(function(x){return x.slice();})};
+    var l = cfgGet("listas", {});
+    var d = (l.destinos && l.destinos.length) ? l.destinos.slice() : LISTAS_PADRAO.destinos.slice();
+    if(d.indexOf("Recepção") === -1) d.unshift("Recepção");
+    DESTINOS_FIXOS = d;
+    REST_MOTIVOS = (l.motivos && l.motivos.length) ? l.motivos.slice() : LISTAS_PADRAO.motivos.slice();
+    REST_PAGAMENTOS = (l.pagamentos && l.pagamentos.length) ? l.pagamentos.map(function(x){return x.slice();}) : LISTAS_PADRAO.pagamentos.map(function(x){return x.slice();});
+    REST_MESAS = (l.mesas && l.mesas.length) ? l.mesas.map(function(x){return x.slice();}) : LISTAS_PADRAO.mesas.map(function(x){return x.slice();});
+  }
+  function aplicarConfigHome(cards){
+    var h = cfgGet("home", {});
+    var ocultos = h.ocultos || [], ordem = h.ordem || [], nomes = h.nomes || {}, subs = h.subs || {};
+    var out = cards.filter(function(c){ return HOME_FIXOS.indexOf(c.section) > -1 || ocultos.indexOf(c.section) === -1; });
+    out.forEach(function(c){
+      if(nomes[c.section]) c.titulo = nomes[c.section];
+      if(subs[c.section]){ c.sub = subs[c.section]; c.subVermelho = false; }
+    });
+    var idx = {}; out.forEach(function(c,i){ idx[c.section] = i; });
+    out.sort(function(a,b){
+      var ia = ordem.indexOf(a.section), ib = ordem.indexOf(b.section);
+      var ka = ia < 0 ? 1000 + idx[a.section] : ia, kb = ib < 0 ? 1000 + idx[b.section] : ib;
+      return ka - kb;
+    });
+    return out;
+  }
 
   function moduloDaSecao(sec){
     if(sec==="estoque") return "estoque";
@@ -2410,15 +2512,15 @@
     if(sec==="equipamentos") return "equipamentos";
     if(sec==="checklistturno") return "checklist_turno";
     if(sec==="escala") return "escala_trabalho";
-    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes") return null;
+    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar") return null;
     return "procedimentos";
   }
 
   function renderApp(){
     if(scanAcomodacaoId){ renderScanLimpeza(); return; }
-    if(appSection === "admin" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
+    if((appSection === "admin" || appSection === "personalizar") && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
     else if(appSection === "supervisao" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
-    else if(appSection !== "home" && appSection !== "admin" && appSection !== "supervisao" && appSection !== "configuracoes" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
+    else if(appSection !== "home" && appSection !== "admin" && appSection !== "personalizar" && appSection !== "supervisao" && appSection !== "configuracoes" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
     renderHeader();
     document.getElementById("homeView").style.display = appSection==="home" ? "block":"none";
     document.getElementById("itemsView").style.display = (appSection==="estoque" && activeView==="items") ? "block":"none";
@@ -2427,6 +2529,7 @@
     document.getElementById("procedimentosView").style.display = appSection==="procedimentos" ? "block":"none";
     document.getElementById("manutencoesView").style.display = appSection==="manutencoes" ? "block":"none";
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
+    document.getElementById("personalizarView").style.display = appSection==="personalizar" ? "block":"none";
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
     document.getElementById("recepcaoView").style.display = appSection==="recepcao" ? "block":"none";
@@ -2477,6 +2580,7 @@
     if(appSection === "checklistturno") renderChecklistTurno();
     if(appSection === "escala") renderEquipe();
     if(appSection === "admin") renderAdmin();
+    if(appSection === "personalizar") renderPersonalizar();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
     if(appSection === "recepcao") renderRecepcao();
@@ -2551,7 +2655,9 @@
     }
     if(currentUser && currentUser.role === "admin") cards.push({section:"supervisao", titulo:"Supervisão", icon:ic("search"), sub:"painel geral e histórico"});
     if(currentUser && currentUser.role === "admin") cards.push({section:"admin", titulo:"Administração", icon:ic("key"), sub:"gerenciar quem acessa o quê"});
+    if(currentUser && currentUser.role === "admin") cards.push({section:"personalizar", titulo:"Personalizar", icon:ic("pencil"), sub:"abas, cards e listas do app"});
     cards.push({section:"configuracoes", titulo:"Configurações", icon:ic("logout"), sub:"minha conta e sair"});
+    cards = aplicarConfigHome(cards);
 
     var q = normalizarBusca(homeSearchQuery.trim());
     var cardsFiltrados = q ? cards.filter(function(c){ return normalizarBusca(c.titulo).indexOf(q) > -1 || normalizarBusca(c.sub).indexOf(q) > -1; }) : cards;
@@ -7549,7 +7655,7 @@
     window.history.replaceState({}, "", url.toString());
   }
 
-  var SCAN_VIEW_IDS = ["homeView","itemsView","countView","abastecimentoView","procedimentosView","manutencoesView","equipamentosView","checklistTurnoView","escalaView","adminView","hospedesView","limpezaView","recepcaoView","servicoGeralView","supervisaoView","configuracoesView"];
+  var SCAN_VIEW_IDS = ["homeView","itemsView","countView","abastecimentoView","procedimentosView","manutencoesView","equipamentosView","checklistTurnoView","escalaView","adminView","personalizarView","hospedesView","limpezaView","recepcaoView","servicoGeralView","supervisaoView","configuracoesView"];
 
   function renderScanLimpeza(){
     document.getElementById("homeBackBtn").style.display = "none";
@@ -11161,6 +11267,151 @@
     html += '</div></div>';
     html += '<button type="button" id="imprimirQrsBtn" style="display:block;width:100%;margin-top:10px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("printer")+' Imprimir todos os QR Codes</button>';
     return html;
+  }
+
+  // ---------- Tela "Personalizar" (só administrador) ----------
+  function persMover(arr, id, dir){
+    var i = arr.indexOf(id), j = i + dir;
+    if(i < 0 || j < 0 || j >= arr.length) return arr;
+    var t = arr[i]; arr[i] = arr[j]; arr[j] = t; return arr;
+  }
+  function persCompletarOrdem(ordem, ids){
+    var o = (ordem||[]).filter(function(x){ return ids.indexOf(x) > -1; });
+    ids.forEach(function(x){ if(o.indexOf(x) === -1) o.push(x); });
+    return o;
+  }
+  var PERS_INPUT = "width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;box-sizing:border-box;background:#fff;";
+  var PERS_LISTAS = [
+    {k:"destinos", titulo:"Destinos de saída do estoque", ajuda:"“Recepção” é fixa. Os nomes das acomodações entram sozinhos.", par:false},
+    {k:"motivos", titulo:"Motivos da mesa 240 (cortesia)", ajuda:"Botões de motivo ao lançar na mesa da pousada.", par:false},
+    {k:"pagamentos", titulo:"Formas de pagamento do restaurante", ajuda:"Esquerda: código curto (sem acento, ex.: voucher). Direita: nome na tela.", par:true},
+    {k:"mesas", titulo:"Mesas do restaurante", ajuda:"Esquerda: número. Direita: nome. A 240 é a mesa da pousada — não apague.", par:true}
+  ];
+  function persListaAtual(k){
+    var l = cfgGet("listas", {});
+    if(l[k] && l[k].length) return l[k];
+    if(k==="destinos") return LISTAS_PADRAO.destinos.slice();
+    if(k==="motivos") return LISTAS_PADRAO.motivos.slice();
+    if(k==="pagamentos") return LISTAS_PADRAO.pagamentos.map(function(x){return x.slice();});
+    return LISTAS_PADRAO.mesas.map(function(x){return x.slice();});
+  }
+  function persBtn(acao, attrs, txt){ return '<button type="button" class="btn btn-out" data-pa="'+acao+'" '+attrs+' style="min-width:36px;padding:6px 9px;">'+txt+'</button>'; }
+  function renderPersonalizar(){
+    var main = document.getElementById("personalizarView");
+    if(!LISTAS_PADRAO) aplicarListasConfig();
+    var h = cfgGet("home", {});
+    var html = '<p class="item-meta" style="margin:0 0 12px;">Mudanças valem para todo mundo e são salvas na hora. “Restaurar” volta ao jeito original.</p>';
+
+    // 1) Cards da tela inicial
+    var ids = HOME_PADRAO.map(function(x){ return x[0]; });
+    var ordemH = persCompletarOrdem(h.ordem, ids);
+    html += '<div class="section-title">Tela inicial — cards</div><div class="card">';
+    ordemH.forEach(function(id){
+      var pad = HOME_PADRAO.filter(function(x){ return x[0]===id; })[0][1];
+      var fixo = HOME_FIXOS.indexOf(id) > -1;
+      var oculto = (h.ocultos||[]).indexOf(id) > -1;
+      html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;'+(oculto?'opacity:.55;':'')+'">' +
+        persBtn("homeMov",'data-id="'+id+'" data-d="-1"',"▲") + persBtn("homeMov",'data-id="'+id+'" data-d="1"',"▼") +
+        '<input type="text" class="persHomeNome" data-id="'+id+'" placeholder="'+escapeHtml(pad)+'" value="'+escapeHtml((h.nomes||{})[id]||"")+'" style="'+PERS_INPUT+'flex:1;min-width:120px;width:auto;">' +
+        '<input type="text" class="persHomeSub" data-id="'+id+'" placeholder="texto de baixo (vazio = automático)" value="'+escapeHtml((h.subs||{})[id]||"")+'" style="'+PERS_INPUT+'flex:2;min-width:160px;width:auto;">' +
+        (fixo ? '<span class="item-meta" style="min-width:64px;text-align:center;">sempre visível</span>' : persBtn("homeOcultar",'data-id="'+id+'"', oculto?"Mostrar":"Ocultar")) +
+      '</div>';
+    });
+    html += '<button type="button" class="btn btn-out" data-pa="homeReset" style="margin-top:6px;">Restaurar cards ao padrão</button></div>';
+
+    // 2) Abas por módulo
+    var abasCfg = cfgGet("abas", {});
+    Object.keys(PERM_ABAS).forEach(function(m){
+      var c = abasCfg[m] || {};
+      var idsA = Object.keys(PERM_ABAS[m].abas);
+      var ordemA = persCompletarOrdem(c.ordem, idsA);
+      html += '<div class="section-title">Abas — '+escapeHtml(ABAS_MODULO_NOME[m])+'</div><div class="card">';
+      ordemA.forEach(function(a){
+        var oculta = (c.ocultas||[]).indexOf(a) > -1;
+        html += '<div style="margin-bottom:10px;'+(oculta?'opacity:.55;':'')+'"><div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;">' +
+          persBtn("abaMov",'data-m="'+m+'" data-id="'+a+'" data-d="-1"',"▲") + persBtn("abaMov",'data-m="'+m+'" data-id="'+a+'" data-d="1"',"▼") +
+          '<input type="text" class="persAbaNome" data-m="'+m+'" data-id="'+a+'" placeholder="'+escapeHtml(ABAS_ROTULOS[m][a])+'" value="'+escapeHtml((c.nomes||{})[a]||"")+'" style="'+PERS_INPUT+'flex:1;width:auto;">' +
+          persBtn("abaOcultar",'data-m="'+m+'" data-id="'+a+'"', oculta?"Mostrar":"Ocultar") + '</div>' +
+          '<input type="text" class="persAbaNota" data-m="'+m+'" data-id="'+a+'" placeholder="Subtítulo / aviso que aparece embaixo das abas (opcional)" value="'+escapeHtml((c.notas||{})[a]||"")+'" style="'+PERS_INPUT+'"></div>';
+      });
+      html += '<button type="button" class="btn btn-out" data-pa="abaReset" data-m="'+m+'">Restaurar abas ao padrão</button></div>';
+    });
+
+    // 3) Listas
+    PERS_LISTAS.forEach(function(L){
+      var lista = persListaAtual(L.k);
+      html += '<div class="section-title">'+escapeHtml(L.titulo)+'</div><div class="card"><p class="item-meta" style="margin:0 0 8px;">'+escapeHtml(L.ajuda)+'</p>';
+      lista.forEach(function(it, i){
+        html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">' +
+          persBtn("listaMov",'data-k="'+L.k+'" data-i="'+i+'" data-d="-1"',"▲") + persBtn("listaMov",'data-k="'+L.k+'" data-i="'+i+'" data-d="1"',"▼") +
+          (L.par ? '<input type="text" class="persListaA" data-k="'+L.k+'" data-i="'+i+'" value="'+escapeHtml(it[0])+'" style="'+PERS_INPUT+'width:90px;flex:none;">' +
+                   '<input type="text" class="persListaB" data-k="'+L.k+'" data-i="'+i+'" value="'+escapeHtml(it[1])+'" style="'+PERS_INPUT+'flex:1;width:auto;">'
+                 : '<input type="text" class="persListaA" data-k="'+L.k+'" data-i="'+i+'" value="'+escapeHtml(it)+'" style="'+PERS_INPUT+'flex:1;width:auto;"'+(L.k==="destinos" && it==="Recepção" ? ' disabled':'')+'>') +
+          ((L.k==="destinos" && it==="Recepção") ? '' : persBtn("listaDel",'data-k="'+L.k+'" data-i="'+i+'"',"✕")) +
+        '</div>';
+      });
+      html += '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' +
+        '<button type="button" class="btn btn-in" data-pa="listaAdd" data-k="'+L.k+'">+ Adicionar</button>' +
+        '<button type="button" class="btn btn-out" data-pa="listaReset" data-k="'+L.k+'">Restaurar padrão</button></div></div>';
+    });
+    main.innerHTML = html;
+    ligarPersonalizar(main);
+  }
+  function ligarPersonalizar(main){
+    function salvarHome(h){ cfgSalvar("home", h).then(function(){ renderPersonalizar(); }); }
+    function salvarAbas(m, c){ var all = JSON.parse(JSON.stringify(cfgGet("abas",{}))); all[m] = c; cfgSalvar("abas", all).then(function(){ renderPersonalizar(); }); }
+    function salvarLista(k, arr){ var l = JSON.parse(JSON.stringify(cfgGet("listas",{}))); l[k] = arr; cfgSalvar("listas", l).then(function(){ renderPersonalizar(); }); }
+    function homeAtual(){ return JSON.parse(JSON.stringify(cfgGet("home",{}))); }
+    function abaAtualCfg(m){ return JSON.parse(JSON.stringify((cfgGet("abas",{}))[m] || {})); }
+    main.querySelectorAll("[data-pa]").forEach(function(b){
+      b.onclick = function(){
+        var a = b.getAttribute("data-pa"), id = b.getAttribute("data-id"), m = b.getAttribute("data-m"), k = b.getAttribute("data-k");
+        var d = Number(b.getAttribute("data-d")||0), i = Number(b.getAttribute("data-i")||0);
+        if(a==="homeMov"){ var h = homeAtual(); h.ordem = persMover(persCompletarOrdem(h.ordem, HOME_PADRAO.map(function(x){return x[0];})), id, d); salvarHome(h); }
+        else if(a==="homeOcultar"){ var h2 = homeAtual(); h2.ocultos = h2.ocultos||[]; var p = h2.ocultos.indexOf(id); if(p>-1) h2.ocultos.splice(p,1); else h2.ocultos.push(id); salvarHome(h2); }
+        else if(a==="homeReset"){ salvarHome({}); }
+        else if(a==="abaMov"){ var c = abaAtualCfg(m); c.ordem = persMover(persCompletarOrdem(c.ordem, Object.keys(PERM_ABAS[m].abas)), id, d); salvarAbas(m, c); }
+        else if(a==="abaOcultar"){
+          var c2 = abaAtualCfg(m); c2.ocultas = c2.ocultas||[]; var q = c2.ocultas.indexOf(id);
+          if(q>-1) c2.ocultas.splice(q,1);
+          else { if(c2.ocultas.length >= Object.keys(PERM_ABAS[m].abas).length-1){ showToast("Deixe pelo menos uma aba visível"); return; } c2.ocultas.push(id); }
+          salvarAbas(m, c2);
+        }
+        else if(a==="abaReset"){ salvarAbas(m, {}); }
+        else if(a==="listaMov"){ var arr = persListaAtual(k).slice(); var j = i+d; if(j<0||j>=arr.length) return; var t = arr[i]; arr[i]=arr[j]; arr[j]=t; salvarLista(k, arr); }
+        else if(a==="listaDel"){ var arr2 = persListaAtual(k).slice(); arr2.splice(i,1); if(!arr2.length){ showToast("A lista não pode ficar vazia"); return; } salvarLista(k, arr2); }
+        else if(a==="listaAdd"){
+          var L = PERS_LISTAS.filter(function(x){ return x.k===k; })[0];
+          var arr3 = persListaAtual(k).slice();
+          if(L.par){ var n = prompt(k==="mesas" ? "Número da mesa:" : "Código curto (sem acento):"); if(!n) return; var nm = prompt("Nome que aparece na tela:"); if(!nm) return; arr3.push([n.trim(), nm.trim()]); }
+          else { var tx = prompt("Novo item:"); if(!tx || !tx.trim()) return; arr3.push(tx.trim()); }
+          salvarLista(k, arr3);
+        }
+        else if(a==="listaReset"){ var l = JSON.parse(JSON.stringify(cfgGet("listas",{}))); delete l[k]; cfgSalvar("listas", l).then(function(){ renderPersonalizar(); }); }
+      };
+    });
+    main.querySelectorAll(".persHomeNome, .persHomeSub").forEach(function(inp){
+      inp.onchange = function(){
+        var h = homeAtual(), id = inp.getAttribute("data-id"), campo = inp.classList.contains("persHomeNome") ? "nomes" : "subs";
+        h[campo] = h[campo]||{}; if(inp.value.trim()) h[campo][id] = inp.value.trim(); else delete h[campo][id];
+        cfgSalvar("home", h);
+      };
+    });
+    main.querySelectorAll(".persAbaNome, .persAbaNota").forEach(function(inp){
+      inp.onchange = function(){
+        var m = inp.getAttribute("data-m"), id = inp.getAttribute("data-id"), campo = inp.classList.contains("persAbaNome") ? "nomes" : "notas";
+        var c = abaAtualCfg(m); c[campo] = c[campo]||{}; if(inp.value.trim()) c[campo][id] = inp.value.trim(); else delete c[campo][id];
+        var all = JSON.parse(JSON.stringify(cfgGet("abas",{}))); all[m] = c; cfgSalvar("abas", all);
+      };
+    });
+    main.querySelectorAll(".persListaA, .persListaB").forEach(function(inp){
+      inp.onchange = function(){
+        var k = inp.getAttribute("data-k"), i = Number(inp.getAttribute("data-i")), arr = persListaAtual(k).map(function(x){ return Array.isArray(x) ? x.slice() : x; });
+        var v = inp.value.trim(); if(!v){ renderPersonalizar(); return; }
+        if(Array.isArray(arr[i])) arr[i][inp.classList.contains("persListaB") ? 1 : 0] = v; else arr[i] = v;
+        var l = JSON.parse(JSON.stringify(cfgGet("listas",{}))); l[k] = arr; cfgSalvar("listas", l);
+      };
+    });
   }
 
   async function renderAdmin(){
