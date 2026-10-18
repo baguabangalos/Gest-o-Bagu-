@@ -517,6 +517,8 @@
       <input type="number" id="f_qty" step="0.01" required>
       <label>Quantidade mínima (alerta)</label>
       <input type="number" id="f_min" step="0.01" required>
+      <label>Valor cobrado ao hóspede (R$) — opcional</label>
+      <input type="number" id="f_precoVenda" step="0.01" min="0" placeholder="Ex: 12,00 (frigobar, lojinha…)">
       <label class="checkbox-row"><input type="checkbox" id="f_trackUsage"><span>Controlar em uso / guardado (ex: enxoval)</span></label>
       <div id="f_emUsoWrap" style="display:none;">
         <label>Quantidade em uso</label>
@@ -1060,7 +1062,7 @@
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
       qtyUsado:Number(r.qty_usado||0),
-      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras, links:(Array.isArray(r.links_compra)?r.links_compra:[]),
+      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras, links:(Array.isArray(r.links_compra)?r.links_compra:[]), precoVenda:(r.preco_venda!=null?Number(r.preco_venda):null),
       criadoPor:r.criado_por, editadoPor:r.editado_por, editadoEm:(r.editado_em?new Date(r.editado_em).getTime():null), aud:audDe(r)};
   }
   function mapMovementFromRow(r){
@@ -2884,7 +2886,7 @@
         metaText = "guardado (mín. "+fmtQty(it.min)+") · em uso: "+fmtQty(it.qtyEmUso)+" "+escapeHtml(it.unit);
         if(it.category === "Uniformes") metaText += " · usado (no estoque): "+fmtQty(it.qtyUsado)+" "+escapeHtml(it.unit);
       } else {
-        metaText = "mínimo: "+fmtQty(it.min)+" "+escapeHtml(it.unit);
+        metaText = "mínimo: "+fmtQty(it.min)+" "+escapeHtml(it.unit)+(it.precoVenda!=null ? " · valor "+restMoney(it.precoVenda) : "");
       }
       if(supplier) metaText += " · "+escapeHtml(supplier.name);
       if(it.numeroSerie) metaText += " · nº série "+escapeHtml(it.numeroSerie);
@@ -3900,6 +3902,7 @@
     document.getElementById("f_unit").value = item ? item.unit : "";
     document.getElementById("f_qty").value = item ? item.qty : "";
     document.getElementById("f_min").value = item ? item.min : "";
+    document.getElementById("f_precoVenda").value = (item && item.precoVenda!=null) ? item.precoVenda : "";
     var trackUsage = item ? !!item.trackUsage : (activeCategory === "Enxoval");
     document.getElementById("f_trackUsage").checked = trackUsage;
     document.getElementById("f_qtyEmUso").value = item ? (item.qtyEmUso||0) : 0;
@@ -3969,7 +3972,7 @@
     try{
       var photoParaSalvar = await uploadAnexoParaStorage(pendingPhoto, "items");
       var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:photoParaSalvar,
-        supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null, links_compra:lerLinksDoForm()};
+        supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null, links_compra:lerLinksDoForm(), preco_venda:(document.getElementById("f_precoVenda").value!=="" ? parseFloat(document.getElementById("f_precoVenda").value) : null)};
       if(editingItemId){
         payload.editado_por = currentUser ? currentUser.id : null;
         payload.editado_em = new Date().toISOString();
@@ -7839,6 +7842,20 @@
   // Itens de frigobar marcados "faltando" durante a estadia que está terminando
   // hoje nessa acomodação — usado pra avisar na hora do checkout.
   // Texto "Água (2), Coca (1)" a partir de uma lista de {nome, quantidade}.
+  // Valor de cada item pedido (usa o "Valor cobrado ao hóspede" cadastrado no estoque).
+  function valorItensFrigobar(itens){
+    var out = {linhas:[], total:0, semValor:0};
+    (itens||[]).forEach(function(it){
+      var q = Number(it.quantidade) || 1;
+      var nomeN = normalizarBusca(it.nome||"");
+      var cad = (state.estoque.items||[]).find(function(x){ return normalizarBusca(x.name) === nomeN; });
+      if(cad && cad.precoVenda != null){
+        out.linhas.push(escapeHtml(it.nome)+" "+q+"× "+restMoney(cad.precoVenda)+" = "+restMoney(cad.precoVenda*q));
+        out.total += cad.precoVenda*q;
+      } else out.semValor++;
+    });
+    return out;
+  }
   function itensListaTexto(itens){
     return (itens||[]).map(function(it){ return escapeHtml(it.nome)+(it.quantidade?" ("+it.quantidade+")":""); }).join(", ");
   }
@@ -7991,6 +8008,19 @@
     if(s.itens && s.itens.length){
       var itensTxt = itensListaTexto(s.itens);
       html += '<p class="item-meta" style="margin-bottom:4px;">'+(frigobarConcluido ? '<b>Retirado:</b> ' : '')+itensTxt+'</p>';
+      if(s.tipo === "frigobar"){
+        var vf = valorItensFrigobar(s.itens);
+        if(vf.linhas.length){
+          html += '<p class="item-meta" style="margin-bottom:4px;">'+vf.linhas.join(" · ")+'</p>' +
+            '<p class="item-meta" style="margin-bottom:4px;font-weight:800;color:var(--ink-900);">Total a lançar: '+restMoney(vf.total)+(vf.semValor?' <span style="font-weight:600;color:var(--amber-600);">(+ '+vf.semValor+' item(ns) sem valor cadastrado)</span>':'')+'</p>';
+        } else if(vf.semValor){
+          html += '<p class="item-meta" style="margin-bottom:4px;color:var(--amber-600);">Sem valor cadastrado nos itens (defina em Estoque › Frigobar).</p>';
+        }
+      }
+    }
+    if(s.tipo === "lenha"){
+      var vl = (cfgGet("valores",{})).lenha;
+      if(vl!=null && vl!=="") html += '<p class="item-meta" style="margin-bottom:4px;font-weight:800;color:var(--ink-900);">Carga de lenha: '+restMoney(Number(vl))+' a lançar</p>';
     }
     if(frigobarConcluido && s.itensFaltando && s.itensFaltando.length){
       html += '<p class="item-meta" style="color:var(--red-600);font-weight:700;margin-bottom:4px;">'+ic("warning")+' Em falta: '+itensListaTexto(s.itensFaltando)+'</p>';
@@ -11339,6 +11369,11 @@
     var h = cfgGet("home", {});
     var html = '<p class="item-meta" style="margin:0 0 12px;">Mudanças valem para todo mundo e são salvas na hora. “Restaurar” volta ao jeito original.</p>';
 
+    // 0) Valores
+    var val = cfgGet("valores", {});
+    html += '<div class="section-title">Valores</div><div class="card"><label style="display:block;font-size:13.5px;">Carga de lenha (R$)<br><input type="number" step="0.01" min="0" id="persValLenha" value="'+escapeHtml(val.lenha!=null?val.lenha:"")+'" placeholder="Ex: 45,00" style="'+PERS_INPUT+'"></label>' +
+      '<p class="item-meta" style="margin:6px 0 0;">O valor de cada produto do frigobar fica em Estoque › Frigobar (campo “Valor cobrado ao hóspede”).</p></div>';
+
     // 1) Cards da tela inicial
     var ids = HOME_PADRAO.map(function(x){ return x[0]; });
     var ordemH = persCompletarOrdem(h.ordem, ids);
@@ -11427,6 +11462,8 @@
         else if(a==="listaReset"){ var l = JSON.parse(JSON.stringify(cfgGet("listas",{}))); delete l[k]; cfgSalvar("listas", l).then(function(){ renderPersonalizar(); }); }
       };
     });
+    var vl = document.getElementById("persValLenha");
+    if(vl) vl.onchange = function(){ var v = JSON.parse(JSON.stringify(cfgGet("valores",{}))); if(vl.value==="") delete v.lenha; else v.lenha = parseFloat(vl.value); cfgSalvar("valores", v); };
     main.querySelectorAll(".persHomeNome, .persHomeSub").forEach(function(inp){
       inp.onchange = function(){
         var h = homeAtual(), id = inp.getAttribute("data-id"), campo = inp.classList.contains("persHomeNome") ? "nomes" : "subs";
