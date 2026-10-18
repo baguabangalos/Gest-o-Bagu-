@@ -2383,6 +2383,42 @@
   var PERM_ABAS_RENDER = {restaurante:function(){ renderRestaurante(); }, recepcao:function(){ renderRecepcao(); }, servico_geral:function(){ renderServicoGeral(); }, escala_trabalho:function(){ renderEquipe(); }, limpeza:function(){ renderLimpeza(); }, manutencao:function(){ renderManutencoes(); }};
   function permAbaAtual(m){ return m==="restaurante"?restSub : m==="recepcao"?recepcaoSubView : m==="servico_geral"?servicoGeralSubView : m==="escala_trabalho"?equipeSubView : m==="limpeza"?limpezaSubView : manutencaoSubView; }
   function permAbaDefinir(m,v){ if(m==="restaurante") restSub=v; else if(m==="recepcao") recepcaoSubView=v; else if(m==="servico_geral") servicoGeralSubView=v; else if(m==="escala_trabalho") equipeSubView=v; else if(m==="limpeza") limpezaSubView=v; else manutencaoSubView=v; }
+  // Campo de pesquisa em todas as abas (filtra os cartões da aba atual). Não duplica onde já existe busca própria.
+  var buscaAbaTexto = {};
+  function injetarBuscaAba(m, v, cont, aba){
+    v.querySelectorAll(".aba-busca").forEach(function(n){ n.remove(); });
+    if(v.querySelector('input[type="text"], input[type="search"]')) return;
+    var chave = m + ":" + aba;
+    var wrap = document.createElement("div");
+    wrap.className = "aba-busca";
+    wrap.style.cssText = "margin:0 0 12px;";
+    wrap.innerHTML = '<input type="search" placeholder="Pesquisar nesta aba…" value="'+escapeHtml(buscaAbaTexto[chave]||"")+'" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;box-sizing:border-box;background:#fff;">';
+    var ref = cont;
+    while(ref.nextSibling && ref.nextSibling.classList && ref.nextSibling.classList.contains("aba-nota")) ref = ref.nextSibling;
+    ref.parentNode.insertBefore(wrap, ref.nextSibling);
+    var inp = wrap.firstChild;
+    function filtrar(){
+      var q = normalizarBusca((inp.value||"").trim());
+      buscaAbaTexto[chave] = inp.value||"";
+      var cards = Array.prototype.filter.call(v.querySelectorAll(".card"), function(c){
+        return !c.querySelector(".card") && !c.contains(cont) && (wrap.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      var achou = 0;
+      cards.forEach(function(c){
+        var ok = !q || normalizarBusca(c.textContent).indexOf(q) > -1;
+        c.style.display = ok ? "" : "none";
+        if(ok) achou++;
+      });
+      var vazio = wrap.querySelector(".aba-busca-vazio");
+      if(vazio) vazio.remove();
+      if(q && cards.length && !achou){
+        var p = document.createElement("div"); p.className = "empty aba-busca-vazio"; p.textContent = "Nada encontrado para “"+inp.value.trim()+"”.";
+        wrap.appendChild(p);
+      }
+    }
+    inp.addEventListener("input", filtrar);
+    if(inp.value) filtrar();
+  }
   var permAbasBusy = false;
   function aplicarPermAbas(m){
     if(permAbasBusy || !currentUser) return;
@@ -2429,6 +2465,7 @@
       }
       var atual = permAbaAtual(m);
       if(visiveis.length && visiveis.indexOf(atual) === -1){ permAbaDefinir(m, visiveis[0]); trocar = true; }
+      else if(restantes.length) injetarBuscaAba(m, v, restantes[0].parentNode, atual);
     } finally {
       setTimeout(function(){ permAbasBusy = false; if(trocar) PERM_ABAS_RENDER[m](); }, 0);
     }
