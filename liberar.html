@@ -204,6 +204,10 @@
     continuarGestao: {pt:"Continuar para a gestão", en:"Continue to management", es:"Continuar a gerencia", fr:"Continuer vers la direction"},
     abrirWhatsapp: {pt:"Abrir WhatsApp", en:"Open WhatsApp", es:"Abrir WhatsApp", fr:"Ouvrir WhatsApp"},
     escolhaQtd: {pt:"Escolha a quantidade de cada item que você gostaria de repor:", en:"Choose the quantity of each item you'd like restocked:", es:"Elija la cantidad de cada artículo que desea reponer:", fr:"Choisissez la quantité de chaque article à réapprovisionner :"},
+    valorNaConta: {pt:"Os valores são lançados na conta da acomodação.", en:"Prices are charged to your room account.", es:"Los valores se cargan en la cuenta de la habitación.", fr:"Les montants sont ajoutés à la note de l'hébergement."},
+    totalEstimado: {pt:"Total", en:"Total", es:"Total", fr:"Total"},
+    confirmarLenha: {pt:"Confirmar pedido de lenha", en:"Confirm firewood request", es:"Confirmar pedido de leña", fr:"Confirmer la demande de bois"},
+    cargaLenha: {pt:"Carga de lenha", en:"Firewood load", es:"Carga de leña", fr:"Charge de bois"},
     enviarPedido: {pt:"Enviar pedido", en:"Send request", es:"Enviar pedido", fr:"Envoyer la demande"},
     voltar: {pt:"‹ Voltar", en:"‹ Back", es:"‹ Volver", fr:"‹ Retour"},
     conteReparo: {pt:"Conte rapidamente o que precisa de reparo:", en:"Briefly describe what needs repair:", es:"Cuéntenos brevemente qué necesita reparación:", fr:"Décrivez brièvement ce qui doit être réparé :"},
@@ -252,6 +256,21 @@
     var entry = T[key];
     if(!entry) return key;
     return entry[lang] || entry.pt;
+  }
+  // Preços (lista pública só de leitura). Se a lista ainda não existir, a página funciona sem valores.
+  var PRECOS = {}, PRECO_LENHA = null;
+  function normItem(s){ return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
+  function moeda(v){ return Number(v).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+  function precoDe(nomeItem){ var v = PRECOS[normItem(nomeItem)]; return (v!=null) ? v : null; }
+  async function carregarPrecos(){
+    try{
+      var r = await sb.from("precos_publicos").select("*");
+      if(r.error || !r.data) return;
+      r.data.forEach(function(x){
+        if(x.tipo === "lenha"){ if(x.preco!=null) PRECO_LENHA = Number(x.preco); }
+        else if(x.preco!=null) PRECOS[normItem(x.nome)] = Number(x.preco);
+      });
+    }catch(e){ /* sem preços: segue normal */ }
   }
   function tItem(nomeItemPt){
     var mapa = IDIOMAS[lang] && IDIOMAS[lang].itens;
@@ -399,6 +418,7 @@
         var tipo = b.getAttribute("data-tipo");
         if(tipo === "reparo") renderReparoForm();
         else if(tipo === "limpeza") renderLimpezaForm();
+        else if(tipo === "lenha" && PRECO_LENHA != null) renderLenhaConfirm();
         else enviarSolicitacao(tipo);
       };
     });
@@ -417,11 +437,23 @@
       '</div>';
   }
 
+  function renderLenhaConfirm(){
+    content.innerHTML =
+      '<div class="card">' +
+        '<p style="margin:0 0 6px;font-size:16px;font-weight:800;">🪵 '+t("cargaLenha")+': '+moeda(PRECO_LENHA)+'</p>' +
+        '<p style="margin:0 0 14px;font-size:13px;color:var(--ink-600);">'+t("valorNaConta")+'</p>' +
+        '<button class="btn-primary" id="lnOk">'+t("confirmarLenha")+'</button>' +
+        '<button class="btn-ghost" id="lnVoltar">'+t("voltar")+'</button>' +
+      '</div>';
+    document.getElementById("lnVoltar").onclick = renderMenu;
+    document.getElementById("lnOk").onclick = function(){ enviarSolicitacao("lenha"); };
+  }
+
   function renderFrigobarForm(){
     var qtys = acomodacao.itens.map(function(){ return 0; });
     var itemsHtml = acomodacao.itens.map(function(nomeItem, i){
       return '<div class="qty-row" data-idx="'+i+'">' +
-        '<span class="qty-name">'+escapeHtml(tItem(nomeItem))+'</span>' +
+        '<span class="qty-name">'+escapeHtml(tItem(nomeItem))+(precoDe(nomeItem)!=null ? ' <span style="color:var(--ink-600);font-weight:600;white-space:nowrap;">· '+moeda(precoDe(nomeItem))+'</span>' : '')+'</span>' +
         '<div class="qty-ctrl">' +
           '<button type="button" class="qty-btn" data-act="minus" data-idx="'+i+'">−</button>' +
           '<span class="qty-val" id="qv_'+i+'">0</span>' +
@@ -433,6 +465,7 @@
       '<div class="card">' +
         '<p style="margin:0 0 8px;font-size:14px;color:var(--ink-600);">'+t("escolhaQtd")+'</p>' +
         '<div>'+itemsHtml+'</div>' +
+        (Object.keys(PRECOS).length ? '<p id="fgTotal" style="margin:12px 0 0;font-size:16px;font-weight:800;display:none;"></p><p style="margin:6px 0 0;font-size:12.5px;color:var(--ink-600);">'+t("valorNaConta")+'</p>' : '') +
         '<button class="btn-primary" id="fgEnviar" style="margin-top:14px;" disabled>'+t("enviarPedido")+'</button>' +
         '<button class="btn-ghost" id="fgVoltar">'+t("voltar")+'</button>' +
       '</div>';
@@ -441,6 +474,13 @@
     function atualizarBotao(){
       var any = qtys.some(function(q){ return q > 0; });
       enviarBtn.disabled = !any;
+      var tot = document.getElementById("fgTotal");
+      if(tot){
+        var soma = 0, algum = false;
+        acomodacao.itens.forEach(function(nm, i){ var pr = precoDe(nm); if(qtys[i] > 0 && pr != null){ soma += pr * qtys[i]; algum = true; } });
+        tot.style.display = algum ? "block" : "none";
+        tot.textContent = t("totalEstimado") + ": " + moeda(soma);
+      }
     }
     content.querySelectorAll(".qty-btn").forEach(function(b){
       b.onclick = function(){
@@ -700,7 +740,11 @@
     }
   }
 
-  if(carregarPedidosLocaisBrutos().length > 0) renderAcompanhamento(); else renderMenu();
+  function iniciar(){ if(carregarPedidosLocaisBrutos().length > 0) renderAcompanhamento(); else renderMenu(); }
+  var iniciou = false;
+  function iniciarUmaVez(){ if(iniciou) return; iniciou = true; iniciar(); }
+  setTimeout(iniciarUmaVez, 2000); // não deixa o hóspede esperando se a lista de preços demorar
+  carregarPrecos().then(iniciarUmaVez);
 })();
 </script>
 </body>
