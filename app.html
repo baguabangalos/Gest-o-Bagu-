@@ -1516,7 +1516,7 @@
   // Permissões detalhadas por aba e ações especiais (mesmo modelo do estoque):
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
-    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio"}},
+    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio"}},
     recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", qr:"recepcao_qr"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
@@ -2479,7 +2479,7 @@
 
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
-    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio"},
+    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório"},
     recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", qr:"QR Code"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
@@ -9676,6 +9676,7 @@
       '<button data-rsub="contas" class="'+(restSub==="contas"?"active":"")+'">Acomodações'+(lancadas.length?(' · '+lancadas.length):'')+'</button>' +
       '<button data-rsub="historico" class="'+(restSub==="historico"?"active":"")+'">Histórico</button>' +
       '<button data-rsub="cardapio" class="'+(restSub==="cardapio"?"active":"")+'">Cardápio</button>' +
+      '<button data-rsub="relatorio" class="'+(restSub==="relatorio"?"active":"")+'">Relatório</button>' +
     '</div>';
 
     if(restSub === "abertas"){
@@ -9701,6 +9702,8 @@
         html += '<p style="margin:8px 0;font-size:16px;font-weight:800;">Total a cobrar: '+restMoney(soma)+'</p>' +
           (podeEditarAba("restaurante","contas") && podeAcao("restaurante","restaurante_acao_cobrar") ? '<button class="btn btn-in restCobrar" data-ids="'+lista.map(function(c){ return c.id; }).join(",")+'">'+ic("check")+' Marcar como cobrado</button>' : '') + '</div>';
       });
+    } else if(restSub === "relatorio"){
+      html += restRelatorioHtml();
     } else if(restSub === "historico"){
       var fechadas = rest.comandas.filter(function(c){ return c.status==="fechada" || c.status==="cobrada"; })
         .sort(function(a,b){ return new Date(b.fechada_em||b.cobrada_em||b.aberta_em) - new Date(a.fechada_em||a.cobrada_em||a.aberta_em); });
@@ -9732,6 +9735,7 @@
     main.innerHTML = html;
 
     main.querySelectorAll("[data-rsub]").forEach(function(b){ b.onclick = function(){ restSub = b.getAttribute("data-rsub"); renderRestaurante(); }; });
+    if(restSub === "relatorio") restRelatorioLigar(main);
     main.querySelectorAll(".rest-card").forEach(function(c){
       c.onclick = async function(){
         restComandaId = c.getAttribute("data-id");
@@ -9787,6 +9791,159 @@
         restFecharSheet(); restComandaId = c.id; restCat = ""; restBusca = ""; renderRestaurante();
       }catch(err){ console.error(err); showToast("Erro ao abrir a comanda (rodou a migração v20?)"); this.disabled = false; }
     };
+  }
+
+  // ---------- Restaurante › Relatório (ocupação + contas de quem sai) ----------
+  var restRelPeriodo = "hoje"; // hoje | amanha | sete
+  var REL_DIAS_ABREV = ["dom","seg","ter","qua","qui","sex","sáb"];
+  function relReservas(){
+    var codigoToId = {};
+    (state.acomodacoes||[]).forEach(function(a){ if(a.codigoHospedin) codigoToId[a.codigoHospedin] = a.id; });
+    var out = [];
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      var id = codigoToId[r.acomodacao]; if(!id) return;
+      var ci = parseDataLocal(r.checkin), co = parseDataLocal(r.checkout); if(!ci || !co) return;
+      out.push({id:id, hospede:r.hospede||"", ci:ci.getTime(), co:co.getTime(), code:r.searchable_code||""});
+    });
+    return out;
+  }
+  function relInicioDia(i){ var h = new Date(); return new Date(h.getFullYear(), h.getMonth(), h.getDate()+i); }
+  function relDia(res, t0){
+    var na = {}, noite = {}, ci = [], co = [];
+    res.forEach(function(r){
+      if(r.ci <= t0 && r.co >= t0) na[r.id] = 1;
+      if(r.ci <= t0 && r.co > t0) noite[r.id] = 1;
+      if(r.ci === t0) ci.push(r);
+      if(r.co === t0) co.push(r);
+    });
+    return {na:Object.keys(na).length, noite:Object.keys(noite).length, ci:ci, co:co};
+  }
+  function relNomes(lista){
+    return lista.map(function(r){ return acomodacaoNome(r.id); }).sort(function(a,b){ return a.localeCompare(b,"pt-BR",{numeric:true}); });
+  }
+  function relChips(nomes, cor){
+    if(!nomes.length) return '<p class="item-meta" style="margin:6px 0 0;">Nenhuma.</p>';
+    return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">' + nomes.map(function(n){ return '<span style="font-size:12.5px;font-weight:700;padding:5px 11px;border-radius:999px;background:'+cor+';color:#fff;">'+escapeHtml(n)+'</span>'; }).join("") + '</div>';
+  }
+  function relStat(n, rotulo, cor){
+    return '<div style="flex:1;min-width:70px;text-align:center;"><p style="font-size:22px;font-weight:800;margin:0;color:'+(cor||"var(--teal-900)")+';">'+n+'</p><p style="font-size:10.5px;color:var(--ink-600);margin:2px 0 0;line-height:1.2;">'+rotulo+'</p></div>';
+  }
+  function relDataTxt(d){ return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2); }
+  // Comandas lançadas na conta (ou ainda abertas) da acomodação durante a estadia.
+  function relComandasDaEstadia(r){
+    var D = 24*3600*1000;
+    return rest.comandas.filter(function(c){
+      if(c.consumo_interno || c.acomodacao_id !== r.id) return false;
+      if(c.status !== "lancada" && c.status !== "aberta") return false;
+      var t = new Date(c.aberta_em).getTime();
+      return t >= r.ci && t < r.co + D;
+    }).sort(function(a,b){ return new Date(a.aberta_em) - new Date(b.aberta_em); });
+  }
+  function relConta(r){
+    var cs = relComandasDaEstadia(r), sub = 0, total = 0, abertas = 0;
+    cs.forEach(function(c){
+      var s1 = restSubtotal(c.id); sub += s1;
+      if(c.status === "aberta"){ abertas++; total += s1; } else total += restTotal(c);
+    });
+    return {comandas:cs, subtotal:sub, total:total, servico:Math.max(0, total - sub), abertas:abertas};
+  }
+  function restRelatorioHtml(){
+    var res = relReservas();
+    var h = '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
+      [["hoje","Hoje"],["amanha","Amanhã"],["sete","7 dias"]].map(function(x){ return '<button class="btn '+(restRelPeriodo===x[0]?'btn-in':'btn-out')+'" data-rrel="'+x[0]+'" style="flex:1;padding:10px;">'+x[1]+'</button>'; }).join("") + '</div>';
+    if(!res.length){
+      return h + '<div class="empty">Ainda não há reservas sincronizadas do Hospedin para montar o relatório.</div>';
+    }
+    var t0 = relInicioDia(0).getTime(), t1 = relInicioDia(1).getTime();
+    if(restRelPeriodo === "hoje"){
+      var d0 = relDia(res, t0), d1 = relDia(res, t1);
+      h += '<div class="card"><p class="item-name" style="margin:0 0 10px;">Hoje <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+REL_DIAS_ABREV[new Date(t0).getDay()]+' '+relDataTxt(new Date(t0))+'</span></p>' +
+        '<div style="display:flex;gap:6px;">'+relStat(d0.na,"Acomodações na casa")+relStat(d0.co.length,"Saem hoje","var(--amber-600)")+relStat(d0.ci.length,"Entram hoje","var(--teal-700)")+relStat(d0.noite,"Ficam à noite")+'</div></div>' +
+        '<div class="card"><p class="item-meta" style="margin:0;font-weight:800;color:var(--ink-900);">Saem hoje</p>'+relChips(relNomes(d0.co),"var(--amber-600)")+
+        '<p class="item-meta" style="margin:14px 0 0;font-weight:800;color:var(--ink-900);">Entram hoje</p>'+relChips(relNomes(d0.ci),"var(--teal-700)")+'</div>';
+      var nomesAm = relNomes(d1.co);
+      h += '<div class="card" style="background:#fff7e6;"><p class="item-name" style="margin:0 0 4px;">Amanhã saem — preparar contas</p>' +
+        (nomesAm.length ? '<p class="item-meta" style="margin:0 0 8px;">'+escapeHtml(nomesAm.join(", "))+' saem amanhã ('+REL_DIAS_ABREV[new Date(t1).getDay()]+' '+relDataTxt(new Date(t1))+').</p>'+relChips(nomesAm,"var(--teal-900)")+'<button class="btn btn-in" data-rrel="amanha" style="width:100%;margin-top:12px;padding:12px;">Ver e imprimir as contas</button>'
+                      : '<p class="item-meta" style="margin:0;">Nenhuma acomodação sai amanhã.</p>') + '</div>';
+    } else if(restRelPeriodo === "amanha"){
+      var dm = relDia(res, t1);
+      var lista = dm.co.slice().sort(function(a,b){ return acomodacaoNome(a.id).localeCompare(acomodacaoNome(b.id),"pt-BR",{numeric:true}); });
+      var somaTodas = 0; lista.forEach(function(r){ somaTodas += relConta(r).total; });
+      h += '<div class="card"><p class="item-name" style="margin:0 0 3px;">Saem amanhã <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+REL_DIAS_ABREV[new Date(t1).getDay()]+' '+relDataTxt(new Date(t1))+'</span></p>' +
+        '<p class="item-meta" style="margin:0;">'+lista.length+(lista.length===1?" acomodação":" acomodações")+' · consumo total '+restMoney(somaTodas)+'</p></div>';
+      if(!lista.length) h += '<div class="empty">Nenhuma acomodação sai amanhã.</div>';
+      lista.forEach(function(r, i){
+        var c = relConta(r), noites = Math.max(1, Math.round((r.co - r.ci)/(24*3600*1000)));
+        h += '<div class="card" style="padding:10px 12px;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;"><div><span class="item-name" style="margin:0;">'+escapeHtml(acomodacaoNome(r.id))+'</span>' +
+          '<p class="item-meta" style="margin:2px 0 0;">'+escapeHtml(r.hospede||"Hóspede não informado")+' · '+noites+(noites===1?" noite":" noites")+'</p>' +
+          '<p class="item-meta" style="margin:2px 0 0;'+(c.abertas?'color:var(--amber-600);font-weight:700;':'')+'">'+(c.comandas.length ? (c.abertas ? ('⚠ '+c.abertas+(c.abertas===1?' comanda aberta':' comandas abertas')+' — feche antes de imprimir') : (c.comandas.length+(c.comandas.length===1?' comanda lançada na conta':' comandas lançadas na conta'))) : 'Sem consumo no restaurante')+'</p></div>' +
+          '<strong>'+restMoney(c.total)+'</strong></div>' +
+          '<div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-in" data-rimp="'+i+'" style="flex:1;padding:9px;">Imprimir conta</button></div></div>';
+      });
+      if(lista.length > 1) h += '<button class="btn btn-in" data-rimp="todas" style="width:100%;margin:6px 0 4px;padding:13px;">Imprimir todas as contas ('+lista.length+')</button>';
+      if(lista.length) h += '<p class="item-meta" style="text-align:center;">Cada acomodação sai numa folha separada. Consumos da mesa 240 (cortesia) não entram na conta.</p>';
+      restRelAmanha = lista;
+    } else {
+      var dias = [], totCi = 0, totCo = 0, maxNa = 0, maxDia = "";
+      for(var i=0;i<7;i++){
+        var tt = relInicioDia(i).getTime(), dd = relDia(res, tt);
+        dias.push({t:tt, d:dd, i:i}); totCi += dd.ci.length; totCo += dd.co.length;
+        if(dd.na > maxNa){ maxNa = dd.na; maxDia = REL_DIAS_ABREV[new Date(tt).getDay()]+" "+relDataTxt(new Date(tt)); }
+      }
+      h += '<div class="card" style="display:flex;gap:6px;">'+relStat(totCi,"Check-ins na semana","var(--teal-700)")+relStat(totCo,"Check-outs na semana","var(--amber-600)")+relStat(maxNa,"Maior ocupação ("+maxDia+")")+'</div>';
+      dias.forEach(function(x){
+        var lab = x.i===0 ? "Hoje" : (x.i===1 ? "Amanhã" : REL_DIAS_ABREV[new Date(x.t).getDay()]);
+        h += '<div class="card"><p class="item-name" style="margin:0 0 8px;">'+lab+' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+relDataTxt(new Date(x.t))+'</span></p>' +
+          '<div style="display:flex;gap:4px;">'+relStat(x.d.na,"Na casa")+relStat(x.d.ci.length,"Check-in","var(--teal-700)")+relStat(x.d.co.length,"Check-out","var(--amber-600)")+'</div>' +
+          (x.d.co.length ? '<p class="item-meta" style="margin:8px 0 0;">Saem: '+escapeHtml(relNomes(x.d.co).join(", "))+'</p>' : '') + '</div>';
+      });
+      h += '<p class="item-meta" style="text-align:center;">Baseado nas reservas sincronizadas do Hospedin — pode mudar com novas reservas ou cancelamentos.</p>';
+    }
+    return h;
+  }
+  var restRelAmanha = [];
+  function restRelatorioLigar(main){
+    main.querySelectorAll("[data-rrel]").forEach(function(b){ b.onclick = function(){ restRelPeriodo = b.getAttribute("data-rrel"); renderRestaurante(); }; });
+    main.querySelectorAll("[data-rimp]").forEach(function(b){
+      b.onclick = function(){
+        var v = b.getAttribute("data-rimp");
+        var alvo = v === "todas" ? restRelAmanha : [restRelAmanha[Number(v)]];
+        var comAberta = alvo.filter(function(r){ return relConta(r).abertas > 0; });
+        if(comAberta.length && !confirm("Há comanda aberta em "+comAberta.map(function(r){ return acomodacaoNome(r.id); }).join(", ")+". Imprimir mesmo assim (com o valor parcial)?")) return;
+        relImprimirContas(alvo);
+      };
+    });
+  }
+  function relImprimirContas(lista){
+    var folhas = lista.filter(Boolean).map(function(r){
+      var c = relConta(r), noites = Math.max(1, Math.round((r.co - r.ci)/(24*3600*1000)));
+      var linhas = "";
+      c.comandas.forEach(function(cm){
+        var dt = new Date(cm.aberta_em);
+        linhas += '<tr><td colspan="3" class="dia">'+relDataTxt(dt)+' · '+escapeHtml(restTitulo(cm))+(cm.status==="aberta"?' (em aberto)':'')+'</td></tr>';
+        restLinhasDe(cm.id).forEach(function(l){
+          linhas += '<tr><td>'+escapeHtml(l.nome)+(l.obs?' <small>('+escapeHtml(l.obs)+')</small>':'')+'</td><td class="c">'+l.quantidade+'</td><td class="r">'+restMoney(Number(l.preco_unit)*Number(l.quantidade))+'</td></tr>';
+        });
+      });
+      if(!linhas) linhas = '<tr><td colspan="3" class="dia">Sem consumo no restaurante.</td></tr>';
+      return '<section class="folha"><div class="topo"><p class="marca">BAGUÁ BANGALÔS</p><p class="sub">Limão Galego Bistrô · Conta de consumo</p></div><hr>' +
+        '<p class="aco"><b>'+escapeHtml(acomodacaoNome(r.id))+'</b>'+(r.hospede?' — '+escapeHtml(r.hospede):'')+'</p><p class="sub2">Check-out: '+relDataTxt(new Date(r.co))+'/'+new Date(r.co).getFullYear()+' · '+noites+(noites===1?' noite':' noites')+'</p>' +
+        '<table><tr class="cab"><td>Item</td><td class="c">Qtd</td><td class="r">Valor</td></tr>'+linhas+'</table><hr>' +
+        '<div class="tot"><span>Subtotal</span><span>'+restMoney(c.subtotal)+'</span></div>' +
+        (c.servico>0 ? '<div class="tot"><span>Serviço</span><span>'+restMoney(c.servico)+'</span></div>' : '') +
+        '<div class="tot grande"><b>Total</b><b>'+restMoney(c.total)+'</b></div><p class="rodape">Valores lançados na conta da acomodação</p></section>';
+    }).join("");
+    var css = '@page{size:auto;margin:10mm}body{margin:0;font-family:Georgia,serif;color:#182117}.folha{max-width:190mm;margin:0 auto;padding:6mm 4mm;page-break-after:always}.folha:last-child{page-break-after:auto}' +
+      '.topo{text-align:center}.marca{margin:0;font-size:13px;letter-spacing:3px}.sub{margin:2px 0 0;font-size:10px;color:#666}hr{border:0;border-top:1px solid #182117;margin:8px 0}' +
+      '.aco{margin:0;font-size:15px}.sub2{margin:2px 0 10px;font-size:11px;color:#555}table{width:100%;border-collapse:collapse;font-size:12px}td{padding:2px 0}.cab td{border-bottom:1px solid #ccc;font-weight:bold}.c{text-align:center}.r{text-align:right}' +
+      '.dia{padding-top:8px;color:#666;font-size:10.5px}small{color:#777}.tot{display:flex;justify-content:space-between;font-size:12px;margin-top:3px}.grande{font-size:16px;margin-top:8px}.rodape{margin:16px 0 0;font-size:10px;color:#777;text-align:center}';
+    var f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+    document.body.appendChild(f);
+    var doc = f.contentWindow.document;
+    doc.open(); doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Contas de consumo</title><style>'+css+'</style></head><body>'+folhas+'</body></html>'); doc.close();
+    setTimeout(function(){ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){ console.error(e); showToast("Não consegui abrir a impressão"); } setTimeout(function(){ f.remove(); }, 60000); }, 300);
   }
 
   function restItemSheet(it){
@@ -11268,6 +11425,7 @@
     {key:"restaurante_acomodacoes", label:"Restaurante — só Acomodações (contas)", sub:true},
     {key:"restaurante_historico", label:"Restaurante — só Histórico", sub:true},
     {key:"restaurante_cardapio", label:"Restaurante — só Cardápio (itens e preços)", sub:true},
+    {key:"restaurante_relatorio", label:"Restaurante — só Relatório (ocupação e contas)", sub:true},
     {key:"restaurante_acao_240", label:"Restaurante — lançar itens na mesa 240 (cortesia)", acao:true},
     {key:"restaurante_acao_fechar", label:"Restaurante — fechar conta", acao:true},
     {key:"restaurante_acao_lancar_conta", label:"Restaurante — lançar na conta da acomodação", acao:true},
