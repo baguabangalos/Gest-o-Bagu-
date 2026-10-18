@@ -9885,19 +9885,17 @@
       if(lista.length) h += '<p class="item-meta" style="text-align:center;">Cada acomodação sai numa folha separada. Consumos da mesa 240 (cortesia) não entram na conta.</p>';
       restRelAmanha = lista;
     } else {
-      var dias = [], totCi = 0, totCo = 0, maxNa = 0, maxDia = "";
+      h += '<p class="item-meta" style="margin:0 0 10px;">Acomodações com hóspedes que tomam café em cada dia e acomodações ocupadas no final do dia.</p>';
       for(var i=0;i<7;i++){
-        var tt = relInicioDia(i).getTime(), dd = relDia(res, tt);
-        dias.push({t:tt, d:dd, i:i}); totCi += dd.ci.length; totCo += dd.co.length;
-        if(dd.na > maxNa){ maxNa = dd.na; maxDia = REL_DIAS_ABREV[new Date(tt).getDay()]+" "+relDataTxt(new Date(tt)); }
+        var tt = relInicioDia(i).getTime(), cafe = {}, noite = {};
+        res.forEach(function(r){
+          if(r.ci < tt && r.co >= tt) cafe[r.id] = 1;   // dormiu na véspera → toma café neste dia
+          if(r.ci <= tt && r.co > tt) noite[r.id] = 1;  // ainda está à noite
+        });
+        var lab = i===0 ? "Hoje" : (i===1 ? "Amanhã" : REL_DIAS_ABREV[new Date(tt).getDay()]);
+        h += '<div class="card"><p class="item-name" style="margin:0 0 8px;">'+lab+' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+relDataTxt(new Date(tt))+'</span></p>' +
+          '<div style="display:flex;gap:4px;">'+relStat(Object.keys(cafe).length,"Tomam café da manhã","var(--amber-600)")+relStat(Object.keys(noite).length,"No final do dia")+'</div></div>';
       }
-      h += '<div class="card" style="display:flex;gap:6px;">'+relStat(totCi,"Check-ins na semana","var(--teal-700)")+relStat(totCo,"Check-outs na semana","var(--amber-600)")+relStat(maxNa,"Maior ocupação ("+maxDia+")")+'</div>';
-      dias.forEach(function(x){
-        var lab = x.i===0 ? "Hoje" : (x.i===1 ? "Amanhã" : REL_DIAS_ABREV[new Date(x.t).getDay()]);
-        h += '<div class="card"><p class="item-name" style="margin:0 0 8px;">'+lab+' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+relDataTxt(new Date(x.t))+'</span></p>' +
-          '<div style="display:flex;gap:4px;">'+relStat(x.d.na,"Na casa")+relStat(x.d.ci.length,"Check-in","var(--teal-700)")+relStat(x.d.co.length,"Check-out","var(--amber-600)")+'</div>' +
-          (x.d.co.length ? '<p class="item-meta" style="margin:8px 0 0;">Saem: '+escapeHtml(relNomes(x.d.co).join(", "))+'</p>' : '') + '</div>';
-      });
       h += '<p class="item-meta" style="text-align:center;">Baseado nas reservas sincronizadas do Hospedin — pode mudar com novas reservas ou cancelamentos.</p>';
     }
     return h;
