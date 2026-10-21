@@ -2489,7 +2489,7 @@
   var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
   var HOME_PADRAO = [
     ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
-    ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],["equipamentos","Equipamentos"],
+    ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["equipamentos","Equipamentos"],
     ["checklistturno","Checklist de Turno"],["escala","Equipe"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
   ];
   var HOME_FIXOS = ["admin","personalizar","configuracoes"];
@@ -2674,10 +2674,6 @@
     }
     if(podeVer("servico_geral")){
       cards.push({section:"servicogeral", titulo:"Serviço Geral", icon:ic("gear"), sub:"jacuzzi e manutenção predial"});
-    }
-    if(podeVer("restaurante")){
-      var restAbertasN = rest.carregado ? rest.comandas.filter(function(c){ return c.status==="aberta"; }).length : 0;
-      cards.push({section:"restaurante", titulo:"Restaurante", icon:ic("cup"), sub:(restAbertasN ? (restAbertasN+(restAbertasN===1?" comanda aberta":" comandas abertas")) : "cardápio, comandas e consumo")});
     }
     if(podeVer("equipamentos")){
       var equipAlertCount = state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length;
@@ -5980,6 +5976,21 @@
     total = ((total % 1440) + 1440) % 1440;
     return String(Math.floor(total/60)).padStart(2,"0")+":"+String(total%60).padStart(2,"0");
   }
+  // Atividades do checklist em ordem cronológica a partir da hora de início do turno
+  // (vira a meia-noite certo nos turnos da noite). Sem hora ("livre") vai pro fim, na ordem cadastrada.
+  function ordenarAtividadesTurno(lista, turno){
+    function min(hm){ var m = /^(\d{1,2}):(\d{2})/.exec(hm||""); return m ? (+m[1])*60 + (+m[2]) : null; }
+    var base = turno ? min(turno.horaInicio) : null;
+    function chave(a){
+      var t = a.tipo === "livre" ? null : min(a.horaInicio);
+      if(t === null) return 100000;
+      return base === null ? t : ((t - base + 1440) % 1440);
+    }
+    return lista.slice().sort(function(a,b){
+      var d = chave(a) - chave(b);
+      return d !== 0 ? d : ((a.ordem||0) - (b.ordem||0));
+    });
+  }
   function slotsRecorrente(atividade){
     var slots = [];
     if(atividade.tipo !== "recorrente" || !atividade.horaInicio || !atividade.horaFim || !atividade.intervaloMinutos) return slots;
@@ -6075,7 +6086,8 @@
       html += '<p class="item-meta" style="margin-bottom:10px;">Nenhum turno cadastrado ainda.</p>';
     }
     turnosOrdenados.forEach(function(t, ti){
-      var ativs = state.turnoAtividades.filter(function(a){ return a.turnoId===t.id; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+      var ativs = state.turnoAtividades.filter(function(a){ return a.turnoId===t.id; });
+      ativs = ordenarAtividadesTurno(ativs, t);
       html += '<div class="turno-admin-block" data-turno-id="'+t.id+'" style="'+(ti>0?'border-top:1px solid var(--line);padding-top:12px;margin-top:12px;':'')+'">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;">' +
         '<p style="margin:0;font-size:15px;font-weight:800;">'+escapeHtml(t.nome)+'</p>' +
@@ -6513,7 +6525,8 @@
   }
 
   function renderChecklistTurnoBody(main, turno, execucao, htmlPrefixo){
-    var atividades = state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id && atividadeAplicaNoDia(a, execucao.data); }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var atividades = state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id && atividadeAplicaNoDia(a, execucao.data); });
+    atividades = ordenarAtividadesTurno(atividades, turno);
     var html = (htmlPrefixo||"") + '<div class="card" style="margin-bottom:14px;">' +
       '<p style="margin:0 0 3px;font-size:16px;font-weight:800;">'+escapeHtml(turno.nome)+'</p>' +
       '<p class="item-meta">ciclo de '+fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime())+' — reinicia às '+escapeHtml(turno.horaInicio)+' do dia seguinte'+(turno.horaFim?(' · término às '+escapeHtml(turno.horaFim)):'')+'</p>' +
@@ -6541,7 +6554,7 @@
       html += '<div class="empty">Nenhuma atividade cadastrada pra este turno ainda.</div>';
     }
     if(!jaConcluido){
-    atividadesComuns.forEach(function(a){
+    var renderAtivComum = function(a){
       var item = atividadeExecucaoFor(execucao.id, a.id);
       var est = estadoAtividade(a, execucao, item);
       var corBorda = est.fase==="feito" ? "var(--teal-700)" : est.fase==="feito_atrasado" ? "var(--amber-600)" : est.fase==="nao_feito" ? "var(--red-600)" : est.fase==="vencido" ? "var(--amber-600)" : est.fase==="bloqueado" ? "var(--ink-400)" : "var(--teal-700)";
@@ -6570,8 +6583,8 @@
         '</div>';
       }
       html += '</div>';
-    });
-    atividadesRecorrentes.forEach(function(a){
+    };
+    var renderAtivRecorrente = function(a){
       var slots = slotsRecorrente(a);
       html += '<div class="card" data-id="'+a.id+'">';
       html += '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(a.titulo)+'</p>';
@@ -6588,7 +6601,8 @@
       html += '</div>';
       html += '<div class="slot-action-wrap" data-slot-action-for="'+a.id+'" style="display:none;margin-top:10px;"></div>';
       html += '</div>';
-    });
+    };
+    atividades.forEach(function(a){ if(a.tipo === "recorrente") renderAtivRecorrente(a); else renderAtivComum(a); });
     } // fim do if(!jaConcluido) que esconde a lista de atividades
 
     var pendenciasHerdadas = state.turnoAtividadeExecucoes.filter(function(x){ return x.repassadoTurnoId===turno.id && x.status==="pendente"; });
@@ -11418,16 +11432,6 @@
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
     {key:"servico_geral_jacuzzi", label:"Serviço Geral — só Jacuzzi", sub:true},
     {key:"servico_geral_predial", label:"Serviço Geral — só Manutenção Predial", sub:true},
-    {key:"restaurante", label:"Restaurante (comandas, cardápio e consumo)"},
-    {key:"restaurante_comandas", label:"Restaurante — só Comandas", sub:true},
-    {key:"restaurante_acomodacoes", label:"Restaurante — só Acomodações (contas)", sub:true},
-    {key:"restaurante_historico", label:"Restaurante — só Histórico", sub:true},
-    {key:"restaurante_cardapio", label:"Restaurante — só Cardápio (itens e preços)", sub:true},
-    {key:"restaurante_relatorio", label:"Restaurante — só Relatório (ocupação e contas)", sub:true},
-    {key:"restaurante_acao_240", label:"Restaurante — lançar itens na mesa 240 (cortesia)", acao:true},
-    {key:"restaurante_acao_fechar", label:"Restaurante — fechar conta", acao:true},
-    {key:"restaurante_acao_lancar_conta", label:"Restaurante — lançar na conta da acomodação", acao:true},
-    {key:"restaurante_acao_cobrar", label:"Restaurante — marcar conta da acomodação como cobrada", acao:true},
     {key:"equipamentos", label:"Equipamentos (ar-condicionados, bombas etc.)"},
     {key:"checklist_turno", label:"Checklist de Turno"},
     {key:"checklist_turno_gestao", label:"Checklist de Turno — gestão (criar/editar turnos e atividades, ver equipe)"},
