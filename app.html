@@ -2489,7 +2489,7 @@
   var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
   var HOME_PADRAO = [
     ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
-    ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["equipamentos","Equipamentos"],
+    ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],["equipamentos","Equipamentos"],
     ["checklistturno","Checklist de Turno"],["escala","Equipe"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
   ];
   var HOME_FIXOS = ["admin","personalizar","configuracoes"];
@@ -2674,6 +2674,10 @@
     }
     if(podeVer("servico_geral")){
       cards.push({section:"servicogeral", titulo:"Serviço Geral", icon:ic("gear"), sub:"jacuzzi e manutenção predial"});
+    }
+    if(podeVer("restaurante")){
+      var restAbertasN = rest.carregado ? rest.comandas.filter(function(c){ return c.status==="aberta"; }).length : 0;
+      cards.push({section:"restaurante", titulo:"Restaurante", icon:ic("cup"), sub:(restAbertasN ? (restAbertasN+(restAbertasN===1?" comanda aberta":" comandas abertas")) : "cardápio, comandas e consumo")});
     }
     if(podeVer("equipamentos")){
       var equipAlertCount = state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length;
@@ -11432,6 +11436,16 @@
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
     {key:"servico_geral_jacuzzi", label:"Serviço Geral — só Jacuzzi", sub:true},
     {key:"servico_geral_predial", label:"Serviço Geral — só Manutenção Predial", sub:true},
+    {key:"restaurante", label:"Restaurante (comandas, cardápio e consumo)"},
+    {key:"restaurante_comandas", label:"Restaurante — só Comandas", sub:true},
+    {key:"restaurante_acomodacoes", label:"Restaurante — só Acomodações (contas)", sub:true},
+    {key:"restaurante_historico", label:"Restaurante — só Histórico", sub:true},
+    {key:"restaurante_cardapio", label:"Restaurante — só Cardápio (itens e preços)", sub:true},
+    {key:"restaurante_relatorio", label:"Restaurante — só Relatório (ocupação e contas)", sub:true},
+    {key:"restaurante_acao_240", label:"Restaurante — lançar itens na mesa 240 (cortesia)", acao:true},
+    {key:"restaurante_acao_fechar", label:"Restaurante — fechar conta", acao:true},
+    {key:"restaurante_acao_lancar_conta", label:"Restaurante — lançar na conta da acomodação", acao:true},
+    {key:"restaurante_acao_cobrar", label:"Restaurante — marcar conta da acomodação como cobrada", acao:true},
     {key:"equipamentos", label:"Equipamentos (ar-condicionados, bombas etc.)"},
     {key:"checklist_turno", label:"Checklist de Turno"},
     {key:"checklist_turno_gestao", label:"Checklist de Turno — gestão (criar/editar turnos e atividades, ver equipe)"},
