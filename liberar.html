@@ -387,9 +387,22 @@
   var content = document.getElementById("content");
   var label = document.getElementById("acomodacaoLabel");
 
-  if(!nome){
+  function mostrarLinkInvalido(){
     label.textContent = "";
     content.innerHTML = '<div class="card error-box">'+t("linkInvalido")+'<br>'+t("faleRecepcao")+'</div>';
+  }
+  if(!nome){
+    if(!slug){ mostrarLinkInvalido(); return; }
+    // Acomodação criada depois no app: busca o nome na lista pública.
+    sb.from("acomodacoes_publicas").select("*").eq("id", slug).then(function(r){
+      var row = r && r.data && r.data[0];
+      if(!row){ mostrarLinkInvalido(); return; }
+      acomodacao = {nome:row.nome, itens:ITENS_PADRAO, fogueira:!!row.fogueira};
+      nome = row.nome;
+      label.textContent = nome;
+      carregarPrecos().then(iniciarUmaVez);
+      setTimeout(iniciarUmaVez, 2000);
+    }, mostrarLinkInvalido);
     return;
   }
   label.textContent = nome;
