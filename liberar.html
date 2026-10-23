@@ -261,7 +261,30 @@
   var PRECOS = {}, PRECO_LENHA = null;
   function normItem(s){ return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
   function moeda(v){ return Number(v).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
-  function precoDe(nomeItem){ var v = PRECOS[normItem(nomeItem)]; return (v!=null) ? v : null; }
+  // Casamento tolerante: "Coca Cola lata 350ml" no estoque = "Coca-Cola" na página.
+  // Variantes (zero, limão, com/sem gás…) nunca se misturam.
+  var PRECOS_CACHE = {};
+  var VARIANTES = {zero:1,diet:1,light:1,sem:1,com:1,gas:1,limao:1,maracuja:1,classic:1,filtrado:1,expresso:1,pleno:1,cappuccino:1,"60":1};
+  function tokensItem(s){
+    return normItem(s).replace(/[^a-z0-9]+/g," ").split(" ").filter(function(w){
+      return w && !/^(de|da|do|das|dos|e|lata|garrafa|long|neck|pet|unidade|un|pacote|pct|barra)$/.test(w) && !/^\d+(ml|g|l|kg)$/.test(w);
+    });
+  }
+  function precoDe(nomeItem){
+    var k = normItem(nomeItem);
+    if(PRECOS[k] != null) return PRECOS[k];
+    if(k in PRECOS_CACHE) return PRECOS_CACHE[k];
+    var g = tokensItem(nomeItem), achados = [];
+    Object.keys(PRECOS).forEach(function(nm){
+      var t = tokensItem(nm);
+      var igual = g.length === t.length && g.every(function(w){ return t.indexOf(w) >= 0; });
+      var gSub = g.every(function(w){ return t.indexOf(w) >= 0; });
+      var tSub = t.every(function(w){ return g.indexOf(w) >= 0; });
+      var dif = gSub ? t.filter(function(w){ return g.indexOf(w) < 0; }) : tSub ? g.filter(function(w){ return t.indexOf(w) < 0; }) : null;
+      if(igual || (dif && !dif.some(function(w){ return VARIANTES[w]; }))) achados.push(PRECOS[nm]);
+    });
+    return (PRECOS_CACHE[k] = (achados.length === 1 ? achados[0] : null));
+  }
   async function carregarPrecos(){
     try{
       var r = await sb.from("precos_publicos").select("*");
