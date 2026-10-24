@@ -1442,6 +1442,23 @@
     return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
   }
 
+  // Busca todas as marcações das execuções informadas (em lotes de ids e páginas de 1000).
+  // Devolve null se qualquer pedaço falhar — assim o app mantém o que já tinha em vez de "zerar".
+  async function carregarAtividadeExecucoes(idsExec){
+    var out = [];
+    try{
+      for(var i=0; i<idsExec.length; i+=60){
+        var lote = idsExec.slice(i, i+60);
+        for(var from=0; ; from+=1000){
+          var r = await sb.from("turno_atividade_execucoes").select("*").in("turno_execucao_id", lote).order("id").range(from, from+999);
+          if(r.error) throw r.error;
+          out = out.concat(r.data||[]);
+          if(!r.data || r.data.length < 1000) break;
+        }
+      }
+      return out;
+    }catch(err){ console.error("turno_atividade_execucoes:", err); return null; }
+  }
   async function loadAllFromSupabase(){
     return filtrarEstoquePorPermissao(await loadAllFromSupabaseCompleto());
   }
@@ -1464,7 +1481,7 @@
       sb.from("turnos").select("*").order("ordem"),
       sb.from("turno_atividades").select("*").order("ordem"),
       sb.from("turno_execucoes").select("*").order("data", {ascending:false}).limit(400),
-      sb.from("turno_atividade_execucoes").select("*").limit(4000),
+      Promise.resolve({data:[]}), // carregado logo abaixo, por execução (o limite padrão de 1000 linhas cortava as marcações de hoje)
       sb.from("profiles").select("id,nome,ativo,equipe,domingo_folga_mes,guarda_referencia_data").order("nome"),
       sb.from("escala_semanal").select("*"),
       sb.from("escala_excecoes").select("*").order("data", {ascending:false}).limit(2000),
@@ -1472,6 +1489,14 @@
       sb.from("feriado_trabalhados").select("*").limit(5000)
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
+    // Marcações do checklist: só das execuções recentes, paginado e em ordem fixa.
+    // Antes era um select sem ordem com limite que o servidor cortava em 1000 linhas —
+    // com o tempo, as marcações de hoje ficavam de fora e o checklist "zerava" sozinho.
+    var cutoffCk = new Date(Date.now() - 60*86400000), cutoffCkStr = cutoffCk.getFullYear()+"-"+String(cutoffCk.getMonth()+1).padStart(2,"0")+"-"+String(cutoffCk.getDate()).padStart(2,"0");
+    var idsExecRecentes = ((results[16] && results[16].data) || []).filter(function(e){ return String(e.data).slice(0,10) >= cutoffCkStr; }).map(function(e){ return e.id; });
+    var linhasAtivExec = await carregarAtividadeExecucoes(idsExecRecentes);
+    if(linhasAtivExec === null) linhasAtivExec = (state && state.turnoAtividadeExecucoes) ? state.turnoAtividadeExecucoes.map(function(x){ return {id:x.id, turno_execucao_id:x.turnoExecucaoId, turno_atividade_id:x.turnoAtividadeId, status:x.status, motivo:x.motivo, marcado_em:(x.marcadoEm?new Date(x.marcadoEm).toISOString():null), marcado_por:x.marcadoPor, repassado_turno_id:x.repassadoTurnoId, slot_hora:x.slotHora, atrasado:x.atrasado}; }) : [];
+    results[17] = {data:linhasAtivExec};
     var feriadosRes=results[21], feriadoTrabRes=results[22];
     var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10], syncSettingRes=results[11], equipRes=results[12], equipEvRes=results[13], turnosRes=results[14], turnoAtivRes=results[15], turnoExecRes=results[16], turnoAtivExecRes=results[17], staffProfilesRes=results[18], escalaSemanalRes=results[19], escalaExcecoesRes=results[20];
     var hospedinOcupacao = hospedinRes.data || [];
@@ -2706,7 +2731,7 @@
     if(podeVer("escala_trabalho")){
       cards.push({section:"escala", titulo:"Equipe", icon:ic("users"), sub:"horários, folga e setor"});
     }
-    if(podeVer("tarefas_dia")){
+    if(podeVer("tarefas_dia") && (podeAtribuirTarefas() || !podeVer("checklist_turno"))){
       var tdPend = tarefasDiaMinhasPendentes().length;
       cards.push({section:"tarefasdia", titulo:"Tarefas do dia", icon:ic("check"), sub:(tdPend ? (tdPend+(tdPend===1?" tarefa pra você":" tarefas pra você")) : "atividades por pessoa"), subVermelho:tdPend>0});
     }
@@ -6481,6 +6506,50 @@
     overlay.addEventListener("click", function(e){ if(e.target===overlay) overlay.remove(); });
   }
 
+  // ---- Tarefas do dia dentro do Checklist de Turno (as tarefas atribuídas à própria pessoa) ----
+  function tarefasChecklistHtml(){
+    if(!currentUser) return "";
+    if(!tarefasDia.carregado){
+      carregarTarefasDia().then(function(){ if(appSection==="checklistturno") renderChecklistTurno(); });
+      return "";
+    }
+    var hoje = hojeISO();
+    var minhas = tarefasDia.lista.filter(function(t){ return t.para === currentUser.id && ((t.status==="pendente" && t.data<=hoje) || (t.status==="feita" && t.data===hoje)); });
+    if(!minhas.length) return "";
+    var pend = minhas.filter(function(t){ return t.status==="pendente"; });
+    var h = '<div class="section-title" style="margin-top:0;">'+ic("check")+' Tarefas do dia'+(pend.length?(' <span style="color:var(--red-600);font-weight:800;">· '+pend.length+' pra fazer</span>'):'')+'</div>';
+    minhas.sort(function(a,b){ return (a.status==="feita") - (b.status==="feita") || a.data.localeCompare(b.data); }).forEach(function(t){
+      var feita = t.status === "feita", atrasada = !feita && t.data < hoje;
+      h += '<div class="card" style="margin-bottom:10px;border-left:4px solid '+(feita?'var(--teal-700)':atrasada?'var(--amber-600)':'var(--ink-900)')+';">' +
+        '<p class="item-name" style="margin:0 0 3px;'+(feita?'text-decoration:line-through;opacity:.7;':'')+'">'+escapeHtml(t.titulo)+'</p>' +
+        (t.descricao ? '<p class="item-meta" style="white-space:pre-wrap;">'+escapeHtml(t.descricao)+'</p>' : '') +
+        (t.criadoPorNome && t.criadoPor !== t.para ? '<p class="item-meta">pedido por '+escapeHtml(t.criadoPorNome)+'</p>' : '') +
+        (atrasada ? '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ de '+dataBr(t.data)+' — ainda não foi feita</p>' : '') +
+        (feita ? '<p class="item-meta">'+ic("check")+' Feita'+(t.concluidaEm?(' às '+fmtDate(t.concluidaEm).split(" ")[1]):'')+(t.obs?(' — '+escapeHtml(t.obs)):'')+'</p>' : '') +
+        '<div class="item-actions">' + (feita
+          ? '<button class="btn btn-out" data-tdc="reabrir" data-id="'+t.id+'">Reabrir</button>'
+          : '<button class="btn btn-in" data-tdc="feita" data-id="'+t.id+'">'+ic("check")+' Feita</button>') + '</div></div>';
+    });
+    return h;
+  }
+  function bindTarefasChecklist(main){
+    main.querySelectorAll("[data-tdc]").forEach(function(b){
+      b.onclick = async function(){
+        var id = b.getAttribute("data-id"), acao = b.getAttribute("data-tdc");
+        var t = tarefasDia.lista.find(function(x){ return x.id===id; }); if(!t) return;
+        b.disabled = true;
+        try{
+          var obs = "";
+          if(acao === "feita"){ obs = prompt("Alguma observação? (pode deixar em branco)") || ""; }
+          var upd = acao === "feita" ? {status:"feita", concluida_em:new Date().toISOString(), concluida_por:currentUser.id, obs_conclusao:obs.trim()||null} : {status:"pendente", concluida_em:null, concluida_por:null, obs_conclusao:null};
+          var u = await sb.from("tarefas_dia").update(upd).eq("id", id).select().single(); if(u.error) throw u.error;
+          Object.assign(t, mapTarefaDia(u.data));
+          renderChecklistTurno();
+        }catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
+      };
+    });
+  }
+
   async function renderChecklistTurno(){
     var main = document.getElementById("checklistTurnoView");
     var isAdmin = currentUser.role === "admin";
@@ -6492,8 +6561,9 @@
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
 
     if(meusTurnos.length === 0){
-      main.innerHTML = managementHtml + '<div class="empty">'+(podeGerirTurnos ? 'Você ainda não tem um turno atribuído a você. Atribua em Administração, ou cadastre um turno acima e depois se atribua a ele.' : 'Você ainda não tem um turno atribuído. Peça pro administrador liberar em Administração.')+'</div>';
+      main.innerHTML = tarefasChecklistHtml() + managementHtml + '<div class="empty">'+(podeGerirTurnos ? 'Você ainda não tem um turno atribuído a você. Atribua em Administração, ou cadastre um turno acima e depois se atribua a ele.' : 'Você ainda não tem um turno atribuído. Peça pro administrador liberar em Administração.')+'</div>';
       if(podeGerirTurnos) bindTurnoManagementEvents(main);
+      bindTarefasChecklist(main);
       return;
     }
     if(!checklistTurnoSelecionado || !meusTurnos.some(function(t){ return t.id===checklistTurnoSelecionado; })){
@@ -6531,8 +6601,9 @@
       switcherHtml += '</div>';
     }
 
-    renderChecklistTurnoBody(main, turno, execucao, managementHtml + switcherHtml);
+    renderChecklistTurnoBody(main, turno, execucao, tarefasChecklistHtml() + managementHtml + switcherHtml);
     if(podeGerirTurnos) bindTurnoManagementEvents(main);
+    bindTarefasChecklist(main);
     main.querySelectorAll(".turno-switch-btn").forEach(function(btn){
       btn.onclick = function(){
         checklistTurnoSelecionado = btn.getAttribute("data-turno-id");
