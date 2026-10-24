@@ -1525,7 +1525,8 @@
   };
   var PERM_ACOES = {
     restaurante:["restaurante_acao_240","restaurante_acao_fechar","restaurante_acao_lancar_conta","restaurante_acao_cobrar"],
-    recepcao:["recepcao_acao_confirmar_reparo"]
+    recepcao:["recepcao_acao_confirmar_reparo"],
+    limpeza:["limpeza_acao_sem_qr"]
   };
   function permFilhos(modulo){
     var a = PERM_ABAS[modulo]; if(!a) return [];
@@ -1538,6 +1539,8 @@
   function podeExcluirAba(modulo, aba){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"excluir") || permFlag(abaChave(modulo,aba),"excluir")); }
   // Ação especial (ex.: lançar na mesa 240, fechar conta): módulo completo com "editar" ou a permissão própria da ação.
   function podeAcao(modulo, acao){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"editar") || permFlag(acao,"ver")); }
+  // Quem tem esta permissão (ou é admin) inicia/finaliza a limpeza sem escanear o QR Code da acomodação.
+  function podeSemQr(){ return !!currentUser && (currentUser.role==="admin" || permFlag("limpeza_acao_sem_qr","ver")); }
   function permFlag(modulo, flag){ return !!(currentUser && currentUser.permissoes[modulo] && currentUser.permissoes[modulo][flag]); }
   function estoquePorCategoria(flag){
     return Object.keys(ESTOQUE_CAT_MODULO).some(function(cat){ return permFlag(ESTOQUE_CAT_MODULO[cat], flag); });
@@ -8214,7 +8217,7 @@
             abrirProblemaAcomodacaoSheet(s);
           } else if(act === "iniciar"){
             if(s.tipo === "lavagem" || s.tipo === "limpeza"){
-              abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarIniciarSolicitacao(id); });
+              if(podeSemQr()){ efetivarIniciarSolicitacao(id); } else abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarIniciarSolicitacao(id); });
               return;
             }
             var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
@@ -8260,7 +8263,7 @@
             showToast("Sauna desligada"); renderApp();
           } else if(act === "finalizar"){
             if(s.tipo === "lavagem" || s.tipo === "limpeza"){
-              abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarFinalizarSolicitacao(id); });
+              if(podeSemQr()){ efetivarFinalizarSolicitacao(id); } else abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarFinalizarSolicitacao(id); });
               return;
             }
             var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
@@ -8423,21 +8426,16 @@
   // tarefas do dia agora roda no servidor (Edge Function
   // "gerar-tarefas-lavagem" + pg_cron), pra não depender de quem abre o
   // app e nunca duplicar. Função mantida aqui só como referência.
-  // Tarefas que ficaram "velhas" e aparecem pra equipe como se fossem de hoje:
-  //  1) "Preparo do quarto · Check-in" de um dia anterior que ninguém concluiu
+  // Tarefa que ficou "velha" e aparece pra equipe como se fosse de hoje:
+  // "Preparo do quarto · Check-in" de um dia anterior que ninguém concluiu
   //     (a recepção arrumou na mão e não liberou) — o hóspede já entrou, não há o que fazer.
-  //  2) "Arrumação · Manutenção" (renovação de diária, gerada automaticamente) de hoje que
-  //     deixou de fazer sentido porque o Hospedin mudou (ex.: era checkout de verdade).
   // Elas saem das listas e ficam em "excluídos" no histórico da Limpeza, com o motivo.
   async function limparTarefasObsoletas(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
-    var transf = (state.estoque.hospedinOcupacao && state.estoque.hospedinOcupacao.length) ? computeTransferenciasHoje() : null;
     var alvo = [];
     state.solicitacoes.forEach(function(s){
       if(s.tipo === "lavagem" && s.contexto === "checkin" && (s.status === "pendente" || s.status === "bloqueada") && s.criadoEm < hojeInicio.getTime()){
         alvo.push({s:s, motivo:"Removida automaticamente: era um check-in de um dia anterior que não foi concluído."});
-      } else if(transf && s.tipo === "limpeza" && s.contexto === "estadia" && s.origem === "sistema" && s.status === "pendente" && s.criadoEm >= hojeInicio.getTime() && !transf.mesmoQuartoIds[s.acomodacaoId]){
-        alvo.push({s:s, motivo:"Removida automaticamente: o Hospedin não mostra mais renovação de diária nesta acomodação."});
       }
     });
     var feitas = 0;
@@ -11460,6 +11458,7 @@
     {key:"limpeza_abertos", label:"Limpeza — só Em aberto", sub:true},
     {key:"limpeza_concluidos", label:"Limpeza — só Concluídos hoje", sub:true},
     {key:"limpeza_previsao", label:"Limpeza — só Previsão 7 dias", sub:true},
+    {key:"limpeza_acao_sem_qr", label:"Limpeza — iniciar/finalizar acomodação sem precisar do QR Code", acao:true},
     {key:"recepcao", label:"Recepção (painel de acompanhamento)"},
     {key:"recepcao_solicitacoes", label:"Recepção — só Solicitações", sub:true},
     {key:"recepcao_limpeza", label:"Recepção — só Limpeza", sub:true},
