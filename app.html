@@ -1885,6 +1885,7 @@
     // Feriados: confere sozinho quem trabalhou nos feriados que já passaram.
     apurarFeriados(false).catch(function(e){ console.error("apurarFeriados", e); });
     if(podeEditar("limpeza")) reconciliarTarefasTrocaDeQuarto().then(function(n){ if(n) renderApp(); }).catch(function(e){ console.error(e); });
+    if(podeEditar("limpeza") || podeEditar("recepcao")) limparTarefasObsoletas().then(function(n){ if(n) renderApp(); }).catch(function(e){ console.error(e); });
     // A criação das tarefas de "Preparo do quarto" do dia não depende mais
     // de alguém abrir o app — roda sozinha no servidor (Edge Function
     // "gerar-tarefas-lavagem" + agendamento), sempre a partir das 7h da
@@ -7698,6 +7699,7 @@
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos' | 'previsao'
 
   function acomodacaoNome(id){
+    if(!id) return "Sem acomodação definida";
     var a = state.acomodacoes.find(function(x){ return x.id===id; });
     return a ? a.nome : id;
   }
@@ -8421,6 +8423,36 @@
   // tarefas do dia agora roda no servidor (Edge Function
   // "gerar-tarefas-lavagem" + pg_cron), pra não depender de quem abre o
   // app e nunca duplicar. Função mantida aqui só como referência.
+  // Tarefas que ficaram "velhas" e aparecem pra equipe como se fossem de hoje:
+  //  1) "Preparo do quarto · Check-in" de um dia anterior que ninguém concluiu
+  //     (a recepção arrumou na mão e não liberou) — o hóspede já entrou, não há o que fazer.
+  //  2) "Arrumação · Manutenção" (renovação de diária, gerada automaticamente) de hoje que
+  //     deixou de fazer sentido porque o Hospedin mudou (ex.: era checkout de verdade).
+  // Elas saem das listas e ficam em "excluídos" no histórico da Limpeza, com o motivo.
+  async function limparTarefasObsoletas(){
+    var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    var transf = (state.estoque.hospedinOcupacao && state.estoque.hospedinOcupacao.length) ? computeTransferenciasHoje() : null;
+    var alvo = [];
+    state.solicitacoes.forEach(function(s){
+      if(s.tipo === "lavagem" && s.contexto === "checkin" && (s.status === "pendente" || s.status === "bloqueada") && s.criadoEm < hojeInicio.getTime()){
+        alvo.push({s:s, motivo:"Removida automaticamente: era um check-in de um dia anterior que não foi concluído."});
+      } else if(transf && s.tipo === "limpeza" && s.contexto === "estadia" && s.origem === "sistema" && s.status === "pendente" && s.criadoEm >= hojeInicio.getTime() && !transf.mesmoQuartoIds[s.acomodacaoId]){
+        alvo.push({s:s, motivo:"Removida automaticamente: o Hospedin não mostra mais renovação de diária nesta acomodação."});
+      }
+    });
+    var feitas = 0;
+    for(var i=0;i<alvo.length;i++){
+      var s = alvo[i].s;
+      try{
+        await dbUpdate("solicitacoes_acomodacao", s.id, {excluido_em:new Date().toISOString(), excluido_por:(currentUser?currentUser.id:null),
+          observacao:((s.observacao ? s.observacao+" · " : "") + alvo[i].motivo)}, mapSolicitacaoFromRow);
+        state.solicitacoes = state.solicitacoes.filter(function(x){ return x.id !== s.id; });
+        feitas++;
+      }catch(err){ console.error("Erro ao limpar tarefa obsoleta:", err); }
+    }
+    return feitas;
+  }
+
   async function garantirTarefasLavagemHoje(){
     if(!state.estoque.hospedinOcupacao || state.estoque.hospedinOcupacao.length === 0) return;
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
@@ -10694,6 +10726,7 @@
         html += '<div class="card">' +
           '<select id="saunaAvulsaSelect" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);">' +
           '<option value="">Selecionar acomodação…</option>' +
+          '<option value="__nenhuma__">Só ligar a sauna (não sei qual acomodação)</option>' +
           todasAtivas.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("") +
           '</select>' +
           '<div class="item-actions" style="margin-top:10px;"><button class="btn btn-in" id="saunaAvulsaBtn" style="flex:1;">'+ic("droplet")+' Sauna ligada</button></div>' +
@@ -10868,7 +10901,8 @@
       saunaAvulsaBtn.onclick = async function(){
         var sel = document.getElementById("saunaAvulsaSelect");
         var acomodacaoId = sel.value;
-        if(!acomodacaoId){ showToast("Escolha uma acomodação"); return; }
+        if(!acomodacaoId){ showToast("Escolha uma acomodação ou “Só ligar a sauna”"); return; }
+        if(acomodacaoId === "__nenhuma__") acomodacaoId = null;
         saunaAvulsaBtn.disabled = true;
         try{
           var proximoCheck = new Date(Date.now() + 60*60*1000).toISOString();
@@ -11548,6 +11582,21 @@
     html += '<div class="section-title">Valores</div><div class="card"><label style="display:block;font-size:13.5px;">Carga de lenha (R$)<br><input type="number" step="0.01" min="0" id="persValLenha" value="'+escapeHtml(val.lenha!=null?val.lenha:"")+'" placeholder="Ex: 45,00" style="'+PERS_INPUT+'"></label>' +
       '<p class="item-meta" style="margin:6px 0 0;">O valor de cada produto do frigobar fica em Estoque › Frigobar (campo “Valor cobrado ao hóspede”).</p></div>';
 
+    // Acomodações (criar / renomear / ativar)
+    var acoPers = state.acomodacoes.slice().sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    html += '<div class="section-title">Acomodações</div><div class="card">' +
+      '<p class="item-meta" style="margin:0 0 10px;">Acomodações que aparecem na sauna, limpeza, frigobar, QR Codes etc. Desativar esconde das listas sem apagar o histórico.</p>';
+    acoPers.forEach(function(a){
+      html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;'+(a.ativo?'':'opacity:.55;')+'">' +
+        '<input type="text" class="persAcoNome" data-id="'+escapeHtml(a.id)+'" value="'+escapeHtml(a.nome)+'" style="flex:1;min-width:150px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">' +
+        persBtn("acoAtivo",'data-id="'+escapeHtml(a.id)+'"', a.ativo?"Desativar":"Ativar") + '</div>';
+    });
+    html += '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">' +
+      '<input type="text" id="persAcoNova" placeholder="Nova acomodação (ex: Amora)" style="flex:1;min-width:150px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">' +
+      '<input type="text" id="persAcoCod" placeholder="Código no Hospedin (opcional)" style="width:190px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">' +
+      persBtn("acoAdd","","+ Adicionar") + '</div>' +
+      '<p class="item-meta" style="margin:8px 0 0;">Link do hóspede de uma nova acomodação: <b>…/liberar.html?a=</b>identificador (aparece ao adicionar).</p></div>';
+
     // 1) Cards da tela inicial
     var ids = HOME_PADRAO.map(function(x){ return x[0]; });
     var ordemH = persCompletarOrdem(h.ordem, ids);
@@ -11613,6 +11662,22 @@
       b.onclick = function(){
         var a = b.getAttribute("data-pa"), id = b.getAttribute("data-id"), m = b.getAttribute("data-m"), k = b.getAttribute("data-k");
         var d = Number(b.getAttribute("data-d")||0), i = Number(b.getAttribute("data-i")||0);
+        if(a==="acoAtivo"){
+          var ac = state.acomodacoes.find(function(x){ return x.id===id; }); if(!ac) return;
+          dbUpdate("acomodacoes", id, {ativo:!ac.ativo}, mapAcomodacaoFromRow).then(function(u){ Object.assign(ac, u); renderPersonalizar(); }).catch(function(e){ console.error(e); showToast("Não consegui salvar (rode a migração v27 no Supabase)"); });
+          return;
+        }
+        if(a==="acoAdd"){
+          var nomeN = (document.getElementById("persAcoNova").value||"").trim(); if(!nomeN){ showToast("Digite o nome"); return; }
+          var cod = (document.getElementById("persAcoCod").value||"").trim();
+          var slugN = nomeN.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"") || uid();
+          var baseSlug = slugN, n2 = 2; while(state.acomodacoes.some(function(x){ return x.id===slugN; })) slugN = baseSlug+"-"+(n2++);
+          var ordemN = state.acomodacoes.reduce(function(m,x){ return Math.max(m, x.ordem||0); }, 0) + 1;
+          dbInsert("acomodacoes", {id:slugN, nome:nomeN, ativo:true, ordem:ordemN, codigo_hospedin:cod||null}, mapAcomodacaoFromRow).then(function(nv){
+            state.acomodacoes.push(nv); showToast("Adicionada — link do hóspede: liberar.html?a="+slugN); renderPersonalizar();
+          }).catch(function(e){ console.error(e); showToast("Não consegui adicionar (rode a migração v27 no Supabase)"); });
+          return;
+        }
         if(a==="homeMov"){ var h = homeAtual(); h.ordem = persMover(persCompletarOrdem(h.ordem, HOME_PADRAO.map(function(x){return x[0];})), id, d); salvarHome(h); }
         else if(a==="homeOcultar"){ var h2 = homeAtual(); h2.ocultos = h2.ocultos||[]; var p = h2.ocultos.indexOf(id); if(p>-1) h2.ocultos.splice(p,1); else h2.ocultos.push(id); salvarHome(h2); }
         else if(a==="homeReset"){ salvarHome({}); }
@@ -11634,6 +11699,13 @@
           salvarLista(k, arr3);
         }
         else if(a==="listaReset"){ var l = JSON.parse(JSON.stringify(cfgGet("listas",{}))); delete l[k]; cfgSalvar("listas", l).then(function(){ renderPersonalizar(); }); }
+      };
+    });
+    main.querySelectorAll(".persAcoNome").forEach(function(inp){
+      inp.onchange = function(){
+        var ac = state.acomodacoes.find(function(x){ return x.id===inp.getAttribute("data-id"); }); var v = inp.value.trim();
+        if(!ac || !v){ renderPersonalizar(); return; }
+        dbUpdate("acomodacoes", ac.id, {nome:v}, mapAcomodacaoFromRow).then(function(u){ Object.assign(ac, u); showToast("Nome salvo"); }).catch(function(e){ console.error(e); showToast("Não consegui salvar (rode a migração v27 no Supabase)"); });
       };
     });
     var vl = document.getElementById("persValLenha");
