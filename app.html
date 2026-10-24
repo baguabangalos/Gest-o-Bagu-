@@ -462,6 +462,7 @@
 <main id="scanLimpezaView" style="display:none;"></main>
 <main id="adminView" style="display:none;"></main>
 <main id="personalizarView" style="display:none;"></main>
+<main id="tarefasDiaView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
 <main id="recepcaoView" style="display:none;"></main>
@@ -1526,6 +1527,7 @@
   var PERM_ACOES = {
     restaurante:["restaurante_acao_240","restaurante_acao_fechar","restaurante_acao_lancar_conta","restaurante_acao_cobrar"],
     recepcao:["recepcao_acao_confirmar_reparo"],
+    tarefas_dia:["tarefas_dia_acao_atribuir"],
     limpeza:["limpeza_acao_sem_qr"]
   };
   function permFilhos(modulo){
@@ -1885,6 +1887,7 @@
     document.getElementById("userBadge").textContent = currentUser.nome + (currentUser.role==="admin" ? " · admin" : "");
     await carregarAppConfig();
     state = await loadAllFromSupabase();
+    carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
     // Feriados: confere sozinho quem trabalhou nos feriados que já passaram.
     apurarFeriados(false).catch(function(e){ console.error("apurarFeriados", e); });
     if(podeEditar("limpeza")) reconciliarTarefasTrocaDeQuarto().then(function(n){ if(n) renderApp(); }).catch(function(e){ console.error(e); });
@@ -2368,6 +2371,10 @@
         h1.textContent = "Equipe";
         sub.textContent = "Horários, folga e setor";
         alertPill.style.display = "none";
+      } else if(appSection === "tarefasdia"){
+        h1.textContent = "Tarefas do dia";
+        sub.textContent = "Atividades específicas por pessoa";
+        alertPill.style.display = "none";
       } else if(appSection === "personalizar"){
         h1.textContent = "Personalizar";
         sub.textContent = "Abas, cards da tela inicial e listas";
@@ -2494,7 +2501,7 @@
   var HOME_PADRAO = [
     ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
     ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],["equipamentos","Equipamentos"],
-    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
+    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
   ];
   var HOME_FIXOS = ["admin","personalizar","configuracoes"];
   var appConfig = {};
@@ -2555,6 +2562,7 @@
     if(sec==="equipamentos") return "equipamentos";
     if(sec==="checklistturno") return "checklist_turno";
     if(sec==="escala") return "escala_trabalho";
+    if(sec==="tarefasdia") return "tarefas_dia";
     if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar") return null;
     return "procedimentos";
   }
@@ -2573,6 +2581,7 @@
     document.getElementById("manutencoesView").style.display = appSection==="manutencoes" ? "block":"none";
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
     document.getElementById("personalizarView").style.display = appSection==="personalizar" ? "block":"none";
+    document.getElementById("tarefasDiaView").style.display = appSection==="tarefasdia" ? "block":"none";
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
     document.getElementById("recepcaoView").style.display = appSection==="recepcao" ? "block":"none";
@@ -2624,6 +2633,7 @@
     if(appSection === "escala") renderEquipe();
     if(appSection === "admin") renderAdmin();
     if(appSection === "personalizar") renderPersonalizar();
+    if(appSection === "tarefasdia") renderTarefasDia();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
     if(appSection === "recepcao") renderRecepcao();
@@ -2695,6 +2705,10 @@
     }
     if(podeVer("escala_trabalho")){
       cards.push({section:"escala", titulo:"Equipe", icon:ic("users"), sub:"horários, folga e setor"});
+    }
+    if(podeVer("tarefas_dia")){
+      var tdPend = tarefasDiaMinhasPendentes().length;
+      cards.push({section:"tarefasdia", titulo:"Tarefas do dia", icon:ic("check"), sub:(tdPend ? (tdPend+(tdPend===1?" tarefa pra você":" tarefas pra você")) : "atividades por pessoa"), subVermelho:tdPend>0});
     }
     if(currentUser && currentUser.role === "admin") cards.push({section:"supervisao", titulo:"Supervisão", icon:ic("search"), sub:"painel geral e histórico"});
     if(currentUser && currentUser.role === "admin") cards.push({section:"admin", titulo:"Administração", icon:ic("key"), sub:"gerenciar quem acessa o quê"});
@@ -7718,7 +7732,7 @@
     window.history.replaceState({}, "", url.toString());
   }
 
-  var SCAN_VIEW_IDS = ["homeView","itemsView","countView","abastecimentoView","procedimentosView","manutencoesView","equipamentosView","checklistTurnoView","escalaView","adminView","personalizarView","hospedesView","limpezaView","recepcaoView","servicoGeralView","supervisaoView","configuracoesView"];
+  var SCAN_VIEW_IDS = ["homeView","itemsView","countView","abastecimentoView","procedimentosView","manutencoesView","equipamentosView","checklistTurnoView","escalaView","adminView","personalizarView","tarefasDiaView","hospedesView","limpezaView","recepcaoView","servicoGeralView","supervisaoView","configuracoesView"];
 
   function renderScanLimpeza(){
     document.getElementById("homeBackBtn").style.display = "none";
@@ -11487,7 +11501,9 @@
     {key:"escala_folga", label:"Equipe — só Folga", sub:true},
     {key:"escala_guarda", label:"Equipe — só Guarda", sub:true},
     {key:"escala_feriados", label:"Equipe — só Feriados", sub:true},
-    {key:"escala_setor", label:"Equipe — só Setor", sub:true}
+    {key:"escala_setor", label:"Equipe — só Setor", sub:true},
+    {key:"tarefas_dia", label:"Tarefas do dia (ver as próprias tarefas e marcar como feitas)"},
+    {key:"tarefas_dia_acao_atribuir", label:"Tarefas do dia — criar e atribuir tarefas a outras pessoas", acao:true}
   ];
   var adminUsersCache = null; // [{id,nome,email,role,ativo,permissoes:{modulo:{ver,editar}}}]
 
@@ -11570,6 +11586,138 @@
     return LISTAS_PADRAO.mesas.map(function(x){return x.slice();});
   }
   function persBtn(acao, attrs, txt){ return '<button type="button" class="btn btn-out" data-pa="'+acao+'" '+attrs+' style="min-width:36px;padding:6px 9px;">'+txt+'</button>'; }
+  // ================= Tarefas do dia (atividades específicas por pessoa) =================
+  // Tabela tarefas_dia (migração v28). Quem tem a permissão vê as próprias tarefas e marca como feitas;
+  // quem pode atribuir (admin, "editar" no módulo ou a ação própria) cria tarefas pra qualquer pessoa.
+  var tarefasDia = {lista:[], carregado:false, erro:false};
+  var tdSub = "minhas", tdData = null;
+  function hojeISO(){ var d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  function dataBr(iso){ var p = String(iso||"").slice(0,10).split("-"); return p.length===3 ? (p[2]+"/"+p[1]) : ""; }
+  function podeAtribuirTarefas(){ return !!currentUser && (currentUser.role==="admin" || permFlag("tarefas_dia","editar") || permFlag("tarefas_dia_acao_atribuir","ver")); }
+  function mapTarefaDia(r){ return {id:r.id, titulo:r.titulo, descricao:r.descricao||"", para:r.atribuida_para, data:String(r.data||"").slice(0,10), status:r.status||"pendente",
+    concluidaEm:(r.concluida_em?new Date(r.concluida_em).getTime():null), obs:r.obs_conclusao||"", criadoPor:r.criado_por, criadoPorNome:r.criado_por_nome||"", criadoEm:(r.criado_em?new Date(r.criado_em).getTime():null)}; }
+  async function carregarTarefasDia(){
+    try{
+      var desde = new Date(Date.now() - 30*86400000); var ini = desde.getFullYear()+"-"+String(desde.getMonth()+1).padStart(2,"0")+"-"+String(desde.getDate()).padStart(2,"0");
+      var r = await sb.from("tarefas_dia").select("*").gte("data", ini).order("data").order("criado_em");
+      if(r.error) throw r.error;
+      tarefasDia.lista = (r.data||[]).map(mapTarefaDia); tarefasDia.erro = false;
+    }catch(err){ tarefasDia.erro = true; console.error("tarefas_dia:", err); }
+    tarefasDia.carregado = true;
+  }
+  // Pendentes de hoje (e atrasadas de dias anteriores) atribuídas a mim
+  function tarefasDiaMinhasPendentes(){
+    if(!currentUser) return [];
+    var hoje = hojeISO();
+    return tarefasDia.lista.filter(function(t){ return t.para === currentUser.id && t.status === "pendente" && t.data <= hoje; });
+  }
+  function tdNomePessoa(id){ return (state && state.staffNames && state.staffNames[id]) || "—"; }
+  function renderTarefasDia(){
+    var main = document.getElementById("tarefasDiaView");
+    var gestor = podeAtribuirTarefas();
+    if(!tarefasDia.carregado){
+      main.innerHTML = '<div class="empty">Carregando tarefas…</div>';
+      carregarTarefasDia().then(function(){ if(appSection==="tarefasdia") renderTarefasDia(); });
+      return;
+    }
+    if(tarefasDia.erro){
+      main.innerHTML = '<div class="empty">Não consegui carregar as tarefas. Confira se a migração v28 já foi rodada no Supabase.<br><button class="btn btn-in" id="tdRetry" style="margin-top:10px;">Tentar de novo</button></div>';
+      document.getElementById("tdRetry").onclick = function(){ tarefasDia.carregado = false; renderTarefasDia(); };
+      return;
+    }
+    if(!gestor && tdSub !== "minhas") tdSub = "minhas";
+    var hoje = hojeISO();
+    if(!tdData) tdData = hoje;
+    var inp = 'padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);width:100%;box-sizing:border-box;';
+    var html = '';
+    if(gestor){
+      html += '<div class="sub-tabs" style="display:flex;gap:8px;margin-bottom:14px;">' +
+        '<button type="button" class="btn '+(tdSub==="minhas"?'btn-in':'btn-out')+'" data-tdsub="minhas" style="flex:1;">Minhas</button>' +
+        '<button type="button" class="btn '+(tdSub==="todas"?'btn-in':'btn-out')+'" data-tdsub="todas" style="flex:1;">Atribuir / todas</button></div>';
+    }
+    function cartaTarefa(t, mostrarPessoa, podeMarcar){
+      var atrasada = t.status === "pendente" && t.data < hoje;
+      var feita = t.status === "feita";
+      var h = '<div class="card" style="border-left:4px solid '+(feita?'var(--teal-700)':atrasada?'var(--amber-600)':'var(--line)')+';">';
+      h += '<p class="item-name" style="margin:0 0 3px;'+(feita?'text-decoration:line-through;opacity:.7;':'')+'">'+escapeHtml(t.titulo)+'</p>';
+      if(t.descricao) h += '<p class="item-meta" style="white-space:pre-wrap;">'+escapeHtml(t.descricao)+'</p>';
+      var meta = [];
+      if(mostrarPessoa) meta.push(ic("users")+' '+escapeHtml(tdNomePessoa(t.para)));
+      meta.push(ic("calendar")+' '+(t.data===hoje?'hoje':dataBr(t.data)));
+      if(t.criadoPorNome && t.criadoPor !== t.para) meta.push('de '+escapeHtml(t.criadoPorNome));
+      h += '<p class="item-meta">'+meta.join(' · ')+'</p>';
+      if(atrasada) h += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ de '+dataBr(t.data)+' — ainda não foi feita</p>';
+      if(feita) h += '<p class="item-meta">'+ic("check")+' Feita'+(t.concluidaEm?(' às '+fmtDate(t.concluidaEm).split(" ")[1]):'')+(t.obs?(' — '+escapeHtml(t.obs)):'')+'</p>';
+      h += '<div class="item-actions">';
+      if(podeMarcar && !feita) h += '<button class="btn btn-in" data-td="feita" data-id="'+t.id+'">'+ic("check")+' Feita</button>';
+      if(podeMarcar && feita) h += '<button class="btn btn-out" data-td="reabrir" data-id="'+t.id+'">Reabrir</button>';
+      if(gestor) h += '<button class="btn btn-out" data-td="excluir" data-id="'+t.id+'">'+ic("trash")+' Excluir</button>';
+      h += '</div></div>';
+      return h;
+    }
+    if(tdSub === "minhas"){
+      var minhas = tarefasDia.lista.filter(function(t){ return currentUser && t.para === currentUser.id && ((t.status==="pendente" && t.data<=hoje) || (t.status==="feita" && t.data===hoje)); });
+      var pend = minhas.filter(function(t){ return t.status==="pendente"; }), feitas = minhas.filter(function(t){ return t.status==="feita"; });
+      html += '<div class="section-title" style="margin-top:0;">Pra fazer</div>';
+      html += pend.length ? pend.map(function(t){ return cartaTarefa(t,false,true); }).join("") : '<div class="empty">Nenhuma tarefa pendente pra você hoje. 🎉</div>';
+      if(feitas.length) html += '<div class="section-title">Feitas hoje</div>' + feitas.map(function(t){ return cartaTarefa(t,false,true); }).join("");
+    } else {
+      var pessoas = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; }).sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||"","pt-BR"); });
+      html += '<div class="section-title" style="margin-top:0;">Nova tarefa</div><div class="card">' +
+        '<input type="text" id="tdTitulo" placeholder="O que precisa ser feito? (ex: conferir o estoque da lavanderia)" style="'+inp+'margin-bottom:8px;">' +
+        '<textarea id="tdDesc" rows="2" placeholder="Detalhes (opcional)" style="'+inp+'resize:vertical;margin-bottom:8px;"></textarea>' +
+        '<select id="tdPara" style="'+inp+'margin-bottom:8px;"><option value="">Quem vai fazer…</option>' + pessoas.map(function(p){ return '<option value="'+p.id+'">'+escapeHtml(p.nome)+'</option>'; }).join("") + '</select>' +
+        '<label style="display:block;font-size:13px;color:var(--ink-600);margin-bottom:10px;">Para o dia<br><input type="date" id="tdNovaData" value="'+hoje+'" min="'+hoje+'" style="'+inp+'margin-top:4px;"></label>' +
+        '<div class="item-actions"><button class="btn btn-in" id="tdAdd" style="flex:1;">+ Atribuir tarefa</button></div></div>';
+      html += '<div class="section-title">Tarefas do dia</div><label style="display:block;font-size:13px;color:var(--ink-600);margin-bottom:10px;">Ver o dia<br><input type="date" id="tdVerData" value="'+tdData+'" style="'+inp+'margin-top:4px;"></label>';
+      var doDia = tarefasDia.lista.filter(function(t){ return t.data === tdData || (tdData===hoje && t.status==="pendente" && t.data<hoje); });
+      if(!doDia.length) html += '<div class="empty">Nenhuma tarefa neste dia.</div>';
+      var grupos = {}; doDia.forEach(function(t){ (grupos[t.para] = grupos[t.para] || []).push(t); });
+      Object.keys(grupos).sort(function(a,b){ return tdNomePessoa(a).localeCompare(tdNomePessoa(b),"pt-BR"); }).forEach(function(pid){
+        var lista = grupos[pid], feitasN = lista.filter(function(t){ return t.status==="feita"; }).length;
+        html += '<p class="item-meta" style="margin:12px 0 6px;font-weight:800;color:var(--ink-900);">'+ic("users")+' '+escapeHtml(tdNomePessoa(pid))+' <span style="font-weight:600;color:var(--ink-600);">— '+feitasN+'/'+lista.length+' feitas</span></p>';
+        html += lista.map(function(t){ return cartaTarefa(t,false,currentUser && (t.para===currentUser.id || currentUser.role==="admin")); }).join("");
+      });
+    }
+    main.innerHTML = html;
+    main.querySelectorAll("[data-tdsub]").forEach(function(b){ b.onclick = function(){ tdSub = b.getAttribute("data-tdsub"); renderTarefasDia(); }; });
+    var vd = document.getElementById("tdVerData"); if(vd) vd.onchange = function(){ tdData = vd.value || hoje; renderTarefasDia(); };
+    var add = document.getElementById("tdAdd");
+    if(add) add.onclick = async function(){
+      var titulo = document.getElementById("tdTitulo").value.trim(), para = document.getElementById("tdPara").value, data = document.getElementById("tdNovaData").value || hoje;
+      if(!titulo){ showToast("Escreva a tarefa"); return; }
+      if(!para){ showToast("Escolha quem vai fazer"); return; }
+      add.disabled = true;
+      try{
+        var r = await sb.from("tarefas_dia").insert({id:uid(), titulo:titulo, descricao:(document.getElementById("tdDesc").value.trim()||null), atribuida_para:para, data:data, status:"pendente",
+          criado_por:currentUser.id, criado_por_nome:currentUser.nome}).select().single();
+        if(r.error) throw r.error;
+        tarefasDia.lista.push(mapTarefaDia(r.data)); tdData = data; showToast("Tarefa atribuída para "+tdNomePessoa(para)); renderTarefasDia();
+      }catch(err){ console.error(err); showToast("Erro ao salvar a tarefa"); add.disabled = false; }
+    };
+    main.querySelectorAll("[data-td]").forEach(function(b){
+      b.onclick = async function(){
+        var id = b.getAttribute("data-id"), acao = b.getAttribute("data-td");
+        var t = tarefasDia.lista.find(function(x){ return x.id===id; }); if(!t) return;
+        b.disabled = true;
+        try{
+          if(acao === "excluir"){
+            if(!confirm("Excluir esta tarefa?")){ b.disabled = false; return; }
+            var d = await sb.from("tarefas_dia").delete().eq("id", id); if(d.error) throw d.error;
+            tarefasDia.lista = tarefasDia.lista.filter(function(x){ return x.id!==id; });
+          } else {
+            var obs = null;
+            if(acao === "feita"){ obs = prompt("Alguma observação? (pode deixar em branco)"); if(obs === null) obs = ""; }
+            var upd = acao === "feita" ? {status:"feita", concluida_em:new Date().toISOString(), concluida_por:currentUser.id, obs_conclusao:(obs||"").trim()||null} : {status:"pendente", concluida_em:null, concluida_por:null, obs_conclusao:null};
+            var u = await sb.from("tarefas_dia").update(upd).eq("id", id).select().single(); if(u.error) throw u.error;
+            Object.assign(t, mapTarefaDia(u.data));
+          }
+          renderTarefasDia();
+        }catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
+      };
+    });
+  }
+
   function renderPersonalizar(){
     var main = document.getElementById("personalizarView");
     if(!LISTAS_PADRAO) aplicarListasConfig();
