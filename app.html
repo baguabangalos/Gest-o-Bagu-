@@ -5690,11 +5690,33 @@
       var ativo = equipTipoSel===id;
       return '<button type="button" data-etipo="'+escapeHtml(id)+'" style="flex:0 0 auto;padding:7px 13px;border-radius:999px;border:1px solid '+(ativo?'var(--teal-700)':'var(--line)')+';background:'+(ativo?'var(--teal-700)':'#fff')+';color:'+(ativo?'#fff':'var(--ink-700, #333)')+';font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;">'+escapeHtml(label)+' · '+n+(aten?' <span style="color:'+(ativo?'#ffd9a8':'#b45309')+';">●</span>':'')+'</button>';
     }
-    var html = '<div class="equip-tipos" style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;margin-bottom:2px;">' + chip("__todos","Todos",todos.length,0);
+    function cardEq(e, mostrarTipo){
+      var info = equipamentoStatusInfo(e);
+      var prox = proximaManutencaoTs(e);
+      var h = '<div class="card equip-card" data-id="'+e.id+'" style="border-left:4px solid '+info.cor+';">' +
+        '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+info.cor+';margin-bottom:4px;">'+info.label+'</span>' +
+        '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(e.nome)+(e.tipo&&mostrarTipo?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(e.tipo)+'</span>':'')+'</p>';
+      if(e.local) h += '<p class="item-meta">'+ic("pin")+' '+escapeHtml(e.local)+'</p>';
+      if(prox) h += '<p class="item-meta">próxima manutenção: '+fmtDateOnly(prox)+(isEquipamentoVencido(e)?' (vencida)':'')+'</p>';
+      h += auditoriaHtml("equipamentos", e.id, e.nome, e.aud, e.createdAt);
+      return h + '</div>';
+    }
+    var vencidos = todos.filter(function(e){ return isEquipamentoVencido(e); }).sort(function(a,b){
+      return (proximaManutencaoTs(a)||0) - (proximaManutencaoTs(b)||0);
+    });
+    var idsVenc = {};
+    var html = '';
+    if(vencidos.length){
+      html += '<p style="margin:0 0 8px;font-weight:800;font-size:13.5px;color:#b45309;">⚠ Manutenção vencida · '+vencidos.length+'</p>';
+      vencidos.forEach(function(e){ idsVenc[e.id] = true; html += cardEq(e, true); });
+      html += '<div style="height:6px;"></div>';
+    }
+    html += '<div class="equip-tipos" style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;margin-bottom:2px;">' + chip("__todos","Todos",todos.length,0);
     ordemTipos.forEach(function(k){ html += chip(k, tipos[k].label, tipos[k].n, tipos[k].aten); });
     if(semTipo) html += chip("__sem","Sem tipo",semTipo,0);
     html += '</div>';
     var list = todos.filter(function(e){
+      if(idsVenc[e.id]) return false;
       var k = equipTipoKey(e.tipo);
       if(equipTipoSel==="__todos") return true;
       if(equipTipoSel==="__sem") return !k;
@@ -5706,19 +5728,9 @@
       return (a.nome||"").localeCompare(b.nome||"", "pt-BR");
     });
     if(list.length === 0){
-      html += '<div class="empty">Nenhum equipamento cadastrado'+(equipTipoSel==="__todos"?' ainda':' neste tipo')+'. Toque em "+" para adicionar.</div>';
+      if(!vencidos.length || todos.length === 0) html += '<div class="empty">Nenhum equipamento cadastrado'+(equipTipoSel==="__todos"?' ainda':' neste tipo')+'. Toque em "+" para adicionar.</div>';
     } else {
-      list.forEach(function(e){
-        var info = equipamentoStatusInfo(e);
-        var prox = proximaManutencaoTs(e);
-        html += '<div class="card equip-card" data-id="'+e.id+'" style="border-left:4px solid '+info.cor+';">' +
-          '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+info.cor+';margin-bottom:4px;">'+info.label+'</span>' +
-          '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(e.nome)+(e.tipo&&equipTipoSel==="__todos"?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(e.tipo)+'</span>':'')+'</p>';
-        if(e.local) html += '<p class="item-meta">'+ic("pin")+' '+escapeHtml(e.local)+'</p>';
-        if(prox) html += '<p class="item-meta">próxima manutenção: '+fmtDateOnly(prox)+(isEquipamentoVencido(e)?' (vencida)':'')+'</p>';
-        html += auditoriaHtml("equipamentos", e.id, e.nome, e.aud, e.createdAt);
-        html += '</div>';
-      });
+      list.forEach(function(e){ html += cardEq(e, equipTipoSel==="__todos"); });
     }
     return html;
   }
