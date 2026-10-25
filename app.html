@@ -463,6 +463,7 @@
 <main id="adminView" style="display:none;"></main>
 <main id="personalizarView" style="display:none;"></main>
 <main id="tarefasDiaView" style="display:none;"></main>
+<main id="financeiroView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
 <main id="recepcaoView" style="display:none;"></main>
@@ -520,6 +521,10 @@
       <input type="number" id="f_min" step="0.01" required>
       <label>Valor cobrado ao hóspede (R$) — opcional</label>
       <input type="number" id="f_precoVenda" step="0.01" min="0" placeholder="Ex: 12,00 (frigobar, lojinha…)">
+      <div id="f_precoCustoWrap" style="display:none;">
+      <label>Valor pago por unidade (custo, R$) — opcional</label>
+      <input type="number" id="f_precoCusto" step="0.01" min="0" placeholder="Ex: 6,50 — usado no relatório de lucro e perdas">
+      </div>
       <label class="checkbox-row"><input type="checkbox" id="f_trackUsage"><span>Controlar em uso / guardado (ex: enxoval)</span></label>
       <div id="f_emUsoWrap" style="display:none;">
         <label>Quantidade em uso</label>
@@ -1063,7 +1068,7 @@
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
       qtyUsado:Number(r.qty_usado||0),
-      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras, links:(Array.isArray(r.links_compra)?r.links_compra:[]), precoVenda:(r.preco_venda!=null?Number(r.preco_venda):null),
+      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras, links:(Array.isArray(r.links_compra)?r.links_compra:[]), precoVenda:(r.preco_venda!=null?Number(r.preco_venda):null), precoCusto:(r.preco_custo!=null?Number(r.preco_custo):null),
       criadoPor:r.criado_por, editadoPor:r.editado_por, editadoEm:(r.editado_em?new Date(r.editado_em).getTime():null), aud:audDe(r)};
   }
   function mapMovementFromRow(r){
@@ -1567,6 +1572,8 @@
   // Ação especial (ex.: lançar na mesa 240, fechar conta): módulo completo com "editar" ou a permissão própria da ação.
   function podeAcao(modulo, acao){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"editar") || permFlag(acao,"ver")); }
   // Quem tem esta permissão (ou é admin) inicia/finaliza a limpeza sem escanear o QR Code da acomodação.
+  // Valor pago (custo), lucro e perdas: só administradores ou quem recebeu a permissão "Lucro e perdas do estoque".
+  function podeVerFinanceiro(){ return !!currentUser && (currentUser.role==="admin" || permFlag("financeiro_estoque","ver")); }
   function podeSemQr(){ return !!currentUser && (currentUser.role==="admin" || permFlag("limpeza_acao_sem_qr","ver")); }
   function permFlag(modulo, flag){ return !!(currentUser && currentUser.permissoes[modulo] && currentUser.permissoes[modulo][flag]); }
   function estoquePorCategoria(flag){
@@ -2396,6 +2403,10 @@
         h1.textContent = "Equipe";
         sub.textContent = "Horários, folga e setor";
         alertPill.style.display = "none";
+      } else if(appSection === "financeiro"){
+        h1.textContent = "Lucro e perdas";
+        sub.textContent = "Resultado mensal do estoque";
+        alertPill.style.display = "none";
       } else if(appSection === "tarefasdia"){
         h1.textContent = "Tarefas do dia";
         sub.textContent = "Atividades específicas por pessoa";
@@ -2526,7 +2537,7 @@
   var HOME_PADRAO = [
     ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
     ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],["equipamentos","Equipamentos"],
-    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
+    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["financeiro","Lucro e perdas"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
   ];
   var HOME_FIXOS = ["admin","personalizar","configuracoes"];
   var appConfig = {};
@@ -2554,6 +2565,8 @@
     var l = cfgGet("listas", {});
     var d = (l.destinos && l.destinos.length) ? l.destinos.slice() : LISTAS_PADRAO.destinos.slice();
     if(d.indexOf("Recepção") === -1) d.unshift("Recepção");
+    if(d.indexOf("Vencidos") === -1) d.push("Vencidos");
+    if(d.indexOf("Danificados") === -1) d.push("Danificados");
     DESTINOS_FIXOS = d;
     REST_MOTIVOS = (l.motivos && l.motivos.length) ? l.motivos.slice() : LISTAS_PADRAO.motivos.slice();
     REST_PAGAMENTOS = (l.pagamentos && l.pagamentos.length) ? l.pagamentos.map(function(x){return x.slice();}) : LISTAS_PADRAO.pagamentos.map(function(x){return x.slice();});
@@ -2588,6 +2601,7 @@
     if(sec==="checklistturno") return "checklist_turno";
     if(sec==="escala") return "escala_trabalho";
     if(sec==="tarefasdia") return "tarefas_dia";
+    if(sec==="financeiro") return "financeiro_estoque";
     if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar") return null;
     return "procedimentos";
   }
@@ -2607,6 +2621,7 @@
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
     document.getElementById("personalizarView").style.display = appSection==="personalizar" ? "block":"none";
     document.getElementById("tarefasDiaView").style.display = appSection==="tarefasdia" ? "block":"none";
+    document.getElementById("financeiroView").style.display = appSection==="financeiro" ? "block":"none";
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
     document.getElementById("recepcaoView").style.display = appSection==="recepcao" ? "block":"none";
@@ -2659,6 +2674,7 @@
     if(appSection === "admin") renderAdmin();
     if(appSection === "personalizar") renderPersonalizar();
     if(appSection === "tarefasdia") renderTarefasDia();
+    if(appSection === "financeiro") renderFinanceiro();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
     if(appSection === "recepcao") renderRecepcao();
@@ -2730,6 +2746,9 @@
     }
     if(podeVer("escala_trabalho")){
       cards.push({section:"escala", titulo:"Equipe", icon:ic("users"), sub:"horários, folga e setor"});
+    }
+    if(podeVer("financeiro_estoque")){
+      cards.push({section:"financeiro", titulo:"Lucro e perdas", icon:ic("gauge"), sub:"resultado mensal do estoque"});
     }
     if(podeVer("tarefas_dia") && (podeAtribuirTarefas() || !podeVer("checklist_turno"))){
       var tdPend = tarefasDiaMinhasPendentes().length;
@@ -2929,7 +2948,7 @@
         metaText = "guardado (mín. "+fmtQty(it.min)+") · em uso: "+fmtQty(it.qtyEmUso)+" "+escapeHtml(it.unit);
         if(it.category === "Uniformes") metaText += " · usado (no estoque): "+fmtQty(it.qtyUsado)+" "+escapeHtml(it.unit);
       } else {
-        metaText = "mínimo: "+fmtQty(it.min)+" "+escapeHtml(it.unit)+(it.precoVenda!=null ? " · valor "+restMoney(it.precoVenda) : "");
+        metaText = "mínimo: "+fmtQty(it.min)+" "+escapeHtml(it.unit)+(it.precoVenda!=null ? " · valor "+restMoney(it.precoVenda) : "")+(it.precoCusto!=null && podeVerFinanceiro() ? " · custo "+restMoney(it.precoCusto) : "");
       }
       if(supplier) metaText += " · "+escapeHtml(supplier.name);
       if(it.numeroSerie) metaText += " · nº série "+escapeHtml(it.numeroSerie);
@@ -3946,6 +3965,8 @@
     document.getElementById("f_qty").value = item ? item.qty : "";
     document.getElementById("f_min").value = item ? item.min : "";
     document.getElementById("f_precoVenda").value = (item && item.precoVenda!=null) ? item.precoVenda : "";
+    document.getElementById("f_precoCusto").value = (item && item.precoCusto!=null) ? item.precoCusto : "";
+    document.getElementById("f_precoCustoWrap").style.display = podeVerFinanceiro() ? "block" : "none";
     var trackUsage = item ? !!item.trackUsage : (activeCategory === "Enxoval");
     document.getElementById("f_trackUsage").checked = trackUsage;
     document.getElementById("f_qtyEmUso").value = item ? (item.qtyEmUso||0) : 0;
@@ -4016,6 +4037,7 @@
       var photoParaSalvar = await uploadAnexoParaStorage(pendingPhoto, "items");
       var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:photoParaSalvar,
         supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null, links_compra:lerLinksDoForm(), preco_venda:(document.getElementById("f_precoVenda").value!=="" ? parseFloat(document.getElementById("f_precoVenda").value) : null)};
+      if(podeVerFinanceiro()) payload.preco_custo = (document.getElementById("f_precoCusto").value!=="" ? parseFloat(document.getElementById("f_precoCusto").value) : null);
       if(editingItemId){
         payload.editado_por = currentUser ? currentUser.id : null;
         payload.editado_em = new Date().toISOString();
@@ -4068,7 +4090,7 @@
     else { openMoveSheet(item, act === "in" ? "entrada" : "saida"); }
   });
 
-  var DESTINOS_FIXOS = ["Recepção", "Welcome drink", "Venda avulsa", "Empréstimo restaurante", "Guilherme", "Funcionário", "Governança", "Prestadores de serviço", "Marcella", "Vencidos"];
+  var DESTINOS_FIXOS = ["Recepção", "Welcome drink", "Venda avulsa", "Empréstimo restaurante", "Guilherme", "Funcionário", "Governança", "Prestadores de serviço", "Marcella", "Vencidos", "Danificados"];
   // Nomes sugeridos ao registrar quem recebeu um uniforme — ainda dá pra
   // digitar qualquer outro nome que não esteja nessa lista.
   var FUNCIONARIOS_CONHECIDOS = ["Guilherme"];
@@ -7803,7 +7825,7 @@
     window.history.replaceState({}, "", url.toString());
   }
 
-  var SCAN_VIEW_IDS = ["homeView","itemsView","countView","abastecimentoView","procedimentosView","manutencoesView","equipamentosView","checklistTurnoView","escalaView","adminView","personalizarView","tarefasDiaView","hospedesView","limpezaView","recepcaoView","servicoGeralView","supervisaoView","configuracoesView"];
+  var SCAN_VIEW_IDS = ["homeView","itemsView","countView","abastecimentoView","procedimentosView","manutencoesView","equipamentosView","checklistTurnoView","escalaView","adminView","personalizarView","tarefasDiaView","financeiroView","hospedesView","limpezaView","recepcaoView","servicoGeralView","supervisaoView","configuracoesView"];
 
   function renderScanLimpeza(){
     document.getElementById("homeBackBtn").style.display = "none";
@@ -11573,6 +11595,7 @@
     {key:"escala_guarda", label:"Equipe — só Guarda", sub:true},
     {key:"escala_feriados", label:"Equipe — só Feriados", sub:true},
     {key:"escala_setor", label:"Equipe — só Setor", sub:true},
+    {key:"financeiro_estoque", label:"Lucro e perdas do estoque (valores pagos, vendas e perdas)"},
     {key:"tarefas_dia", label:"Tarefas do dia (ver as próprias tarefas e marcar como feitas)"},
     {key:"tarefas_dia_acao_atribuir", label:"Tarefas do dia — criar e atribuir tarefas a outras pessoas", acao:true}
   ];
@@ -11787,6 +11810,117 @@
         }catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
       };
     });
+  }
+
+  // ================= Lucro e perdas (estoque) =================
+  // Usa o valor pago (custo) e o valor de venda de cada item + as movimentações do mês:
+  //  • Venda  = saída pra uma acomodação (frigobar) ou "Venda avulsa", de item com valor de venda
+  //  • Perda  = saída com destino "Vencidos" ou "Danificados" (qty × custo)
+  //  • Cortesia/consumo interno = demais saídas (qty × custo), menos "Recepção" (ainda não descontado)
+  // O custo usado é o valor pago ATUAL do item (estimativa, não guarda histórico de preço).
+  var finMes = null, finMov = {lista:[], carregado:false, erro:false, carregando:false};
+  function finMesKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+  function finMesNome(key){ var p = key.split("-"); var n = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"]; return n[+p[1]-1]+" de "+p[0]; }
+  function finMesDeslocar(key, delta){ var p = key.split("-"); return finMesKey(new Date(+p[0], +p[1]-1+delta, 1)); }
+  async function carregarMovimentosFin(){
+    finMov.carregando = true;
+    try{
+      var ini = new Date(); ini = new Date(ini.getFullYear(), ini.getMonth()-6, 1);
+      var out = [];
+      for(var from=0; ; from+=1000){
+        var r = await sb.from("movements").select("id,item_id,type,qty,delta,destino,note,date").gte("date", ini.toISOString()).order("date", {ascending:false}).range(from, from+999);
+        if(r.error) throw r.error;
+        out = out.concat(r.data||[]);
+        if(!r.data || r.data.length < 1000) break;
+      }
+      finMov.lista = out.map(function(m){ return {itemId:m.item_id, type:m.type, qty:Number(m.qty), delta:(m.delta!=null?Number(m.delta):null), destino:m.destino||"", note:m.note||"", ts:new Date(m.date).getTime()}; });
+      finMov.erro = false;
+    }catch(err){ finMov.erro = true; console.error("movimentos fin:", err); }
+    finMov.carregado = true; finMov.carregando = false;
+  }
+  function calcularMesFin(key){
+    var p = key.split("-"), ini = new Date(+p[0], +p[1]-1, 1).getTime(), fim = new Date(+p[0], +p[1], 1).getTime();
+    var itens = {}; state.estoque.items.forEach(function(it){ itens[it.id] = it; });
+    var acoNomes = {}; state.acomodacoes.forEach(function(a){ acoNomes[a.nome] = true; });
+    var r = {receita:0, custoVendas:0, perdas:0, perdasVenc:0, perdasDan:0, cortesias:0, compras:0, faltas:0, porItem:{}, perdasItem:{}, semValor:{}, semCusto:{}};
+    finMov.lista.forEach(function(m){
+      if(m.ts < ini || m.ts >= fim) return;
+      var it = itens[m.itemId]; if(!it) return;
+      var custo = it.precoCusto, venda = it.precoVenda;
+      if(m.type === "entrada"){ if(custo!=null) r.compras += m.qty*custo; else r.semCusto[it.name] = true; return; }
+      if(m.type === "ajuste"){ if(m.delta!=null && m.delta<0 && custo!=null) r.faltas += Math.abs(m.delta)*custo; return; }
+      if(m.type !== "saida" || m.destino === "Recepção") return;
+      var c = custo!=null ? m.qty*custo : 0;
+      if(custo==null) r.semCusto[it.name] = true;
+      if(m.destino === "Vencidos" || m.destino === "Danificados"){
+        r.perdas += c; if(m.destino === "Vencidos") r.perdasVenc += c; else r.perdasDan += c;
+        var pi = r.perdasItem[it.name] = r.perdasItem[it.name] || {qty:0, custo:0, motivo:{}};
+        pi.qty += m.qty; pi.custo += c; pi.motivo[m.destino] = (pi.motivo[m.destino]||0) + m.qty;
+      } else if((acoNomes[m.destino] || m.destino === "Venda avulsa") && venda!=null){
+        var rec = m.qty*venda; r.receita += rec; r.custoVendas += c;
+        var v = r.porItem[it.name] = r.porItem[it.name] || {qty:0, receita:0, custo:0};
+        v.qty += m.qty; v.receita += rec; v.custo += c;
+      } else {
+        if((acoNomes[m.destino] || m.destino === "Venda avulsa") && venda==null) r.semValor[it.name] = true;
+        r.cortesias += c;
+      }
+    });
+    r.lucro = r.receita - r.custoVendas;
+    r.resultado = r.lucro - r.perdas - r.cortesias;
+    return r;
+  }
+  function renderFinanceiro(){
+    var main = document.getElementById("financeiroView");
+    if(!finMes) finMes = finMesKey(new Date());
+    if(!finMov.carregado){
+      main.innerHTML = '<div class="empty">Carregando movimentações…</div>';
+      if(!finMov.carregando) carregarMovimentosFin().then(function(){ if(appSection==="financeiro") renderFinanceiro(); });
+      return;
+    }
+    if(finMov.erro){
+      main.innerHTML = '<div class="empty">Não consegui carregar as movimentações.<br><button class="btn btn-in" id="finRetry" style="margin-top:10px;">Tentar de novo</button></div>';
+      document.getElementById("finRetry").onclick = function(){ finMov.carregado = false; renderFinanceiro(); };
+      return;
+    }
+    var r = calcularMesFin(finMes), hojeKey = finMesKey(new Date());
+    var cor = function(v){ return v < 0 ? "var(--red-600)" : "var(--teal-700)"; };
+    var linha = function(rot, val, forte, corV){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);'+(forte?'font-weight:800;font-size:15px;':'font-size:13.5px;')+'"><span>'+rot+'</span><span style="'+(corV?('color:'+corV+';'):'')+'white-space:nowrap;">'+val+'</span></div>'; };
+    var html = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">' +
+      '<button type="button" class="btn btn-out" id="finPrev" style="padding:8px 14px;">◀</button>' +
+      '<p style="margin:0;font-weight:800;font-size:16px;text-transform:capitalize;">'+finMesNome(finMes)+'</p>' +
+      '<button type="button" class="btn btn-out" id="finNext" style="padding:8px 14px;"'+(finMes>=hojeKey?' disabled':'')+'>▶</button></div>';
+    html += '<div class="card">' +
+      linha("Vendas (frigobar e avulsas)", restMoney(r.receita)) +
+      linha("Custo dos produtos vendidos", "− "+restMoney(r.custoVendas)) +
+      linha("Lucro das vendas"+(r.receita>0?(' <span style="font-weight:600;color:var(--ink-600);">('+Math.round(r.lucro/r.receita*100)+'%)</span>'):''), restMoney(r.lucro), true, cor(r.lucro)) +
+      linha("Perdas — vencidos", "− "+restMoney(r.perdasVenc)) +
+      linha("Perdas — danificados", "− "+restMoney(r.perdasDan)) +
+      linha("Cortesias e consumo interno (custo)", "− "+restMoney(r.cortesias)) +
+      linha("Resultado do mês", restMoney(r.resultado), true, cor(r.resultado)) + '</div>';
+    html += '<div class="card" style="margin-top:12px;">' +
+      linha("Compras do mês (entradas no estoque)", restMoney(r.compras)) +
+      linha("Faltas na contagem (custo) — só informativo", restMoney(r.faltas)) + '</div>';
+    var avisos = [];
+    var sc = Object.keys(r.semCusto), sv = Object.keys(r.semValor);
+    if(sc.length) avisos.push('Sem valor pago cadastrado (custo contado como R$ 0): <b>'+sc.map(escapeHtml).join(", ")+'</b>');
+    if(sv.length) avisos.push('Saíram pra acomodação sem valor de venda (contados como cortesia): <b>'+sv.map(escapeHtml).join(", ")+'</b>');
+    if(avisos.length) html += '<div class="card" style="margin-top:12px;border-left:4px solid var(--amber-600);"><p class="item-meta" style="margin:0 0 4px;font-weight:800;color:var(--amber-600);">⚠ Cadastre os valores pra o resultado ficar certo</p>' + avisos.map(function(a){ return '<p class="item-meta" style="margin:4px 0;">'+a+'</p>'; }).join("") + '</div>';
+    var pv = Object.keys(r.porItem).sort(function(a,b){ return r.porItem[b].receita - r.porItem[a].receita; });
+    html += '<div class="section-title">Vendas por item</div>';
+    html += pv.length ? '<div class="card">' + pv.map(function(n){ var v = r.porItem[n]; return linha(escapeHtml(n)+' <span style="color:var(--ink-600);">× '+fmtQty(v.qty)+'</span>', restMoney(v.receita)+' · lucro '+restMoney(v.receita-v.custo)); }).join("") + '</div>' : '<div class="empty">Nenhuma venda neste mês.</div>';
+    var pp = Object.keys(r.perdasItem).sort(function(a,b){ return r.perdasItem[b].custo - r.perdasItem[a].custo; });
+    html += '<div class="section-title">Perdas por item</div>';
+    html += pp.length ? '<div class="card">' + pp.map(function(n){ var v = r.perdasItem[n]; return linha(escapeHtml(n)+' <span style="color:var(--ink-600);">× '+fmtQty(v.qty)+' ('+Object.keys(v.motivo).map(function(k){ return k.toLowerCase(); }).join(", ")+')</span>', "− "+restMoney(v.custo), false, "var(--red-600)"); }).join("") + '</div>' : '<div class="empty">Nenhuma perda registrada neste mês.</div>';
+    // últimos 6 meses
+    html += '<div class="section-title">Últimos meses</div><div class="card">';
+    for(var i=0;i<6;i++){
+      var k = finMesDeslocar(hojeKey, -i), c = calcularMesFin(k);
+      html += linha('<span style="text-transform:capitalize;">'+finMesNome(k).split(" de ")[0]+'</span> <span style="color:var(--ink-600);">vendas '+restMoney(c.receita)+' · perdas '+restMoney(c.perdas)+'</span>', restMoney(c.resultado), false, cor(c.resultado));
+    }
+    html += '</div><p class="item-meta" style="margin-top:10px;">Perdas: dê saída do item com destino “Vencidos” ou “Danificados”. O custo usa o valor pago atual de cada item.</p>';
+    main.innerHTML = html;
+    document.getElementById("finPrev").onclick = function(){ finMes = finMesDeslocar(finMes, -1); renderFinanceiro(); };
+    document.getElementById("finNext").onclick = function(){ if(finMes < hojeKey){ finMes = finMesDeslocar(finMes, 1); renderFinanceiro(); } };
   }
 
   function renderPersonalizar(){
