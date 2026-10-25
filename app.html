@@ -1552,7 +1552,7 @@
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
     limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao"}},
-    manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas"}}
+    manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas", equipamentos:"equipamentos"}}
   };
   var PERM_ACOES = {
     restaurante:["restaurante_acao_240","restaurante_acao_fechar","restaurante_acao_lancar_conta","restaurante_acao_cobrar"],
@@ -1566,7 +1566,7 @@
   }
   function permFilhoFlag(modulo, flag){ return permFilhos(modulo).some(function(k){ return permFlag(k, flag); }); }
   function abaChave(modulo, aba){ return PERM_ABAS[modulo] && PERM_ABAS[modulo].abas[aba]; }
-  function podeVerAba(modulo, aba){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"ver") || permFlag(abaChave(modulo,aba),"ver")); }
+  function podeVerAba(modulo, aba){ if(modulo==="manutencao" && aba==="equipamentos") return podeVer("equipamentos"); return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"ver") || permFlag(abaChave(modulo,aba),"ver")); }
   function podeEditarAba(modulo, aba){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"editar") || permFlag(abaChave(modulo,aba),"editar")); }
   function podeExcluirAba(modulo, aba){ return !!currentUser && (currentUser.role==="admin" || permFlag(modulo,"excluir") || permFlag(abaChave(modulo,aba),"excluir")); }
   // Ação especial (ex.: lançar na mesa 240, fechar conta): módulo completo com "editar" ou a permissão própria da ação.
@@ -2531,12 +2531,12 @@
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
     limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias"},
-    manutencao:{pendentes:"Pendentes", concluidas:"Concluídas"}
+    manutencao:{pendentes:"Pendentes", concluidas:"Concluídas", equipamentos:"Equipamentos"}
   };
   var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
   var HOME_PADRAO = [
     ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
-    ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],["equipamentos","Equipamentos"],
+    ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],
     ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["financeiro","Lucro e perdas"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
   ];
   var HOME_FIXOS = ["admin","personalizar","configuracoes"];
@@ -2641,8 +2641,14 @@
       fab.style.display = "flex"; fab.onclick = function(){ openItemSheet(null); };
     } else if(appSection==="procedimentos" && podeEditar("procedimentos")){
       fab.style.display = "flex"; fab.onclick = function(){ openProcedimentoSheet(null); };
-    } else if(appSection==="manutencoes" && podeEditar("manutencao")){
-      fab.style.display = "flex"; fab.onclick = function(){ openManutencaoSheet(null); };
+    } else if(appSection==="manutencoes" && (podeEditar("manutencao") || podeEditar("equipamentos"))){
+      fab.style.display = "flex"; fab.onclick = function(){
+        if(manutencaoSubView==="equipamentos"){
+          if(!podeEditar("equipamentos")){ showToast("Você não tem permissão para editar equipamentos"); return; }
+          openEquipamentoSheet(null);
+          if(equipTipoSel && equipTipoSel!=="__todos" && equipTipoSel!=="__sem") document.getElementById("eq_tipo").value = equipTipoLabel(equipTipoSel);
+        } else openManutencaoSheet(null);
+      };
     } else if(appSection==="equipamentos" && podeEditar("equipamentos")){
       fab.style.display = "flex"; fab.onclick = function(){ openEquipamentoSheet(null); };
     } else {
@@ -2733,11 +2739,6 @@
     if(podeVer("restaurante")){
       var restAbertasN = rest.carregado ? rest.comandas.filter(function(c){ return c.status==="aberta"; }).length : 0;
       cards.push({section:"restaurante", titulo:"Restaurante", icon:ic("cup"), sub:(restAbertasN ? (restAbertasN+(restAbertasN===1?" comanda aberta":" comandas abertas")) : "cardápio, comandas e consumo")});
-    }
-    if(podeVer("equipamentos")){
-      var equipAlertCount = state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length;
-      var equipSub = equipAlertCount > 0 ? (equipAlertCount + (equipAlertCount===1?" equipamento precisa de atenção":" equipamentos precisam de atenção")) : "tudo em dia";
-      cards.push({section:"equipamentos", titulo:"Equipamentos", icon:ic("gauge"), sub:equipSub});
     }
     if(podeVer("checklist_turno")){
       var turnosAtrasadosN = (currentUser.role==="admin") ? turnosAtrasados().length : 0;
@@ -5345,6 +5346,9 @@
   var manutencaoOverlay = document.getElementById("manutencaoSheetOverlay");
   var editingManutencaoId = null;
   var manutencaoSubView = "pendentes";
+  var equipTipoSel = "__todos";
+  function equipTipoKey(t){ return (t||"").trim().toLowerCase(); }
+  function equipTipoLabel(k){ var f = state.equipamentos.find(function(e){ return equipTipoKey(e.tipo)===k; }); return f ? f.tipo.trim() : k; }
   var manutencaoBusca = ""; // texto digitado na busca de manutenções (serviço, local, responsável)
 
   // Painel simples "onde posso ir agora" — pensado especificamente pra quem
@@ -5522,10 +5526,22 @@
       return b.createdAt-a.createdAt;
     });
     var done = state.manutencoes.filter(function(m){ return m.status==="concluida"; }).sort(function(a,b){ return (b.resolvedAt||0)-(a.resolvedAt||0); });
+    var equipAtencao = podeVer("equipamentos") ? state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length : 0;
     var html = '<div class="seg-toggle">' +
       '<button data-msub="pendentes" class="'+(manutencaoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-msub="concluidas" class="'+(manutencaoSubView==="concluidas"?"active":"")+'">Concluídas</button>' +
+      (podeVer("equipamentos") ? '<button data-msub="equipamentos" class="'+(manutencaoSubView==="equipamentos"?"active":"")+'">Equipamentos'+(equipAtencao?(' · '+equipAtencao):'')+'</button>' : '') +
     '</div>';
+    if(manutencaoSubView === "equipamentos" && podeVer("equipamentos")){
+      html += equipamentosHtml();
+      main.innerHTML = html;
+      main.querySelectorAll("[data-msub]").forEach(function(b){
+        b.onclick = function(){ manutencaoSubView = b.getAttribute("data-msub"); renderManutencoes(); };
+      });
+      ligarEquipamentos(main);
+      return;
+    }
+    if(manutencaoSubView === "equipamentos") manutencaoSubView = "pendentes";
     html += '<input type="text" id="manutBusca" placeholder="Buscar por serviço, local ou responsável…" value="'+escapeHtml(manutencaoBusca)+'" style="width:100%;padding:11px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;background:var(--sand-50);font-family:inherit;">';
     var list = manutencaoSubView === "pendentes" ? pend : done;
     if(list.length === 0){
@@ -5657,37 +5673,70 @@
     return {cor:"var(--teal-700)", label:""+ic('dotGreen')+" Em uso"};
   }
 
-  function renderEquipamentos(){
-    var main = document.getElementById("equipamentosView");
-    var list = state.equipamentos.slice().sort(function(a,b){
+  function equipamentosHtml(){
+    var todos = state.equipamentos;
+    var tipos = {}, ordemTipos = [], semTipo = 0;
+    todos.forEach(function(e){
+      var k = equipTipoKey(e.tipo);
+      if(!k){ semTipo++; return; }
+      if(!tipos[k]){ tipos[k] = {n:0, aten:0, label:e.tipo.trim()}; ordemTipos.push(k); }
+      tipos[k].n++;
+      if(e.status==="em_conserto" || isEquipamentoVencido(e)) tipos[k].aten++;
+    });
+    ordemTipos.sort(function(a,b){ return tipos[a].label.localeCompare(tipos[b].label, "pt-BR"); });
+    if(equipTipoSel !== "__todos" && equipTipoSel !== "__sem" && !tipos[equipTipoSel]) equipTipoSel = "__todos";
+    if(equipTipoSel === "__sem" && !semTipo) equipTipoSel = "__todos";
+    function chip(id, label, n, aten){
+      var ativo = equipTipoSel===id;
+      return '<button type="button" data-etipo="'+escapeHtml(id)+'" style="flex:0 0 auto;padding:7px 13px;border-radius:999px;border:1px solid '+(ativo?'var(--teal-700)':'var(--line)')+';background:'+(ativo?'var(--teal-700)':'#fff')+';color:'+(ativo?'#fff':'var(--ink-700, #333)')+';font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;">'+escapeHtml(label)+' · '+n+(aten?' <span style="color:'+(ativo?'#ffd9a8':'#b45309')+';">●</span>':'')+'</button>';
+    }
+    var html = '<div class="equip-tipos" style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;margin-bottom:2px;">' + chip("__todos","Todos",todos.length,0);
+    ordemTipos.forEach(function(k){ html += chip(k, tipos[k].label, tipos[k].n, tipos[k].aten); });
+    if(semTipo) html += chip("__sem","Sem tipo",semTipo,0);
+    html += '</div>';
+    var list = todos.filter(function(e){
+      var k = equipTipoKey(e.tipo);
+      if(equipTipoSel==="__todos") return true;
+      if(equipTipoSel==="__sem") return !k;
+      return k===equipTipoSel;
+    }).sort(function(a,b){
       var va = (a.status==="em_conserto"||isEquipamentoVencido(a)) ? 0 : 1;
       var vb = (b.status==="em_conserto"||isEquipamentoVencido(b)) ? 0 : 1;
       if(va !== vb) return va - vb;
       return (a.nome||"").localeCompare(b.nome||"", "pt-BR");
     });
-    var html = "";
     if(list.length === 0){
-      html += '<div class="empty">Nenhum equipamento cadastrado ainda. Toque em "+" para adicionar.</div>';
+      html += '<div class="empty">Nenhum equipamento cadastrado'+(equipTipoSel==="__todos"?' ainda':' neste tipo')+'. Toque em "+" para adicionar.</div>';
     } else {
       list.forEach(function(e){
         var info = equipamentoStatusInfo(e);
         var prox = proximaManutencaoTs(e);
         html += '<div class="card equip-card" data-id="'+e.id+'" style="border-left:4px solid '+info.cor+';">' +
           '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+info.cor+';margin-bottom:4px;">'+info.label+'</span>' +
-          '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(e.nome)+(e.tipo?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(e.tipo)+'</span>':'')+'</p>';
+          '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(e.nome)+(e.tipo&&equipTipoSel==="__todos"?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(e.tipo)+'</span>':'')+'</p>';
         if(e.local) html += '<p class="item-meta">'+ic("pin")+' '+escapeHtml(e.local)+'</p>';
         if(prox) html += '<p class="item-meta">próxima manutenção: '+fmtDateOnly(prox)+(isEquipamentoVencido(e)?' (vencida)':'')+'</p>';
         html += auditoriaHtml("equipamentos", e.id, e.nome, e.aud, e.createdAt);
         html += '</div>';
       });
     }
-    main.innerHTML = html;
+    return html;
+  }
+  function ligarEquipamentos(main){
+    main.querySelectorAll("[data-etipo]").forEach(function(b){
+      b.onclick = function(){ equipTipoSel = b.getAttribute("data-etipo"); renderManutencoes(); };
+    });
     main.querySelectorAll(".equip-card").forEach(function(c){
       c.onclick = function(){
         var e = state.equipamentos.find(function(x){ return x.id===c.getAttribute("data-id"); });
         if(e) openEquipamentoSheet(e);
       };
     });
+  }
+  function renderEquipamentos(){
+    // Equipamentos agora ficam dentro de Manutenções (aba "Equipamentos").
+    if(appSection === "equipamentos"){ appSection = "manutencoes"; manutencaoSubView = "equipamentos"; }
+    renderManutencoes();
   }
 
   function renderEquipamentoHistorico(equipamentoId){
@@ -11842,7 +11891,7 @@
     var p = key.split("-"), ini = new Date(+p[0], +p[1]-1, 1).getTime(), fim = new Date(+p[0], +p[1], 1).getTime();
     var itens = {}; state.estoque.items.forEach(function(it){ itens[it.id] = it; });
     var acoNomes = {}; state.acomodacoes.forEach(function(a){ acoNomes[a.nome] = true; });
-    var r = {receita:0, custoVendas:0, perdas:0, perdasVenc:0, perdasDan:0, cortesias:0, compras:0, faltas:0, gastos:0, gastosCat:{}, porItem:{}, perdasItem:{}, semValor:{}, semCusto:{}};
+    var r = {receita:0, custoVendas:0, perdas:0, perdasVenc:0, perdasDan:0, cortesias:0, compras:0, faltas:0, gastos:0, gastosCat:{}, cortesiasDest:{}, porItem:{}, perdasItem:{}, semValor:{}, semCusto:{}};
     finMov.lista.forEach(function(m){
       if(m.ts < ini || m.ts >= fim) return;
       var it = itens[m.itemId]; if(!it) return;
@@ -11861,7 +11910,8 @@
       }
       if(m.type === "entrada"){ if(custo!=null) r.compras += m.qty*custo; else r.semCusto[it.name] = true; return; }
       if(m.type === "ajuste"){ if(m.delta!=null && m.delta<0 && custo!=null) r.faltas += Math.abs(m.delta)*custo; return; }
-      if(m.type !== "saida" || m.destino === "Recepção") return;
+      // "Recepção" ainda não saiu do estoque; "Empréstimo restaurante" volta depois — nenhum dos dois é custo.
+      if(m.type !== "saida" || m.destino === "Recepção" || m.destino === "Empréstimo restaurante") return;
       var c = custo!=null ? m.qty*custo : 0;
       if(custo==null) r.semCusto[it.name] = true;
       if(m.destino === "Vencidos" || m.destino === "Danificados"){
@@ -11875,6 +11925,7 @@
       } else {
         if((acoNomes[m.destino] || m.destino === "Venda avulsa") && venda==null) r.semValor[it.name] = true;
         r.cortesias += c;
+        var dn = m.destino || "Outros"; r.cortesiasDest[dn] = (r.cortesiasDest[dn]||0) + c;
       }
     });
     r.lucro = r.receita - r.custoVendas;
@@ -11913,6 +11964,8 @@
     html += '<div class="card" style="margin-top:12px;">' +
       linha("Reposição de frigobar/lojinha (compras do mês)", restMoney(r.compras)) +
       linha("Faltas na contagem (custo) — só informativo", restMoney(r.faltas)) + '</div>';
+    var cd = Object.keys(r.cortesiasDest).filter(function(k){ return r.cortesiasDest[k] > 0; }).sort(function(a,b){ return r.cortesiasDest[b]-r.cortesiasDest[a]; });
+    if(cd.length) html += '<div class="card" style="margin-top:12px;"><p class="item-meta" style="margin:0 0 4px;font-weight:800;">Cortesias e consumo interno por destino</p>' + cd.map(function(k){ return linha(escapeHtml(k), restMoney(r.cortesiasDest[k])); }).join("") + '<p class="item-meta" style="margin:8px 0 0;">Empréstimo ao restaurante não entra: o item volta pro estoque.</p></div>';
     var avisos = [];
     var sc = Object.keys(r.semCusto), sv = Object.keys(r.semValor);
     if(sc.length) avisos.push('Sem valor pago cadastrado (custo contado como R$ 0): <b>'+sc.map(escapeHtml).join(", ")+'</b>');
