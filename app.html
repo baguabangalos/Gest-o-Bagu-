@@ -876,6 +876,10 @@
     <form id="equipamentoForm">
       <label>Nome</label>
       <input type="text" id="eq_nome" required placeholder="Ex: Ar-condicionado, Bomba d'água...">
+      <label>Código</label>
+      <input type="text" id="eq_codigo" required placeholder="Código do equipamento (ex: AC-03)">
+      <label>Data de instalação</label>
+      <input type="date" id="eq_dataInstalacao" required>
       <label>Tipo</label>
       <input type="text" id="eq_tipo" required placeholder="Ex: Ar-condicionado, Bomba, Rotiador...">
       <label>Modelo</label>
@@ -1114,7 +1118,7 @@
     return {id:r.id, nome:r.nome, ativo:r.ativo, ordem:r.ordem, codigoHospedin:r.codigo_hospedin};
   }
   function mapEquipamentoFromRow(r){
-    return {id:r.id, nome:r.nome, tipo:r.tipo, modelo:r.modelo||"", numeroSerie:r.numero_serie||"", local:r.local, status:r.status||"em_uso",
+    return {id:r.id, nome:r.nome, tipo:r.tipo, codigo:r.codigo||"", dataInstalacao:(r.data_instalacao?new Date(r.data_instalacao).getTime():null), modelo:r.modelo||"", numeroSerie:r.numero_serie||"", local:r.local, status:r.status||"em_uso",
       prazoMeses:r.prazo_meses||null, ultimaManutencao:(r.ultima_manutencao?new Date(r.ultima_manutencao).getTime():null),
       observacoes:r.observacoes, createdAt:new Date(r.created_at).getTime(), aud:audDe(r)};
   }
@@ -5700,8 +5704,9 @@
       var h = '<div class="card equip-card" data-id="'+e.id+'" style="border-left:4px solid '+info.cor+';">' +
         '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+info.cor+';margin-bottom:4px;">'+info.label+'</span>' +
         '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(e.nome)+(e.tipo&&mostrarTipo?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(e.tipo)+'</span>':'')+'</p>';
+      if(e.codigo || e.dataInstalacao) h += '<p class="item-meta">'+(e.codigo?'Código: '+escapeHtml(e.codigo):'')+(e.codigo&&e.dataInstalacao?' · ':'')+(e.dataInstalacao?'Instalado em '+fmtDateOnly(e.dataInstalacao):'')+'</p>';
       if(e.modelo || e.numeroSerie) h += '<p class="item-meta">'+(e.modelo?'Modelo: '+escapeHtml(e.modelo):'')+(e.modelo&&e.numeroSerie?' · ':'')+(e.numeroSerie?'Série: '+escapeHtml(e.numeroSerie):'')+'</p>';
-      else h += '<p class="item-meta" style="color:#b45309;">falta modelo e nº de série</p>';
+      if(!(e.codigo && e.dataInstalacao && e.modelo && e.numeroSerie)) h += '<p class="item-meta" style="color:#b45309;">falta código, instalação, modelo ou nº de série</p>';
       if(e.local) h += '<p class="item-meta">'+ic("pin")+' '+escapeHtml(e.local)+'</p>';
       if(prox) h += '<p class="item-meta">próxima manutenção: '+fmtDateOnly(prox)+(isEquipamentoVencido(e)?' (vencida)':'')+'</p>';
       h += auditoriaHtml("equipamentos", e.id, e.nome, e.aud, e.createdAt);
@@ -5780,6 +5785,8 @@
     document.getElementById("eq_nome").value = e ? e.nome : "";
     document.getElementById("eq_tipo").value = e ? (e.tipo||"") : "";
     document.getElementById("eq_modelo").value = e ? (e.modelo||"") : "";
+    document.getElementById("eq_codigo").value = e ? (e.codigo||"") : "";
+    document.getElementById("eq_dataInstalacao").value = e && e.dataInstalacao ? new Date(e.dataInstalacao).toISOString().slice(0,10) : "";
     document.getElementById("eq_serie").value = e ? (e.numeroSerie||"") : "";
     document.getElementById("eq_local").value = e ? (e.local||"") : "";
     document.getElementById("eq_prazoMeses").value = e ? (e.prazoMeses||"") : "";
@@ -5822,7 +5829,10 @@
     var tipo = document.getElementById("eq_tipo").value.trim();
     var modelo = document.getElementById("eq_modelo").value.trim();
     var serie = document.getElementById("eq_serie").value.trim();
-    if(!tipo || !modelo || !serie){ showToast("Preencha tipo, modelo e número de série"); return; }
+    var codigo = document.getElementById("eq_codigo").value.trim();
+    var instRaw = document.getElementById("eq_dataInstalacao").value;
+    if(!tipo || !modelo || !serie || !codigo || !instRaw){ showToast("Preencha código, data de instalação, tipo, modelo e número de série"); return; }
+    var dataInstalacao = new Date(instRaw+"T12:00:00").toISOString();
     var local = document.getElementById("eq_local").value.trim();
     var prazoRaw = document.getElementById("eq_prazoMeses").value;
     var prazoMeses = prazoRaw ? parseInt(prazoRaw, 10) : null;
@@ -5831,13 +5841,13 @@
     var observacoes = document.getElementById("eq_obs").value.trim();
     try{
       if(editingEquipamentoId){
-        var payload = {nome:nome, tipo:tipo, modelo:modelo, numero_serie:serie, local:local, prazo_meses:prazoMeses, ultima_manutencao:ultimaManutencao, observacoes:observacoes};
+        var payload = {nome:nome, tipo:tipo, codigo:codigo, data_instalacao:dataInstalacao, modelo:modelo, numero_serie:serie, local:local, prazo_meses:prazoMeses, ultima_manutencao:ultimaManutencao, observacoes:observacoes};
         var e1 = await dbUpdate("equipamentos", editingEquipamentoId, payload, mapEquipamentoFromRow);
         var idx1 = state.equipamentos.findIndex(function(x){ return x.id===editingEquipamentoId; });
         if(idx1>-1) state.equipamentos[idx1] = e1;
         showToast("Equipamento atualizado");
       } else {
-        var e2 = await dbInsert("equipamentos", {id:uid(), nome:nome, tipo:tipo, modelo:modelo, numero_serie:serie, local:local, status:"em_uso", prazo_meses:prazoMeses, ultima_manutencao:ultimaManutencao, observacoes:observacoes}, mapEquipamentoFromRow);
+        var e2 = await dbInsert("equipamentos", {id:uid(), nome:nome, tipo:tipo, codigo:codigo, data_instalacao:dataInstalacao, modelo:modelo, numero_serie:serie, local:local, status:"em_uso", prazo_meses:prazoMeses, ultima_manutencao:ultimaManutencao, observacoes:observacoes}, mapEquipamentoFromRow);
         state.equipamentos.push(e2);
         showToast("Equipamento cadastrado");
       }
