@@ -11842,11 +11842,23 @@
     var p = key.split("-"), ini = new Date(+p[0], +p[1]-1, 1).getTime(), fim = new Date(+p[0], +p[1], 1).getTime();
     var itens = {}; state.estoque.items.forEach(function(it){ itens[it.id] = it; });
     var acoNomes = {}; state.acomodacoes.forEach(function(a){ acoNomes[a.nome] = true; });
-    var r = {receita:0, custoVendas:0, perdas:0, perdasVenc:0, perdasDan:0, cortesias:0, compras:0, faltas:0, porItem:{}, perdasItem:{}, semValor:{}, semCusto:{}};
+    var r = {receita:0, custoVendas:0, perdas:0, perdasVenc:0, perdasDan:0, cortesias:0, compras:0, faltas:0, gastos:0, gastosCat:{}, porItem:{}, perdasItem:{}, semValor:{}, semCusto:{}};
     finMov.lista.forEach(function(m){
       if(m.ts < ini || m.ts >= fim) return;
       var it = itens[m.itemId]; if(!it) return;
       var custo = it.precoCusto, venda = it.precoVenda;
+      // Materiais de consumo (limpeza, enxoval, manutenção, uniformes…): o gasto conta na COMPRA, mesmo sem lucro.
+      // As saídas deles não entram de novo (nem como perda nem como cortesia) pra não contar duas vezes.
+      var materialConsumo = (it.category !== "Frigobar" && it.category !== "Lojinha");
+      if(materialConsumo){
+        if(m.type === "entrada"){
+          if(custo==null){ r.semCusto[it.name] = true; return; }
+          var g = m.qty*custo; r.gastos += g;
+          var gc = r.gastosCat[it.category] = r.gastosCat[it.category] || {total:0, itens:{}};
+          gc.total += g; gc.itens[it.name] = (gc.itens[it.name]||0) + g;
+        }
+        return;
+      }
       if(m.type === "entrada"){ if(custo!=null) r.compras += m.qty*custo; else r.semCusto[it.name] = true; return; }
       if(m.type === "ajuste"){ if(m.delta!=null && m.delta<0 && custo!=null) r.faltas += Math.abs(m.delta)*custo; return; }
       if(m.type !== "saida" || m.destino === "Recepção") return;
@@ -11866,7 +11878,7 @@
       }
     });
     r.lucro = r.receita - r.custoVendas;
-    r.resultado = r.lucro - r.perdas - r.cortesias;
+    r.resultado = r.lucro - r.perdas - r.cortesias - r.gastos;
     return r;
   }
   function renderFinanceiro(){
@@ -11896,15 +11908,22 @@
       linha("Perdas — vencidos", "− "+restMoney(r.perdasVenc)) +
       linha("Perdas — danificados", "− "+restMoney(r.perdasDan)) +
       linha("Cortesias e consumo interno (custo)", "− "+restMoney(r.cortesias)) +
+      linha("Gastos com materiais (limpeza, enxoval, manutenção…)", "− "+restMoney(r.gastos)) +
       linha("Resultado do mês", restMoney(r.resultado), true, cor(r.resultado)) + '</div>';
     html += '<div class="card" style="margin-top:12px;">' +
-      linha("Compras do mês (entradas no estoque)", restMoney(r.compras)) +
+      linha("Reposição de frigobar/lojinha (compras do mês)", restMoney(r.compras)) +
       linha("Faltas na contagem (custo) — só informativo", restMoney(r.faltas)) + '</div>';
     var avisos = [];
     var sc = Object.keys(r.semCusto), sv = Object.keys(r.semValor);
     if(sc.length) avisos.push('Sem valor pago cadastrado (custo contado como R$ 0): <b>'+sc.map(escapeHtml).join(", ")+'</b>');
     if(sv.length) avisos.push('Saíram pra acomodação sem valor de venda (contados como cortesia): <b>'+sv.map(escapeHtml).join(", ")+'</b>');
     if(avisos.length) html += '<div class="card" style="margin-top:12px;border-left:4px solid var(--amber-600);"><p class="item-meta" style="margin:0 0 4px;font-weight:800;color:var(--amber-600);">⚠ Cadastre os valores pra o resultado ficar certo</p>' + avisos.map(function(a){ return '<p class="item-meta" style="margin:4px 0;">'+a+'</p>'; }).join("") + '</div>';
+    html += '<div class="section-title">Gastos do mês por categoria</div>';
+    var cats = Object.keys(r.gastosCat).sort(function(a,b){ return r.gastosCat[b].total - r.gastosCat[a].total; });
+    html += cats.length ? '<div class="card">' + cats.map(function(c){
+      var g = r.gastosCat[c];
+      return linha('<b>'+escapeHtml(CATEGORY_LABEL[c]||c)+'</b>', restMoney(g.total), true) + Object.keys(g.itens).sort(function(a,b){ return g.itens[b]-g.itens[a]; }).map(function(n){ return linha('<span style="color:var(--ink-600);">'+escapeHtml(n)+'</span>', restMoney(g.itens[n])); }).join("");
+    }).join("") + '</div>' : '<div class="empty">Nenhuma compra de materiais neste mês.</div>';
     var pv = Object.keys(r.porItem).sort(function(a,b){ return r.porItem[b].receita - r.porItem[a].receita; });
     html += '<div class="section-title">Vendas por item</div>';
     html += pv.length ? '<div class="card">' + pv.map(function(n){ var v = r.porItem[n]; return linha(escapeHtml(n)+' <span style="color:var(--ink-600);">× '+fmtQty(v.qty)+'</span>', restMoney(v.receita)+' · lucro '+restMoney(v.receita-v.custo)); }).join("") + '</div>' : '<div class="empty">Nenhuma venda neste mês.</div>';
@@ -11915,9 +11934,9 @@
     html += '<div class="section-title">Últimos meses</div><div class="card">';
     for(var i=0;i<6;i++){
       var k = finMesDeslocar(hojeKey, -i), c = calcularMesFin(k);
-      html += linha('<span style="text-transform:capitalize;">'+finMesNome(k).split(" de ")[0]+'</span> <span style="color:var(--ink-600);">vendas '+restMoney(c.receita)+' · perdas '+restMoney(c.perdas)+'</span>', restMoney(c.resultado), false, cor(c.resultado));
+      html += linha('<span style="text-transform:capitalize;">'+finMesNome(k).split(" de ")[0]+'</span> <span style="color:var(--ink-600);">vendas '+restMoney(c.receita)+' · perdas '+restMoney(c.perdas)+' · materiais '+restMoney(c.gastos)+'</span>', restMoney(c.resultado), false, cor(c.resultado));
     }
-    html += '</div><p class="item-meta" style="margin-top:10px;">Perdas: dê saída do item com destino “Vencidos” ou “Danificados”. O custo usa o valor pago atual de cada item.</p>';
+    html += '</div><p class="item-meta" style="margin-top:10px;">Perdas: dê saída do item com destino “Vencidos” ou “Danificados”. Materiais de limpeza, enxoval etc. contam como gasto na compra (entrada no estoque), então a saída deles não é contada de novo. O custo usa o valor pago atual de cada item.</p>';
     main.innerHTML = html;
     document.getElementById("finPrev").onclick = function(){ finMes = finMesDeslocar(finMes, -1); renderFinanceiro(); };
     document.getElementById("finNext").onclick = function(){ if(finMes < hojeKey){ finMes = finMesDeslocar(finMes, 1); renderFinanceiro(); } };
