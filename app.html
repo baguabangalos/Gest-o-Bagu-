@@ -495,6 +495,8 @@
 
       <label>Nome do item</label>
       <input type="text" id="f_name" required placeholder="Ex: Detergente">
+      <label>Nome(s) no fornecedor (opcional — um por linha)</label>
+      <textarea id="f_nomesFornecedor" rows="2" placeholder="Como aparece no pedido do fornecedor. Ex: BATATA PRINGLES ORIGINAL TUBO 104GR"></textarea>
       <label>Código de barras (opcional)</label>
       <div style="display:flex;gap:8px;">
         <input type="text" id="f_codigoBarras" placeholder="Ex: 7891000100103" style="flex:1;">
@@ -1076,7 +1078,7 @@
     return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
       qtyUsado:Number(r.qty_usado||0),
-      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras, links:(Array.isArray(r.links_compra)?r.links_compra:[]), precoVenda:(r.preco_venda!=null?Number(r.preco_venda):null), precoCusto:(r.preco_custo!=null?Number(r.preco_custo):null),
+      localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras, nomesFornecedor:(r.nomes_fornecedor||""), links:(Array.isArray(r.links_compra)?r.links_compra:[]), precoVenda:(r.preco_venda!=null?Number(r.preco_venda):null), precoCusto:(r.preco_custo!=null?Number(r.preco_custo):null),
       criadoPor:r.criado_por, editadoPor:r.editado_por, editadoEm:(r.editado_em?new Date(r.editado_em).getTime():null), aud:audDe(r)};
   }
   function mapMovementFromRow(r){
@@ -3593,6 +3595,88 @@
   }
 
   var pedidoCompraFotoPendente = null;
+  // ---------- Documento do fornecedor (PDF de pedido/orçamento) ----------
+  // Lê as linhas de itens de PDFs de vários formatos (ION, Kalyda, Garra…): acha a descrição,
+  // o código de barras (quando tem) e a quantidade. Não depende do nome ser igual ao do estoque.
+  async function extrairLinhasPdf(file){
+    var buf = await file.arrayBuffer();
+    var pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+    var linhas = [];
+    for(var p=1; p<=pdf.numPages; p++){
+      var page = await pdf.getPage(p);
+      var content = await page.getTextContent();
+      var rows = [];
+      content.items.forEach(function(it){
+        if(!it.str || !it.str.trim()) return;
+        var y = Math.round(it.transform[5]);
+        var r = rows.find(function(x){ return Math.abs(x.y - y) <= 2; });
+        if(!r){ r = {y:y, its:[]}; rows.push(r); }
+        r.its.push({x:it.transform[4], s:it.str.trim()});
+      });
+      rows.sort(function(a,b){ return b.y - a.y; });
+      rows.forEach(function(r){ r.its.sort(function(a,b){ return a.x - b.x; }); linhas.push(r.its.map(function(i){ return i.s; })); });
+    }
+    return linhas;
+  }
+  function parsearPedidoFornecedor(linhas){
+    var UNID = /^(UN|UND|DP|CX|PC|PCT|FD|PT|KG|LT|SC|FR|DZ|BD|GF|PAR|KIT|CJ|RL)$/i;
+    var EAN = /^\d{8,14}$/, EMB = /^\d+\s*[xX]\s*\d+$/, NUM = /^\$?\s*\d{1,3}(\.\d{3})*(,\d+)?$|^\$?\s*\d+([.,]\d+)?$/;
+    function numero(s){ s = String(s).replace(/[$\s]/g,""); if(s.indexOf(",")>-1) s = s.replace(/\./g,"").replace(",","."); return parseFloat(s); }
+    var itens = [];
+    linhas.forEach(function(cel){
+      if(cel.length < 4) return;
+      if(!/^\d+$/.test(cel[0])) return;
+      // descrição: a maior célula com letras, que não seja rótulo
+      var iDesc = -1, melhor = 0;
+      cel.forEach(function(c, i){ if(i>0 && /[A-Za-zÀ-ú]{3,}/.test(c) && !/:\s*$/.test(c) && !UNID.test(c) && c.length > melhor){ melhor = c.length; iDesc = i; } });
+      if(iDesc < 0) return;
+      var desc = cel[iDesc].replace(/\s+/g," ").trim();
+      var iBar = -1, iUn = -1;
+      cel.forEach(function(c, i){ if(i>iDesc && iBar<0 && EAN.test(c) && c.length>=12) iBar = i; if(i>iDesc && iUn<0 && UNID.test(c)) iUn = i; });
+      var iQtd = -1;
+      if(iBar > -1){
+        iQtd = iBar + 1;
+        if(cel[iQtd] && EMB.test(cel[iQtd])) iQtd++;
+      } else if(iUn > -1){
+        iQtd = iUn - 1;
+      } else {
+        for(var k=iDesc+1;k<cel.length;k++){ if(/^\d+$/.test(cel[k]) && cel[k].length <= 4){ iQtd = k; break; } }
+      }
+      if(iQtd < 0 || iQtd >= cel.length || !NUM.test(cel[iQtd])) return;
+      var qtd = numero(cel[iQtd]);
+      if(!(qtd > 0)) return;
+      // precisa ter algum valor em dinheiro na linha (evita pegar cabeçalhos)
+      var temValor = cel.some(function(c, i){ return i > iQtd && /\d+[.,]\d{2}$/.test(c); });
+      if(!temValor) return;
+      itens.push({descricao:desc, codigoBarras:(iBar>-1?cel[iBar]:null), quantidade:qtd});
+    });
+    return itens;
+  }
+
+  // Acha o item do estoque para uma linha do documento: 1) código de barras, 2) nome do fornecedor já salvo, 3) palavras parecidas.
+  function itemPorLinhaFornecedor(l){
+    var itens = state.estoque.items;
+    if(l.codigoBarras){
+      var porBar = itens.find(function(i){ return i.codigoBarras && String(i.codigoBarras).replace(/\D/g,"") === l.codigoBarras; });
+      if(porBar) return porBar;
+    }
+    var d = normalizarBusca(l.descricao).replace(/\s+/g," ").trim();
+    var porAlias = itens.find(function(i){
+      return (i.nomesFornecedor||"").split("\n").some(function(a){ return a.trim() && normalizarBusca(a).replace(/\s+/g," ").trim() === d; });
+    });
+    if(porAlias) return porAlias;
+    var palavrasDoc = d.split(/[^a-z0-9]+/).filter(Boolean);
+    var melhor = null, melhorScore = 0, empate = false;
+    itens.forEach(function(i){
+      var toks = normalizarBusca(i.name).split(/[^a-z0-9]+/).filter(function(t){ return t.length >= 3; });
+      if(!toks.length) return;
+      var ok = toks.filter(function(t){ return palavrasDoc.some(function(p){ return p === t || (t.length>=4 && p.indexOf(t) === 0) || (p.length>=4 && t.indexOf(p) === 0); }); }).length;
+      var sc = ok / toks.length;
+      if(sc > melhorScore){ melhorScore = sc; melhor = i; empate = false; } else if(sc === melhorScore && sc > 0) empate = true;
+    });
+    return (melhorScore >= 0.75 && !empate) ? melhor : null;
+  }
+
   function abrirNovoPedidoCompraSheet(){
     pedidoCompraFotoPendente = null;
     var todosItens = state.estoque.items.slice().sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
@@ -3606,6 +3690,10 @@
           '</div>' +
           '<button type="button" id="pedidoFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:14px;">'+ic("camera")+' Anexar foto</button>' +
           '<input type="file" id="pedidoFotoInput" accept="image/*" style="display:none;">' +
+          '<button type="button" id="pedidoDocBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:6px;">'+ic("upload")+' Importar documento do fornecedor (PDF)</button>' +
+          '<input type="file" id="pedidoDocInput" accept="application/pdf" style="display:none;">' +
+          '<p class="item-meta" style="margin:0 0 12px;">O app lê os itens do PDF e liga cada um ao item do estoque. O que ele não reconhecer, você escolhe uma vez e ele lembra nas próximas.</p>' +
+          '<div id="pedidoDocRevisao"></div>' +
           '<label>Itens pedidos</label>' +
           '<div id="pedidoItensLista"></div>' +
           '<div style="display:flex;gap:8px;margin:4px 0 14px;">' +
@@ -3643,12 +3731,9 @@
       });
     });
 
-    document.getElementById("pedidoExtraAddBtn").onclick = function(){
-      var sel = document.getElementById("pedidoExtraSelect");
-      var nome = sel.value;
-      if(!nome){ showToast("Escolha um item"); return; }
-      if(lista.querySelector('[data-nome-item="'+CSS.escape(nome)+'"]')){ showToast("Esse item já está na lista"); return; }
-      var idx = contador++;
+    function adicionarNaLista(nome, qtdInicial){
+      var existente = lista.querySelector('[data-nome-item="'+CSS.escape(nome)+'"]');
+      if(existente){ var q = existente.querySelector(".pedidoQty"); q.value = (parseFloat(q.value)||0) + (qtdInicial||1); return false; }
       var div = document.createElement("div");
       div.className = "card";
       div.style.cssText = "margin-bottom:8px;padding:12px 14px;";
@@ -3660,15 +3745,81 @@
         '</div>' +
         '<div class="qty-stepper" style="margin-bottom:0;">' +
           '<button type="button" class="pedidoMinus">−</button>' +
-          '<input type="number" class="pedidoQty" step="1" min="1" value="1">' +
+          '<input type="number" class="pedidoQty" step="1" min="1" value="'+(qtdInicial||1)+'">' +
           '<button type="button" class="pedidoPlus">+</button>' +
         '</div>';
       lista.appendChild(div);
       div.querySelector(".pedidoMinus").onclick = function(){ var i=div.querySelector(".pedidoQty"); i.value = Math.max(1,(parseFloat(i.value)||1)-1); };
       div.querySelector(".pedidoPlus").onclick = function(){ var i=div.querySelector(".pedidoQty"); i.value = (parseFloat(i.value)||1)+1; };
       div.querySelector(".pedidoRemover").onclick = function(){ div.remove(); };
+      return true;
+    }
+    document.getElementById("pedidoExtraAddBtn").onclick = function(){
+      var sel = document.getElementById("pedidoExtraSelect");
+      var nome = sel.value;
+      if(!nome){ showToast("Escolha um item"); return; }
+      if(lista.querySelector('[data-nome-item="'+CSS.escape(nome)+'"]')){ showToast("Esse item já está na lista"); return; }
+      adicionarNaLista(nome, 1);
       sel.value = "";
     };
+
+    // Importar o PDF do fornecedor
+    document.getElementById("pedidoDocBtn").onclick = function(){ document.getElementById("pedidoDocInput").click(); };
+    document.getElementById("pedidoDocInput").addEventListener("change", async function(e){
+      var file = e.target.files[0]; e.target.value = "";
+      if(!file) return;
+      var rev = document.getElementById("pedidoDocRevisao");
+      rev.innerHTML = '<p class="item-meta">Lendo o documento…</p>';
+      try{
+        var linhasDoc = parsearPedidoFornecedor(await extrairLinhasPdf(file));
+        if(!linhasDoc.length){ rev.innerHTML = '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Não encontrei itens nesse PDF. Se for foto/print, use o campo de foto acima e adicione os itens manualmente.</p>'; return; }
+        var itensOrdenados = todosItens;
+        var h = '<p style="margin:0 0 8px;font-size:13px;font-weight:700;">Conferir '+linhasDoc.length+' item(ns) do documento</p>';
+        linhasDoc.forEach(function(l, i){
+          var m = itemPorLinhaFornecedor(l);
+          h += '<div class="card" style="margin-bottom:8px;padding:10px 12px;" data-doc-idx="'+i+'">' +
+            '<p class="item-meta" style="margin:0 0 6px;">No documento: <b>'+escapeHtml(l.descricao)+'</b></p>' +
+            '<select class="docItemSel" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);margin-bottom:6px;">' +
+              '<option value="">'+(m?'':'Não achei — ')+'escolher item do estoque…</option>' +
+              itensOrdenados.map(function(it){ return '<option value="'+escapeHtml(it.id)+'"'+(m && m.id===it.id?' selected':'')+'>'+escapeHtml(it.name)+'</option>'; }).join("") +
+            '</select>' +
+            '<div style="display:flex;align-items:center;gap:8px;"><span class="item-meta" style="margin:0;">Quantidade</span><input type="number" class="docQty" min="0" step="1" value="'+l.quantidade+'" style="width:80px;padding:7px;border:1px solid var(--line);border-radius:8px;font-family:inherit;"></div>' +
+          '</div>';
+        });
+        h += '<button type="button" id="pedidoDocAplicar" class="btn-primary" style="width:100%;margin-bottom:14px;">'+ic("check")+' Adicionar à lista de itens</button>';
+        rev.innerHTML = h;
+        document.getElementById("pedidoDocAplicar").onclick = async function(){
+          var semItem = 0, adicionados = 0;
+          for(var i=0;i<linhasDoc.length;i++){
+            var card = rev.querySelector('[data-doc-idx="'+i+'"]');
+            var id = card.querySelector(".docItemSel").value;
+            var q = parseFloat(card.querySelector(".docQty").value) || 0;
+            if(!id || q <= 0){ if(!id) semItem++; continue; }
+            var item = state.estoque.items.find(function(x){ return x.id === id; });
+            if(!item) continue;
+            adicionarNaLista(item.name, q); adicionados++;
+            // aprende: guarda o nome do fornecedor (e o código de barras, se o item ainda não tinha)
+            var l = linhasDoc[i], upd = {};
+            var nomes = (item.nomesFornecedor||"").split("\n").map(function(a){ return a.trim(); }).filter(Boolean);
+            var dn = normalizarBusca(l.descricao).replace(/\s+/g," ").trim();
+            if(dn !== normalizarBusca(item.name).trim() && !nomes.some(function(a){ return normalizarBusca(a).replace(/\s+/g," ").trim() === dn; })){ nomes.push(l.descricao); upd.nomes_fornecedor = nomes.join("\n"); }
+            if(l.codigoBarras && !item.codigoBarras) upd.codigo_barras = l.codigoBarras;
+            if(Object.keys(upd).length){
+              try{
+                var novo = await dbUpdate("items", item.id, upd, mapItemFromRow);
+                var ix = state.estoque.items.findIndex(function(x){ return x.id === item.id; });
+                if(ix > -1){ state.estoque.items[ix] = novo; if(upd.nomes_fornecedor) novo.nomesFornecedor = upd.nomes_fornecedor; }
+              }catch(err){ console.error("aprender nome do fornecedor", err); }
+            }
+          }
+          rev.innerHTML = '';
+          showToast(adicionados + " item(ns) adicionado(s)" + (semItem ? " — "+semItem+" ficaram de fora (sem item escolhido)" : ""));
+        };
+      }catch(err){
+        console.error(err);
+        rev.innerHTML = '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Não consegui ler esse PDF.</p>';
+      }
+    });
 
     document.getElementById("pedidoCancel").onclick = function(){ overlay.remove(); };
     overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
@@ -3990,6 +4141,7 @@
     document.getElementById("itemSheetTitle").textContent = item ? "Editar item" : "Novo item";
     document.getElementById("f_name").value = item ? item.name : "";
     document.getElementById("f_codigoBarras").value = item ? (item.codigoBarras||"") : "";
+    document.getElementById("f_nomesFornecedor").value = item ? (item.nomesFornecedor||"") : "";
     document.getElementById("f_numeroSerie").value = item ? (item.numeroSerie||"") : "";
     document.getElementById("f_linksList").innerHTML = "";
     ((item && item.links) || []).forEach(function(l){ addLinkRow(l.titulo, l.url); });
@@ -4075,7 +4227,7 @@
     try{
       var photoParaSalvar = await uploadAnexoParaStorage(pendingPhoto, "items");
       var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:photoParaSalvar,
-        supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null, links_compra:lerLinksDoForm(), preco_venda:(document.getElementById("f_precoVenda").value!=="" ? parseFloat(document.getElementById("f_precoVenda").value) : null)};
+        supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null, nomes_fornecedor:(document.getElementById("f_nomesFornecedor").value.trim()||null), links_compra:lerLinksDoForm(), preco_venda:(document.getElementById("f_precoVenda").value!=="" ? parseFloat(document.getElementById("f_precoVenda").value) : null)};
       if(podeVerFinanceiro()) payload.preco_custo = (document.getElementById("f_precoCusto").value!=="" ? parseFloat(document.getElementById("f_precoCusto").value) : null);
       if(editingItemId){
         payload.editado_por = currentUser ? currentUser.id : null;
