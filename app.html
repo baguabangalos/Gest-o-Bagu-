@@ -1618,6 +1618,7 @@
   async function carregarPerfil(userId){
     var profRes = await sb.from("profiles").select("*").eq("id", userId).single();
     if(profRes.error) throw profRes.error;
+    if(profRes.data.ativo === false){ var errAtivo = new Error("conta desativada"); errAtivo.contaDesativada = true; throw errAtivo; }
     var permRes = await sb.from("permissoes").select("*").eq("user_id", userId);
     var permissoes = {};
     (permRes.data||[]).forEach(function(p){ permissoes[p.modulo] = {ver:p.pode_ver, editar:p.pode_editar, excluir:p.pode_excluir}; });
@@ -1823,6 +1824,32 @@
     }
   };
 
+  // Remover da equipe: desativa a conta (histórico preservado), tira permissões e bloqueia o login.
+  // Chama a Edge Function "remover-conta" (precisa de chave de servidor).
+  async function removerContaApp(userId, acao){
+    var proprio = !userId || (currentUser && userId === currentUser.id);
+    var nome = proprio ? "sua conta" : ((adminUsersCache||[]).find(function(u){ return u.id===userId; })||{}).nome || "esta pessoa";
+    var msg = acao === "reativar" ? "Reativar o acesso de "+nome+"?"
+      : proprio ? "Sair da equipe? Sua conta será desativada e você não conseguirá mais entrar. Seus registros antigos continuam no histórico."
+      : "Remover "+nome+" da equipe? A conta será desativada, perde todas as permissões e não consegue mais entrar. O histórico dela é mantido.";
+    if(!confirm(msg)) return;
+    try{
+      var res = await sb.functions.invoke("remover-conta", {body:{userId: proprio ? null : userId, acao: acao||"remover"}});
+      if(res.error) throw res.error;
+      if(res.data && res.data.erro) throw new Error(res.data.erro);
+      if(proprio){ showToast("Conta desativada"); await fazerLogout(); return; }
+      showToast(acao==="reativar" ? "Acesso reativado" : "Removido da equipe");
+      adminUsersCache = await loadAdminUsers();
+      var rs = await sb.from("profiles").select("id,nome,ativo,equipe,domingo_folga_mes,guarda_referencia_data").order("nome");
+      if(!rs.error && state) state.staffProfiles = (rs.data||[]).map(function(p){ return {id:p.id, nome:p.nome, ativo:p.ativo!==false, equipe:p.equipe||null, domingoFolgaMes:p.domingo_folga_mes||null, guardaReferenciaData:p.guarda_referencia_data||null}; });
+      renderAdmin();
+    }catch(err){
+      console.error(err);
+      var m = (err && err.message) || "";
+      showToast(/ltimo administrador|último/i.test(m) ? "Não dá: é o único administrador" : "Não consegui remover (a função remover-conta está publicada?)");
+    }
+  }
+
   async function fazerLogout(){
     await sb.auth.signOut();
     if(realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
@@ -1918,6 +1945,7 @@
       currentUser = await carregarPerfil(session.user.id);
     }catch(err){
       console.error(err);
+      if(err && err.contaDesativada){ try{ await sb.auth.signOut(); }catch(e){} showLogin("Esta conta foi desativada. Fale com o administrador se precisar de acesso."); return; }
       var detalhe = (err && (err.message || err.details || err.hint)) ? (" (" + (err.message||err.details||err.hint) + ")") : "";
       showLogin("Não consegui carregar seu perfil" + detalhe + ". Peça para o administrador liberar seu acesso.");
       return;
@@ -2824,7 +2852,9 @@
       '</div>' +
       '<button type="button" id="cfgTestarAlarmeBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("bell")+' Testar o alarme de pedido</button>' +
       '<button type="button" id="cfgSyncHospedinBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("link")+' Sincronizar com Hospedin<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Atualiza as reservas na hora, sem esperar o ciclo automático</span></button>' +
-      '<button type="button" id="cfgSairBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">'+ic("logout")+' Sair da conta</button>';
+      '<button type="button" id="cfgSairBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">'+ic("logout")+' Sair da conta</button>' +
+      '<button type="button" id="cfgSairEquipeBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">'+ic("trash")+' Sair da equipe (desativar minha conta)<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Use se você deixou de trabalhar aqui. Seu acesso é encerrado.</span></button>';
+    document.getElementById("cfgSairEquipeBtn").onclick = function(){ removerContaApp(null); };
     document.getElementById("cfgMinhaContaBtn").onclick = abrirMinhaConta;
     document.getElementById("cfgSairBtn").onclick = fazerLogout;
     document.getElementById("cfgSyncHospedinBtn").onclick = function(){ openHospedinSync(); };
@@ -6623,12 +6653,12 @@
     var pend = minhas.filter(function(t){ return t.status==="pendente"; });
     var h = '<div class="section-title" style="margin-top:0;">'+ic("check")+' Tarefas do dia'+(pend.length?(' <span style="color:var(--red-600);font-weight:800;">· '+pend.length+' pra fazer</span>'):'')+'</div>';
     minhas.sort(function(a,b){ return (a.status==="feita") - (b.status==="feita") || a.data.localeCompare(b.data); }).forEach(function(t){
-      var feita = t.status === "feita", atrasada = !feita && t.data < hoje;
+      var feita = t.status === "feita", atrasada = !feita && tdVenc(t) < hoje;
       h += '<div class="card" style="margin-bottom:10px;border-left:4px solid '+(feita?'var(--teal-700)':atrasada?'var(--amber-600)':'var(--ink-900)')+';">' +
         '<p class="item-name" style="margin:0 0 3px;'+(feita?'text-decoration:line-through;opacity:.7;':'')+'">'+escapeHtml(t.titulo)+'</p>' +
         (t.descricao ? '<p class="item-meta" style="white-space:pre-wrap;">'+escapeHtml(t.descricao)+'</p>' : '') +
         (t.criadoPorNome && t.criadoPor !== t.para ? '<p class="item-meta">pedido por '+escapeHtml(t.criadoPorNome)+'</p>' : '') +
-        (atrasada ? '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ de '+dataBr(t.data)+' — ainda não foi feita</p>' : '') +
+        ((!feita && t.prazo && t.prazo!==t.data) ? '<p class="item-meta" style="'+(atrasada?'color:var(--amber-600);':'')+'font-weight:700;">'+tdPrazoTxt(t,hoje)+'</p>' : (atrasada ? '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ de '+dataBr(t.data)+' — ainda não foi feita</p>' : '')) +
         (feita ? '<p class="item-meta">'+ic("check")+' Feita'+(t.concluidaEm?(' às '+fmtDate(t.concluidaEm).split(" ")[1]):'')+(t.obs?(' — '+escapeHtml(t.obs)):'')+'</p>' : '') +
         '<div class="item-actions">' + (feita
           ? '<button class="btn btn-out" data-tdc="reabrir" data-id="'+t.id+'">Reabrir</button>'
@@ -11768,9 +11798,11 @@
   var tarefasDia = {lista:[], carregado:false, erro:false};
   var tdSub = "minhas", tdData = null;
   function hojeISO(){ var d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  function tdVenc(t){ return t.prazo || t.data; }
+  function tdPrazoTxt(t, hoje){ if(!t.prazo || t.prazo===t.data) return ""; return (t.prazo<hoje && t.status!=="feita" ? "⏰ prazo venceu em " : "prazo até ")+(t.prazo===hoje?"hoje":dataBr(t.prazo)); }
   function dataBr(iso){ var p = String(iso||"").slice(0,10).split("-"); return p.length===3 ? (p[2]+"/"+p[1]) : ""; }
   function podeAtribuirTarefas(){ return !!currentUser && (currentUser.role==="admin" || permFlag("tarefas_dia","editar") || permFlag("tarefas_dia_acao_atribuir","ver")); }
-  function mapTarefaDia(r){ return {id:r.id, titulo:r.titulo, descricao:r.descricao||"", para:r.atribuida_para, data:String(r.data||"").slice(0,10), status:r.status||"pendente",
+  function mapTarefaDia(r){ return {id:r.id, titulo:r.titulo, descricao:r.descricao||"", para:r.atribuida_para, data:String(r.data||"").slice(0,10), prazo:(r.prazo?String(r.prazo).slice(0,10):""), status:r.status||"pendente",
     concluidaEm:(r.concluida_em?new Date(r.concluida_em).getTime():null), obs:r.obs_conclusao||"", criadoPor:r.criado_por, criadoPorNome:r.criado_por_nome||"", criadoEm:(r.criado_em?new Date(r.criado_em).getTime():null)}; }
   async function carregarTarefasDia(){
     try{
@@ -11812,7 +11844,7 @@
         '<button type="button" class="btn '+(tdSub==="todas"?'btn-in':'btn-out')+'" data-tdsub="todas" style="flex:1;">Atribuir / todas</button></div>';
     }
     function cartaTarefa(t, mostrarPessoa, podeMarcar){
-      var atrasada = t.status === "pendente" && t.data < hoje;
+      var atrasada = t.status === "pendente" && tdVenc(t) < hoje;
       var feita = t.status === "feita";
       var h = '<div class="card" style="border-left:4px solid '+(feita?'var(--teal-700)':atrasada?'var(--amber-600)':'var(--line)')+';">';
       h += '<p class="item-name" style="margin:0 0 3px;'+(feita?'text-decoration:line-through;opacity:.7;':'')+'">'+escapeHtml(t.titulo)+'</p>';
@@ -11822,7 +11854,8 @@
       meta.push(ic("calendar")+' '+(t.data===hoje?'hoje':dataBr(t.data)));
       if(t.criadoPorNome && t.criadoPor !== t.para) meta.push('de '+escapeHtml(t.criadoPorNome));
       h += '<p class="item-meta">'+meta.join(' · ')+'</p>';
-      if(atrasada) h += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ de '+dataBr(t.data)+' — ainda não foi feita</p>';
+      if(t.prazo && t.prazo!==t.data && !feita) h += '<p class="item-meta" style="'+(atrasada?'color:var(--amber-600);font-weight:700;':'font-weight:700;')+'">'+tdPrazoTxt(t,hoje)+'</p>';
+      else if(atrasada) h += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">⏰ de '+dataBr(t.data)+' — ainda não foi feita</p>';
       if(feita) h += '<p class="item-meta">'+ic("check")+' Feita'+(t.concluidaEm?(' às '+fmtDate(t.concluidaEm).split(" ")[1]):'')+(t.obs?(' — '+escapeHtml(t.obs)):'')+'</p>';
       h += '<div class="item-actions">';
       if(podeMarcar && !feita) h += '<button class="btn btn-in" data-td="feita" data-id="'+t.id+'">'+ic("check")+' Feita</button>';
@@ -11843,10 +11876,11 @@
         '<input type="text" id="tdTitulo" placeholder="O que precisa ser feito? (ex: conferir o estoque da lavanderia)" style="'+inp+'margin-bottom:8px;">' +
         '<textarea id="tdDesc" rows="2" placeholder="Detalhes (opcional)" style="'+inp+'resize:vertical;margin-bottom:8px;"></textarea>' +
         '<select id="tdPara" style="'+inp+'margin-bottom:8px;"><option value="">Quem vai fazer…</option>' + pessoas.map(function(p){ return '<option value="'+p.id+'">'+escapeHtml(p.nome)+'</option>'; }).join("") + '</select>' +
-        '<label style="display:block;font-size:13px;color:var(--ink-600);margin-bottom:10px;">Para o dia<br><input type="date" id="tdNovaData" value="'+hoje+'" min="'+hoje+'" style="'+inp+'margin-top:4px;"></label>' +
+        '<label style="display:block;font-size:13px;color:var(--ink-600);margin-bottom:10px;">Começa no dia<br><input type="date" id="tdNovaData" value="'+hoje+'" min="'+hoje+'" style="'+inp+'margin-top:4px;"></label>' +
+        '<label style="display:block;font-size:13px;color:var(--ink-600);margin-bottom:10px;">Prazo final (opcional — para tarefas de vários dias)<br><input type="date" id="tdNovoPrazo" min="'+hoje+'" style="'+inp+'margin-top:4px;"></label>' +
         '<div class="item-actions"><button class="btn btn-in" id="tdAdd" style="flex:1;">+ Atribuir tarefa</button></div></div>';
       html += '<div class="section-title">Tarefas do dia</div><label style="display:block;font-size:13px;color:var(--ink-600);margin-bottom:10px;">Ver o dia<br><input type="date" id="tdVerData" value="'+tdData+'" style="'+inp+'margin-top:4px;"></label>';
-      var doDia = tarefasDia.lista.filter(function(t){ return t.data === tdData || (tdData===hoje && t.status==="pendente" && t.data<hoje); });
+      var doDia = tarefasDia.lista.filter(function(t){ return t.data === tdData || (t.status==="pendente" && t.prazo && t.data<=tdData && tdData<=t.prazo) || (tdData===hoje && t.status==="pendente" && t.data<hoje); });
       if(!doDia.length) html += '<div class="empty">Nenhuma tarefa neste dia.</div>';
       var grupos = {}; doDia.forEach(function(t){ (grupos[t.para] = grupos[t.para] || []).push(t); });
       Object.keys(grupos).sort(function(a,b){ return tdNomePessoa(a).localeCompare(tdNomePessoa(b),"pt-BR"); }).forEach(function(pid){
@@ -11860,13 +11894,16 @@
     var vd = document.getElementById("tdVerData"); if(vd) vd.onchange = function(){ tdData = vd.value || hoje; renderTarefasDia(); };
     var add = document.getElementById("tdAdd");
     if(add) add.onclick = async function(){
-      var titulo = document.getElementById("tdTitulo").value.trim(), para = document.getElementById("tdPara").value, data = document.getElementById("tdNovaData").value || hoje;
+      var titulo = document.getElementById("tdTitulo").value.trim(), para = document.getElementById("tdPara").value, data = document.getElementById("tdNovaData").value || hoje, prazo = document.getElementById("tdNovoPrazo").value || "";
+      if(prazo && prazo < data){ showToast("O prazo não pode ser antes do dia de início"); return; }
       if(!titulo){ showToast("Escreva a tarefa"); return; }
       if(!para){ showToast("Escolha quem vai fazer"); return; }
       add.disabled = true;
       try{
-        var r = await sb.from("tarefas_dia").insert({id:uid(), titulo:titulo, descricao:(document.getElementById("tdDesc").value.trim()||null), atribuida_para:para, data:data, status:"pendente",
-          criado_por:currentUser.id, criado_por_nome:currentUser.nome}).select().single();
+        var novo = {id:uid(), titulo:titulo, descricao:(document.getElementById("tdDesc").value.trim()||null), atribuida_para:para, data:data, status:"pendente",
+          criado_por:currentUser.id, criado_por_nome:currentUser.nome};
+        if(prazo) novo.prazo = prazo;
+        var r = await sb.from("tarefas_dia").insert(novo).select().single();
         if(r.error) throw r.error;
         tarefasDia.lista.push(mapTarefaDia(r.data)); tdData = data; showToast("Tarefa atribuída para "+tdNomePessoa(para)); renderTarefasDia();
       }catch(err){ console.error(err); showToast("Erro ao salvar a tarefa"); add.disabled = false; }
@@ -12250,7 +12287,7 @@
     }
     usuariosFiltrados.forEach(function(u){
       html += '<div class="admin-user-card" data-uid="'+u.id+'">';
-      html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+'</div>';
+      html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+(u.ativo===false ? '<span class="admin-badge" style="background:#c0392b;">removido</span>' : '')+'</div>';
       html += '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>';
       html += '<p class="item-meta" style="margin:0 0 10px;">Setor: '+(EQUIPE_LABEL[u.equipe]||"não definido")+' — mude em Equipe → Setor.</p>';
       html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin:0 0 10px;">Empresa (isola o checklist de turno — cada empresa só vê os turnos dela)' +
@@ -12306,6 +12343,11 @@
         if(currentUser.id !== u.id){
           html += '<button type="button" class="admin-role-btn" data-act="demote">Remover privilégio de admin</button>';
         }
+      }
+      if(currentUser.id !== u.id){
+        html += u.ativo===false
+          ? '<button type="button" class="admin-role-btn" data-act="reativar">Reativar acesso</button>'
+          : '<button type="button" class="admin-role-btn" data-act="remover" style="color:#c0392b;border-color:#c0392b;">Remover da equipe</button>';
       }
       html += '</div>';
     });
@@ -12442,10 +12484,10 @@
         if(excluirBox) excluirBox.addEventListener("change", salvarPermissao);
       });
 
-      var roleBtn = card.querySelector(".admin-role-btn");
-      if(roleBtn){
+      card.querySelectorAll(".admin-role-btn").forEach(function(roleBtn){
         roleBtn.onclick = async function(){
           var act = roleBtn.getAttribute("data-act");
+          if(act === "remover" || act === "reativar"){ removerContaApp(uid, act); return; }
           var novoRole = act === "promote" ? "admin" : "staff";
           var msg = act === "promote" ? "Tornar esta pessoa administradora? Ela passará a ter acesso total." : "Remover o privilégio de administrador desta pessoa?";
           if(!confirm(msg)) return;
@@ -12458,7 +12500,7 @@
             console.error(err); showToast("Erro ao atualizar administrador");
           }
         };
-      }
+      });
     });
   }
 
