@@ -4521,7 +4521,7 @@
         '<input type="number" class="abastecerQty" data-idx="'+idx+'" step="1" min="0" value="'+qtyInicial+'">' +
         '<button type="button" class="abastecerPlus" data-idx="'+idx+'">+</button>' +
       '</div>' +
-      '<label class="checkbox-row"><input type="checkbox" class="abastecerFaltando" data-idx="'+idx+'"> Faltando (não tinha em estoque)</label>' +
+      '<label class="checkbox-row"><input type="checkbox" class="abastecerFaltando" data-idx="'+idx+'"> Não abasteci este item (criar novo pedido só com ele)</label>' +
     '</div>';
   }
 
@@ -4631,13 +4631,23 @@
       var s2 = await dbUpdate("solicitacoes_acomodacao", s.id, payload, mapSolicitacaoFromRow);
       var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===s.id; });
       if(idx2>-1) state.solicitacoes[idx2] = s2;
+      if(faltando.length){
+        // Itens que não foram abastecidos viram um novo pedido, só com eles.
+        try{
+          var pedidoFalta = await dbInsert("solicitacoes_acomodacao", {id:uid(), acomodacao_id:s.acomodacaoId, tipo:"frigobar", origem:"equipe",
+            criado_por:(currentUser?currentUser.id:null), status:"pendente",
+            itens: faltando.map(function(f){ return {nome:f.nome, quantidade:f.quantidade||1}; }),
+            observacao:"Itens que faltaram no abastecimento anterior"}, mapSolicitacaoFromRow);
+          state.solicitacoes.unshift(pedidoFalta);
+        }catch(e3){ console.error(e3); showToast("Abastecido, mas não consegui criar o novo pedido dos itens que faltaram"); }
+      }
       if(abastecerFotosPendentes.length > 0){
         // Só agora, com a foto nova de fato tirada e salva, as fotos antigas
         // dessa acomodação podem sumir — nunca antes disso.
         await limparFotosFrigobarAntigas(s.acomodacaoId, s.id);
       }
       closeAbastecerSheet();
-      showToast(faltando.length ? "Abastecido — "+faltando.length+" item(ns) marcado(s) em falta" : "Abastecimento registrado");
+      showToast(faltando.length ? "Abastecido — novo pedido criado com "+faltando.length+" item(ns) que faltaram" : "Abastecimento registrado");
       renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao registrar abastecimento");
@@ -9686,10 +9696,13 @@
         var qtyExibida = it.qtd;
         var foiLimitado = false;
         if(ideal != null && it.qtd > ideal){ qtyExibida = ideal; foiLimitado = true; }
+        if(it.qtdEdit != null){ qtyExibida = it.qtdEdit; foiLimitado = false; }
         return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-idx="'+i+'">' +
-          '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+escapeHtml(it.nome)+
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+          '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;flex:1;">'+escapeHtml(it.nome)+
             (matchEstoque ? '' : ' <span style="color:var(--amber-600);font-weight:600;font-size:11.5px;">(não achei no estoque)</span>') +
           '</p>' +
+          '<button type="button" class="reExtratoRemover" data-idx="'+i+'" title="Remover item" style="background:none;border:none;font-size:15px;padding:0 2px;color:var(--ink-400);">'+ic("close")+'</button></div>' +
           (foiLimitado ? '<p class="item-meta" style="color:var(--teal-700);font-weight:700;margin-bottom:8px;">Extrato mostra '+it.qtd+' consumido(s) — repondo só até a quantidade ideal ('+ideal+')</p>' : '') +
           '<div class="qty-stepper" style="margin-bottom:0;">' +
             '<button type="button" class="reExtratoMinus" data-idx="'+i+'">−</button>' +
@@ -9713,6 +9726,13 @@
           '</select>' +
           '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Confira as quantidades. Isso cria um pedido pendente em "Abastecer" — o desconto do estoque acontece quando alguém marcar como abastecido, igual aos outros pedidos.</p>' +
           '<div id="reExtratoItensLista">' + montarItensHtml(revisaoExtratoAcomodacaoId) + '</div>' +
+          '<div style="display:flex;gap:8px;margin:4px 0 14px;">' +
+            '<select id="reExtratoExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);">' +
+            '<option value="">Adicionar outro item…</option>' +
+            state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); }).map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("") +
+            '</select>' +
+            '<button type="button" id="reExtratoExtraAdd" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>' +
+          '</div>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="reExtratoCancel">Cancelar</button>' +
             '<button type="button" class="btn-primary" id="reExtratoConfirm">'+ic("check")+' Criar pedido de abastecimento</button>' +
@@ -9723,7 +9743,19 @@
 
     var overlay = document.getElementById("revisaoExtratoOverlay");
     var lista = document.getElementById("reExtratoItensLista");
+    function guardarQtds(){
+      lista.querySelectorAll(".reExtratoQty").forEach(function(inp){
+        var it = resultado.itens[parseInt(inp.getAttribute("data-idx"),10)]; if(it) it.qtdEdit = parseFloat(inp.value)||0;
+      });
+    }
+    function redesenhar(){
+      lista.innerHTML = montarItensHtml(document.getElementById("reExtratoAcomodacao").value || null);
+      wireBotoesQty();
+    }
     function wireBotoesQty(){
+      lista.querySelectorAll(".reExtratoRemover").forEach(function(b){
+        b.onclick = function(){ guardarQtds(); resultado.itens.splice(parseInt(b.getAttribute("data-idx"),10), 1); redesenhar(); };
+      });
       lista.querySelectorAll(".reExtratoMinus").forEach(function(b){
         b.onclick = function(){
           var inp = lista.querySelector('.reExtratoQty[data-idx="'+b.getAttribute("data-idx")+'"]');
@@ -9738,7 +9770,17 @@
       });
     }
     wireBotoesQty();
+    document.getElementById("reExtratoExtraAdd").onclick = function(){
+      var sel = document.getElementById("reExtratoExtraSelect"), nome = sel.value;
+      if(!nome){ showToast("Escolha um item"); return; }
+      if(resultado.itens.some(function(x){ return normalizarBusca(x.nome) === normalizarBusca(nome); })){ showToast("Esse item já está na lista"); return; }
+      guardarQtds();
+      resultado.itens.push({nome:nome, qtd:1, qtdEdit:1});
+      sel.value = ""; redesenhar();
+    };
     document.getElementById("reExtratoAcomodacao").addEventListener("change", function(e){
+      guardarQtds();
+      resultado.itens.forEach(function(it){ delete it.qtdEdit; });
       lista.innerHTML = montarItensHtml(e.target.value || null);
       wireBotoesQty();
     });
@@ -10571,7 +10613,7 @@
     // pra essa acomodação, ela não conta como pronta ainda.
     var idsComAbastecimentoPendente = {};
     state.solicitacoes.forEach(function(s){
-      if(s.tipo === "frigobar" && s.status !== "concluido" && s.criadoEm >= hojeInicio.getTime()){
+      if(s.tipo === "frigobar" && s.status !== "concluido"){
         idsComAbastecimentoPendente[s.acomodacaoId] = true;
       }
     });
@@ -10587,7 +10629,7 @@
     });
     var idsComAbastecimentoPendente = {};
     state.solicitacoes.forEach(function(s){
-      if(s.tipo === "frigobar" && s.status !== "concluido" && s.criadoEm >= hojeInicio.getTime()){
+      if(s.tipo === "frigobar" && s.status !== "concluido"){
         idsComAbastecimentoPendente[s.acomodacaoId] = true;
       }
     });
@@ -10602,7 +10644,7 @@
     });
     var idsComAbastecimentoPendente = {};
     state.solicitacoes.forEach(function(s){
-      if(s.tipo === "frigobar" && s.status !== "concluido" && s.criadoEm >= hojeInicio.getTime()){
+      if(s.tipo === "frigobar" && s.status !== "concluido"){
         idsComAbastecimentoPendente[s.acomodacaoId] = true;
       }
     });
