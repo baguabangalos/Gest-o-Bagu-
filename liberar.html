@@ -381,6 +381,20 @@
 
   var params = new URLSearchParams(window.location.search);
   var slug = params.get("a");
+  // QR único: se quem escaneou é da equipe (já está logada no app neste celular), manda direto pro app,
+  // que abre a limpeza dessa acomodação. Hóspede nunca tem essa sessão, então segue normal.
+  // Para ver a página do hóspede mesmo estando logada, abra o link com &hospede=1.
+  try{
+    if(slug && !params.get("hospede")){
+      for(var ki=0; ki<localStorage.length; ki++){
+        var kk = localStorage.key(ki);
+        if(/^sb-.*-auth-token$/.test(kk) && localStorage.getItem(kk)){
+          window.location.replace(window.location.pathname.replace(/[^\/]*$/, "app.html") + "?scan=" + encodeURIComponent(slug));
+          return;
+        }
+      }
+    }
+  }catch(e){}
   var acomodacao = slug ? ACOMODACOES[slug] : null;
   var nome = acomodacao ? acomodacao.nome : null;
 

@@ -4427,10 +4427,10 @@
     texto = (texto||"").trim();
     try{
       var u = new URL(texto);
-      var v = u.searchParams.get("scan");
+      var v = u.searchParams.get("scan") || u.searchParams.get("a");
       if(v) return v;
     }catch(e){}
-    var m = /[?&]scan=([^&]+)/.exec(texto);
+    var m = /[?&](?:scan|a)=([^&]+)/.exec(texto);
     if(m) return decodeURIComponent(m[1]);
     return texto;
   }
@@ -11934,12 +11934,15 @@
   function baseAppUrl(){
     return window.location.origin + window.location.pathname;
   }
+  // QR único da acomodação: aponta pra página do hóspede (liberar.html). O hóspede cai no pedido de limpeza;
+  // a equipe, escaneando dentro do app (ou com a câmera do celular já logada), cai na limpeza dela.
   function urlScanAcomodacao(acomodacaoId){
-    return baseAppUrl() + "?scan=" + encodeURIComponent(acomodacaoId);
+    var base = window.location.origin + window.location.pathname.replace(/[^\/]*$/, "liberar.html");
+    return base + "?a=" + encodeURIComponent(acomodacaoId);
   }
   function renderQrAcomodacoesHtml(){
     var html = '<div class="section-title" style="margin-top:22px;">'+ic("camera")+' QR Code das acomodações (check-in de limpeza)</div>';
-    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;">Imprima e cole um QR desses em cada acomodação — é fixo, sempre o mesmo, não muda a cada limpeza, e cada acomodação tem o seu próprio (nunca o mesmo código em duas acomodações diferentes). A camareira aponta a câmera do celular pra ele e abre direto a tela de check-in daquela acomodação, ou aperta "Iniciar"/"Finalizar" numa tarefa de lavagem ou manutenção dentro do app — nos dois casos, ela tem que escanear esse QR com a câmera ao vivo pra confirmar que está ali, tanto pra iniciar quanto pra concluir. Só funciona se ela estiver logada no app com permissão em Limpeza.</p>';
+    html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;"><b>Um único QR por acomodação</b> — fixo, sempre o mesmo, e cada acomodação tem o seu. O <b>hóspede</b> aponta a câmera e cai direto na página dele, para pedir limpeza, frigobar etc. A <b>equipe da limpeza</b> usa o mesmo QR: dentro do app, aperta "Iniciar"/"Finalizar" na tarefa e escaneia com a câmera ao vivo (confirma que está ali); ou aponta a câmera do próprio celular — se estiver logada no app, abre direto a tela de check-in daquela acomodação. QRs antigos (só da equipe) continuam funcionando.</p>';
     if(!state.acomodacoes || state.acomodacoes.length === 0){
       html += '<div class="empty">Nenhuma acomodação cadastrada ainda.</div>';
       return html;
