@@ -11105,7 +11105,7 @@
     return "Chega " + dataBr(p.checkin) + " (em " + d + " dias)";
   }
   // ---------- Restrições alimentares (vindas dos pedidos de chegada) ----------
-  var MSG_RESTRICAO_PADRAO = "Olá, {nome}! Tudo bem? Aqui é da recepção do Bagua Bangalôs.\n\nRecebemos a informação sobre a sua restrição alimentar ({restricao}) e já estamos repassando para o nosso restaurante e para a equipe do café da manhã, para que tudo seja preparado com todo o cuidado.\n\nPara garantir a sua segurança, pode nos confirmar, por favor:\n1) O que exatamente você não pode consumir?\n2) É alergia, intolerância ou preferência (vegetariano, vegano etc.)?\n3) Precisa evitar também traços ou contato com esses alimentos (contaminação cruzada)?\n\nQualquer detalhe a mais ajuda muito. Ficamos à disposição e esperamos você!";
+  var MSG_RESTRICAO_PADRAO = "⚠️ Restrição alimentar\n\nHóspede: {nome}\nAcomodação: {acomodacao}\nEntrada: {entrada}\nSaída: {saida}\n\nAlergia / intolerância: {restricao}\n\nPor favor, atenção no preparo e no serviço (restaurante e café da manhã).";
   var RESTRICAO_REGEX = /alerg|intoler|gl[uú]ten|lactose|cel[ií]ac|vegetarian|vegan|restri[cç][aã]o|sem (leite|ovo|gl[uú]ten|lactose|carne)|diab[eé]t/i;
   // Textos de restrição alimentar de um pedido de chegada ([] se não tiver)
   function restricoesDoPreCheckin(p){
@@ -11117,11 +11117,19 @@
     if(!out.length && p.observacao && RESTRICAO_REGEX.test(p.observacao)) out.push(String(p.observacao));
     return out;
   }
+  function dataBrCompleta(d){
+    if(!d) return "não informada";
+    var q = String(d).slice(0,10).split("-");
+    return q.length===3 ? q[2]+"/"+q[1]+"/"+q[0] : String(d);
+  }
   function mensagemRestricao(p){
-    var modelo = (cfgGet("mensagens", {}).restricao) || MSG_RESTRICAO_PADRAO;
-    var nome = p.hospede_nome ? String(p.hospede_nome).trim().split(/\s+/)[0] : "";
-    var restr = restricoesDoPreCheckin(p).join("; ");
-    return modelo.replace(/\{nome\}/g, nome || "hóspede").replace(/\{restricao\}/g, restr || "restrição alimentar");
+    var modelo = (cfgGet("mensagens", {}).restricao_equipe) || MSG_RESTRICAO_PADRAO;
+    var ac = preCheckinAcomodacao(p);
+    var nomeAc = ac ? ac.nome : (p.acomodacao_nome || "não identificada");
+    var restr = restricoesDoPreCheckin(p).join("; ") || "restrição alimentar";
+    return modelo.replace(/\{nome\}/g, p.hospede_nome ? String(p.hospede_nome).trim() : "não informado")
+      .replace(/\{acomodacao\}/g, nomeAc).replace(/\{entrada\}/g, dataBrCompleta(p.checkin))
+      .replace(/\{saida\}/g, dataBrCompleta(p.checkout)).replace(/\{restricao\}/g, restr);
   }
   // Pedidos com restrição que ainda importam (chegada de ontem em diante, ou hóspede ainda na casa)
   function restricoesAtivas(){
@@ -11143,7 +11151,7 @@
     else fallback();
   }
   function botaoCopiarRestricaoHtml(p){
-    return '<button type="button" class="copiarMsgRestricaoBtn" data-id="'+escapeHtml(p.id)+'" style="display:block;width:100%;margin-top:6px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:8px;padding:9px;font-family:inherit;font-size:13px;font-weight:700;">'+ic("doc")+' Copiar mensagem para o hóspede</button>';
+    return '<button type="button" class="copiarMsgRestricaoBtn" data-id="'+escapeHtml(p.id)+'" style="display:block;width:100%;margin-top:6px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:8px;padding:9px;font-family:inherit;font-size:13px;font-weight:700;">'+ic("doc")+' Copiar mensagem para a equipe</button>';
   }
   function ligarCopiarMsgRestricao(root){
     root.querySelectorAll(".copiarMsgRestricaoBtn").forEach(function(b){
@@ -11154,10 +11162,10 @@
     });
     var ed = root.querySelector("#editarMsgRestricaoBtn");
     if(ed) ed.onclick = function(){
-      var atual = (cfgGet("mensagens", {}).restricao) || MSG_RESTRICAO_PADRAO;
+      var atual = (cfgGet("mensagens", {}).restricao_equipe) || MSG_RESTRICAO_PADRAO;
       var html = '<div class="sheet-overlay open" id="msgRestOverlay"><div class="sheet" style="max-height:90vh;overflow:auto;">' +
-        '<h2>Mensagem de restrição alimentar</h2>' +
-        '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 8px;">Use <b>{nome}</b> (primeiro nome do hóspede) e <b>{restricao}</b> (o que ele informou) — são trocados automaticamente.</p>' +
+        '<h2>Mensagem para a equipe</h2>' +
+        '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 8px;">Trocados automaticamente: <b>{nome}</b>, <b>{acomodacao}</b>, <b>{entrada}</b>, <b>{saida}</b> e <b>{restricao}</b> (alergia/intolerância informada).</p>' +
         '<textarea id="msgRestTxt" rows="12" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;">'+escapeHtml(atual)+'</textarea>' +
         '<div class="sheet-actions"><button type="button" class="btn-secondary" id="msgRestCancel">Cancelar</button><button type="button" class="btn-primary" id="msgRestSalvar">'+ic("check")+' Salvar</button></div>' +
         '<button type="button" id="msgRestPadrao" style="display:block;width:100%;margin-top:8px;background:none;border:none;color:var(--ink-600);font-family:inherit;font-size:12.5px;font-weight:700;">Voltar à mensagem padrão</button></div></div>';
@@ -11169,7 +11177,7 @@
       document.getElementById("msgRestSalvar").onclick = async function(){
         var v = document.getElementById("msgRestTxt").value.trim();
         var todas = JSON.parse(JSON.stringify(cfgGet("mensagens", {})));
-        todas.restricao = v || MSG_RESTRICAO_PADRAO;
+        todas.restricao_equipe = v || MSG_RESTRICAO_PADRAO;
         if(await cfgSalvar("mensagens", todas)){ ov.remove(); }
       };
     };
