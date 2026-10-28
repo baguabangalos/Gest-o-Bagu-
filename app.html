@@ -1579,7 +1579,7 @@
   // Permissões detalhadas por aba e ações especiais (mesmo modelo do estoque):
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
-    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio"}},
+    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", restricoes:"restaurante_restricoes"}},
     recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", qr:"recepcao_qr"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
@@ -2586,7 +2586,7 @@
 
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
-    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório"},
+    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições"},
     recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", qr:"QR Code"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
@@ -10357,6 +10357,7 @@
       '<button data-rsub="historico" class="'+(restSub==="historico"?"active":"")+'">Histórico</button>' +
       '<button data-rsub="cardapio" class="'+(restSub==="cardapio"?"active":"")+'">Cardápio</button>' +
       '<button data-rsub="relatorio" class="'+(restSub==="relatorio"?"active":"")+'">Relatório</button>' +
+      '<button data-rsub="restricoes" class="'+(restSub==="restricoes"?"active":"")+'">Restrições'+(restricoesAtivas().length?(' · '+restricoesAtivas().length):'')+'</button>' +
     '</div>';
 
     if(restSub === "abertas"){
@@ -10382,6 +10383,8 @@
         html += '<p style="margin:8px 0;font-size:16px;font-weight:800;">Total a cobrar: '+restMoney(soma)+'</p>' +
           (podeEditarAba("restaurante","contas") && podeAcao("restaurante","restaurante_acao_cobrar") ? '<button class="btn btn-in restCobrar" data-ids="'+lista.map(function(c){ return c.id; }).join(",")+'">'+ic("check")+' Marcar como cobrado</button>' : '') + '</div>';
       });
+    } else if(restSub === "restricoes"){
+      html += restricoesHtml();
     } else if(restSub === "relatorio"){
       html += restRelatorioHtml();
     } else if(restSub === "historico"){
@@ -10414,8 +10417,12 @@
     }
     main.innerHTML = html;
 
-    main.querySelectorAll("[data-rsub]").forEach(function(b){ b.onclick = function(){ restSub = b.getAttribute("data-rsub"); renderRestaurante(); }; });
+    main.querySelectorAll("[data-rsub]").forEach(function(b){ b.onclick = function(){
+      restSub = b.getAttribute("data-rsub"); renderRestaurante();
+      if(restSub === "restricoes") carregarPreCheckins().then(function(){ if(restSub === "restricoes" && appSection === "restaurante" && !restComandaId) renderRestaurante(); });
+    }; });
     if(restSub === "relatorio") restRelatorioLigar(main);
+    if(restSub === "restricoes") ligarCopiarMsgRestricao(main);
     main.querySelectorAll(".rest-card").forEach(function(c){
       c.onclick = async function(){
         restComandaId = c.getAttribute("data-id");
@@ -11087,6 +11094,95 @@
     if(d === 1) return "Chega amanhã (" + dataBr(p.checkin) + ")";
     return "Chega " + dataBr(p.checkin) + " (em " + d + " dias)";
   }
+  // ---------- Restrições alimentares (vindas dos pedidos de chegada) ----------
+  var MSG_RESTRICAO_PADRAO = "Olá, {nome}! Tudo bem? Aqui é da recepção do Bagua Bangalôs.\n\nRecebemos a informação sobre a sua restrição alimentar ({restricao}) e já estamos repassando para o nosso restaurante e para a equipe do café da manhã, para que tudo seja preparado com todo o cuidado.\n\nPara garantir a sua segurança, pode nos confirmar, por favor:\n1) O que exatamente você não pode consumir?\n2) É alergia, intolerância ou preferência (vegetariano, vegano etc.)?\n3) Precisa evitar também traços ou contato com esses alimentos (contaminação cruzada)?\n\nQualquer detalhe a mais ajuda muito. Ficamos à disposição e esperamos você!";
+  var RESTRICAO_REGEX = /alerg|intoler|gl[uú]ten|lactose|cel[ií]ac|vegetarian|vegan|restri[cç][aã]o|sem (leite|ovo|gl[uú]ten|lactose|carne)|diab[eé]t/i;
+  // Textos de restrição alimentar de um pedido de chegada ([] se não tiver)
+  function restricoesDoPreCheckin(p){
+    var out = [];
+    (Array.isArray(p.pedidos) ? p.pedidos : []).forEach(function(x){
+      var d = x.descricao ? String(x.descricao) : "";
+      if(x.tipo === "alergia" || (d && RESTRICAO_REGEX.test(d))) out.push(d || (PRECHECKIN_TIPO_LABEL[x.tipo] || "restrição alimentar"));
+    });
+    if(!out.length && p.observacao && RESTRICAO_REGEX.test(p.observacao)) out.push(String(p.observacao));
+    return out;
+  }
+  function mensagemRestricao(p){
+    var modelo = (cfgGet("mensagens", {}).restricao) || MSG_RESTRICAO_PADRAO;
+    var nome = p.hospede_nome ? String(p.hospede_nome).trim().split(/\s+/)[0] : "";
+    var restr = restricoesDoPreCheckin(p).join("; ");
+    return modelo.replace(/\{nome\}/g, nome || "hóspede").replace(/\{restricao\}/g, restr || "restrição alimentar");
+  }
+  // Pedidos com restrição que ainda importam (chegada de ontem em diante, ou hóspede ainda na casa)
+  function restricoesAtivas(){
+    return (preCheckins||[]).filter(function(p){
+      if(!restricoesDoPreCheckin(p).length) return false;
+      var hoje = new Date(); hoje.setHours(0,0,0,0);
+      var fim = p.checkout ? parseDataLocal(p.checkout) : (p.checkin ? parseDataLocal(p.checkin) : null);
+      return !fim || fim.getTime() >= hoje.getTime();
+    }).sort(function(a,b){ return String(a.checkin||"9999").localeCompare(String(b.checkin||"9999")); });
+  }
+  function copiarTextoApp(txt){
+    function fallback(){
+      var ta = document.createElement("textarea"); ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      var ok = false; try{ ok = document.execCommand("copy"); }catch(e){}
+      ta.remove(); showToast(ok ? "Mensagem copiada" : "Não consegui copiar — selecione e copie manualmente");
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function(){ showToast("Mensagem copiada"); }, fallback);
+    else fallback();
+  }
+  function botaoCopiarRestricaoHtml(p){
+    return '<button type="button" class="copiarMsgRestricaoBtn" data-id="'+escapeHtml(p.id)+'" style="display:block;width:100%;margin-top:6px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:8px;padding:9px;font-family:inherit;font-size:13px;font-weight:700;">'+ic("doc")+' Copiar mensagem para o hóspede</button>';
+  }
+  function ligarCopiarMsgRestricao(root){
+    root.querySelectorAll(".copiarMsgRestricaoBtn").forEach(function(b){
+      b.onclick = function(){
+        var p = preCheckins.find(function(x){ return String(x.id) === b.getAttribute("data-id"); });
+        if(p) copiarTextoApp(mensagemRestricao(p));
+      };
+    });
+    var ed = root.querySelector("#editarMsgRestricaoBtn");
+    if(ed) ed.onclick = function(){
+      var atual = (cfgGet("mensagens", {}).restricao) || MSG_RESTRICAO_PADRAO;
+      var html = '<div class="sheet-overlay open" id="msgRestOverlay"><div class="sheet" style="max-height:90vh;overflow:auto;">' +
+        '<h2>Mensagem de restrição alimentar</h2>' +
+        '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 8px;">Use <b>{nome}</b> (primeiro nome do hóspede) e <b>{restricao}</b> (o que ele informou) — são trocados automaticamente.</p>' +
+        '<textarea id="msgRestTxt" rows="12" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;">'+escapeHtml(atual)+'</textarea>' +
+        '<div class="sheet-actions"><button type="button" class="btn-secondary" id="msgRestCancel">Cancelar</button><button type="button" class="btn-primary" id="msgRestSalvar">'+ic("check")+' Salvar</button></div>' +
+        '<button type="button" id="msgRestPadrao" style="display:block;width:100%;margin-top:8px;background:none;border:none;color:var(--ink-600);font-family:inherit;font-size:12.5px;font-weight:700;">Voltar à mensagem padrão</button></div></div>';
+      document.body.insertAdjacentHTML("beforeend", html);
+      var ov = document.getElementById("msgRestOverlay");
+      document.getElementById("msgRestCancel").onclick = function(){ ov.remove(); };
+      ov.addEventListener("click", function(e){ if(e.target === ov) ov.remove(); });
+      document.getElementById("msgRestPadrao").onclick = function(){ document.getElementById("msgRestTxt").value = MSG_RESTRICAO_PADRAO; };
+      document.getElementById("msgRestSalvar").onclick = async function(){
+        var v = document.getElementById("msgRestTxt").value.trim();
+        var todas = JSON.parse(JSON.stringify(cfgGet("mensagens", {})));
+        todas.restricao = v || MSG_RESTRICAO_PADRAO;
+        if(await cfgSalvar("mensagens", todas)){ ov.remove(); }
+      };
+    };
+  }
+  function restricoesHtml(){
+    var html = '<p class="item-meta" style="margin:0 0 10px;">Hóspedes que informaram restrição alimentar ou alergia no pedido de chegada — para o restaurante e o café da manhã se prepararem.</p>';
+    if(podeEditar("restaurante")) html += '<button type="button" id="editarMsgRestricaoBtn" style="display:block;width:100%;background:none;border:1px dashed var(--line);border-radius:8px;padding:8px;margin-bottom:10px;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-600);">'+ic("pencil")+' Editar mensagem padrão</button>';
+    if(preCheckinsErro) return html + '<div class="empty">Não consegui carregar os pedidos de chegada.</div>';
+    var lista = restricoesAtivas();
+    if(!lista.length) return html + '<div class="empty">Nenhuma restrição alimentar registrada para hóspedes atuais ou próximos.</div>';
+    lista.forEach(function(p){
+      var ac = preCheckinAcomodacao(p);
+      var nomeAc = ac ? ac.nome : (p.acomodacao_nome || "Acomodação não identificada");
+      var quando = [preCheckinRotuloDia(p)];
+      if(p.checkout) quando.push("saída " + dataBr(p.checkout));
+      html += '<div class="card" style="margin-bottom:10px;border-left:4px solid var(--amber-600);">' +
+        '<p class="item-name" style="margin:0 0 3px;">'+ic("bed")+' '+escapeHtml(nomeAc)+(p.hospede_nome ? ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(p.hospede_nome)+'</span>' : '')+'</p>' +
+        '<p class="item-meta">'+ic("calendar")+' '+quando.join(" · ")+'</p>' +
+        restricoesDoPreCheckin(p).map(function(t){ return '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);margin-top:4px;">'+escapeHtml(t)+'</p>'; }).join("") +
+        botaoCopiarRestricaoHtml(p) + '</div>';
+    });
+    return html;
+  }
   function renderPreCheckinCard(p){
     var ac = preCheckinAcomodacao(p);
     var nomeAc = ac ? ac.nome : (p.acomodacao_nome || "Acomodação não identificada");
@@ -11105,6 +11201,7 @@
       html += '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);margin-top:4px;"><b>'+escapeHtml(rotulo)+'</b>'+(x.descricao?': '+escapeHtml(x.descricao):'')+'</p>';
     });
     if(p.observacao) html += '<p class="item-meta" style="margin-top:4px;">'+ic("pencil")+' '+escapeHtml(p.observacao)+'</p>';
+    if(restricoesDoPreCheckin(p).length) html += botaoCopiarRestricaoHtml(p);
     var extras = (p.dados && typeof p.dados === "object") ? Object.keys(p.dados) : [];
     extras.forEach(function(k){
       var v = p.dados[k];
@@ -11398,6 +11495,7 @@
         if(recepcaoSubView === "chegadas") carregarPreCheckins().then(function(){ if(recepcaoSubView === "chegadas") renderRecepcao(); });
       };
     });
+    ligarCopiarMsgRestricao(main);
     main.querySelectorAll(".precheckinVistoBtn").forEach(function(btn){
       btn.onclick = async function(){
         btn.disabled = true;
@@ -12126,6 +12224,7 @@
     {key:"restaurante_historico", label:"Restaurante — só Histórico", sub:true},
     {key:"restaurante_cardapio", label:"Restaurante — só Cardápio (itens e preços)", sub:true},
     {key:"restaurante_relatorio", label:"Restaurante — só Relatório (ocupação e contas)", sub:true},
+    {key:"restaurante_restricoes", label:"Restaurante — só Restrições alimentares", sub:true},
     {key:"restaurante_acao_240", label:"Restaurante — lançar itens na mesa 240 (cortesia)", acao:true},
     {key:"restaurante_acao_fechar", label:"Restaurante — fechar conta", acao:true},
     {key:"restaurante_acao_lancar_conta", label:"Restaurante — lançar na conta da acomodação", acao:true},
