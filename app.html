@@ -1580,7 +1580,7 @@
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
     restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", restricoes:"restaurante_restricoes"}},
-    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", qr:"recepcao_qr"}},
+    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", qr:"recepcao_qr", itens:"recepcao_itens"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
     limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao"}},
@@ -2587,7 +2587,7 @@
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
     restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições"},
-    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", qr:"QR Code"},
+    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", qr:"QR Code", itens:"Itens"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
     limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias"},
@@ -9517,26 +9517,36 @@
   }
   function renderItensPorAcomodacaoHtml(){
     var ativas = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
-    var html = '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Informe quantos itens de cada tipo ficam em cada acomodação. Ao importar o extrato do Hospedin, o abastecimento repõe só até essa quantidade.</p>';
+    var html = '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Toque na acomodação para ver os itens que ela deve ter.'+(podeEditar("estoque")?' Quem tem autorização pode editar as quantidades — o abastecimento pelo extrato repõe só até essa quantidade.':'')+'</p>';
     if(!ativas.length) return html + '<div class="empty">Nenhuma acomodação cadastrada.</div>';
+    var podeEd = podeEditar("estoque");
+    var nomesFrig = itensFrigobarOrdenados().map(function(it){ return it.name; });
     gruposAcomodacoes(ativas).forEach(function(g){
       var persTodos = g.membros.map(function(m){ return padraoPersonalizadoDe(m.id); });
       var qtdPers = persTodos.filter(function(x){ return x.length; }).length;
-      var pers = persTodos[0] || [];
-      var total = pers.reduce(function(t,r){ return t + Number(r.quantidade||0); }, 0);
-      var temGrupo = g.membros.every(function(m){ return !!GRUPO_POR_ACOMODACAO_NOME[m.nome]; });
-      var status = qtdPers === g.membros.length ? ('Personalizado · '+total+' itens no total')
-        : qtdPers > 0 ? 'Personalizado em parte das acomodações — salve para igualar'
-        : (temGrupo ? 'Usando o padrão do grupo' : 'Ainda não definido');
-      var sub = g.membros.length > 1 ? (g.membros.length+' acomodações: '+g.membros.map(function(m){ return m.nome.replace(g.nome,"").trim()||m.nome; }).join(", ")) : '';
-      html += '<div class="card" style="margin-bottom:8px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
-        '<div style="flex:1;min-width:0;"><p style="margin:0;font-weight:700;font-size:14.5px;">'+escapeHtml(g.nome)+(g.membros.length>1?' (todos)':'')+'</p>' +
-        (sub ? '<p class="item-meta" style="margin:2px 0 0;">'+escapeHtml(sub)+'</p>' : '') +
-        '<p class="item-meta" style="margin:2px 0 0;'+(qtdPers?'color:var(--teal-700);font-weight:700;':'')+'">'+status+'</p></div>' +
-        '<button type="button" class="ipaEditar" data-ids="'+g.membros.map(function(m){ return escapeHtml(m.id); }).join(",")+'" style="background:var(--teal-700);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-family:inherit;font-size:13px;font-weight:700;">'+ic("pencil")+' Editar</button>' +
-      '</div>';
+      var ref = g.membros[0].id;
+      var lista = nomesFrig.map(function(n){ return {nome:n, q:quantidadeIdeal(ref, n)}; }).filter(function(x){ return x.q != null && x.q > 0; });
+      var total = lista.reduce(function(t,x){ return t + x.q; }, 0);
+      var sub = g.membros.length > 1 ? g.membros.map(function(m){ return m.nome.replace(g.nome,"").trim()||m.nome; }).join(", ") : '';
+      var status = lista.length ? (lista.length+' tipos · '+total+' itens'+(qtdPers ? '' : ' (padrão do grupo)')) : 'Ainda não definido';
+      html += '<details class="card" style="margin-bottom:8px;padding:0;">' +
+        '<summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+          '<div style="flex:1;min-width:0;"><p style="margin:0;font-weight:700;font-size:14.5px;">'+escapeHtml(g.nome)+(g.membros.length>1?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">('+g.membros.length+' acomodações)</span>':'')+'</p>' +
+          (sub ? '<p class="item-meta" style="margin:2px 0 0;">'+escapeHtml(sub)+'</p>' : '') +
+          '<p class="item-meta" style="margin:2px 0 0;'+(qtdPers?'color:var(--teal-700);font-weight:700;':'')+'">'+status+'</p></div>' +
+          '<span style="color:var(--ink-400);font-size:12px;">ver ▾</span></summary>' +
+        '<div style="padding:0 14px 12px;">' +
+          (lista.length ? lista.map(function(x){
+            return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:14px;"><span>'+escapeHtml(x.nome)+'</span><b>'+x.q+'</b></div>';
+          }).join("") : '<p class="item-meta">Nenhuma quantidade definida ainda.</p>') +
+          (podeEd ? '<button type="button" class="ipaEditar" data-ids="'+g.membros.map(function(m){ return escapeHtml(m.id); }).join(",")+'" style="display:block;width:100%;margin-top:10px;background:var(--teal-700);color:#fff;border:none;border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;font-weight:700;">'+ic("pencil")+' Editar quantidades</button>' : '') +
+        '</div></details>';
     });
     return html;
+  }
+  function renderItensAcomodacaoTelas(){
+    try{ renderAbastecimento(); }catch(e){}
+    try{ if(recepcaoSubView === "itens") renderRecepcao(); }catch(e){}
   }
   function ligarItensPorAcomodacao(main){
     main.querySelectorAll(".ipaEditar").forEach(function(b){
@@ -9598,7 +9608,7 @@
         var r = await sb.from("acomodacao_itens_padrao").delete().in("acomodacao_id", ids);
         if(r.error) throw r.error;
         state.itensPadraoAcomodacao = (state.itensPadraoAcomodacao||[]).filter(function(x){ return ids.indexOf(x.acomodacao_id) === -1; });
-        ov.remove(); showToast("Voltou ao padrão"); renderAbastecimento();
+        ov.remove(); showToast("Voltou ao padrão"); renderItensAcomodacaoTelas();
       }catch(err){ console.error(err); showToast("Erro ao salvar"); }
     };
     document.getElementById("ipaSalvar").onclick = async function(){
@@ -9615,7 +9625,7 @@
         var r = await sb.from("acomodacao_itens_padrao").upsert(rows);
         if(r.error) throw r.error;
         state.itensPadraoAcomodacao = (state.itensPadraoAcomodacao||[]).filter(function(x){ return ids.indexOf(x.acomodacao_id) === -1; }).concat(rows);
-        ov.remove(); showToast("Itens de "+ac.nome+" salvos"); renderAbastecimento();
+        ov.remove(); showToast("Itens de "+ac.nome+" salvos"); renderItensAcomodacaoTelas();
       }catch(err){
         console.error(err); showToast("Erro ao salvar (rode a migração v34 no Supabase)"); btn.disabled = false;
       }
@@ -11266,6 +11276,7 @@
       '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">'+ic("plus")+' Avulsos</button>' +
       '<button data-rsub="chegadas" class="'+(recepcaoSubView==="chegadas"?"active":"")+'">'+ic("bed")+' Chegadas'+(preCheckinsNaoVistos().length?' ('+preCheckinsNaoVistos().length+')':'')+'</button>' +
       '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
+      '<button data-rsub="itens" class="'+(recepcaoSubView==="itens"?"active":"")+'">'+ic("cube")+' Itens</button>' +
     '</div>';
 
     if(recepcaoSubView === "limpeza"){
@@ -11484,8 +11495,12 @@
     else if(recepcaoSubView === "chegadas"){
       html += renderPreCheckinsHtml();
     }
+    else if(recepcaoSubView === "itens"){
+      html += renderItensPorAcomodacaoHtml();
+    }
 
     main.innerHTML = html;
+    if(recepcaoSubView === "itens") ligarItensPorAcomodacao(main);
     wireSolicitacaoActions(main);
 
     main.querySelectorAll("[data-rsub]").forEach(function(b){
@@ -12213,6 +12228,7 @@
     {key:"recepcao_limpeza", label:"Recepção — só Limpeza", sub:true},
     {key:"recepcao_avulsos", label:"Recepção — só Avulsos", sub:true},
     {key:"recepcao_chegadas", label:"Recepção — só Chegadas (pré-check-in)", sub:true},
+    {key:"recepcao_itens", label:"Recepção — só Itens por acomodação (ver lista)", sub:true},
     {key:"recepcao_qr", label:"Recepção — só QR Code", sub:true},
     {key:"recepcao_acao_confirmar_reparo", label:"Recepção — confirmar/pausar reparo com o hóspede", acao:true},
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
