@@ -1521,7 +1521,8 @@
       sb.from("escala_semanal").select("*"),
       sb.from("escala_excecoes").select("*").order("data", {ascending:false}).limit(2000),
       sb.from("feriados").select("*").order("data"),
-      sb.from("feriado_trabalhados").select("*").limit(5000)
+      sb.from("feriado_trabalhados").select("*").limit(5000),
+      sb.from("acomodacao_itens_padrao").select("*").limit(5000)
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
     // Marcações do checklist: só das execuções recentes, paginado e em ordem fixa.
@@ -1564,7 +1565,8 @@
       escalaSemanal: (escalaSemanalRes.data||[]).map(mapEscalaSemanalFromRow),
       escalaExcecoes: (escalaExcecoesRes.data||[]).map(mapEscalaExcecaoFromRow),
       feriados: (feriadosRes.data||[]).map(mapFeriadoFromRow),
-      feriadoTrabalhados: (feriadoTrabRes.data||[]).map(mapFeriadoTrabalhadoFromRow)
+      feriadoTrabalhados: (feriadoTrabRes.data||[]).map(mapFeriadoTrabalhadoFromRow),
+      itensPadraoAcomodacao: (results[23] && results[23].data) || []
     };
   }
 
@@ -9470,9 +9472,12 @@
     html += '<div class="seg-toggle">' +
       '<button data-asub="pendentes" class="'+(abastecimentoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-asub="feitos" class="'+(abastecimentoSubView==="feitos"?"active":"")+'">Abastecidos hoje</button>' +
+      '<button data-asub="padrao" class="'+(abastecimentoSubView==="padrao"?"active":"")+'">Itens por acomodação</button>' +
     '</div>';
-    var list = abastecimentoSubView === "pendentes" ? pend : feitos;
-    if(list.length === 0){
+    var list = abastecimentoSubView === "feitos" ? feitos : pend;
+    if(abastecimentoSubView === "padrao"){
+      html += renderItensPorAcomodacaoHtml();
+    } else if(list.length === 0){
       html += '<div class="empty">'+(abastecimentoSubView==="pendentes" ? "Nenhum pedido de frigobar em aberto." : "Nenhum abastecimento feito hoje ainda.")+'</div>';
     } else {
       list.forEach(function(s){
@@ -9484,11 +9489,115 @@
       b.onclick = function(){ abastecimentoSubView = b.getAttribute("data-asub"); renderAbastecimento(); };
     });
     wireSolicitacaoActions(main);
+    if(abastecimentoSubView === "padrao") ligarItensPorAcomodacao(main);
     document.getElementById("importarExtratoBtn").onclick = function(){
       document.getElementById("importarExtratoInput").click();
     };
     document.getElementById("importarExtratoInput").addEventListener("change", handleImportarExtrato);
     document.getElementById("novoAbastecimentoAvulsoBtn").onclick = abrirNovoAbastecimentoAvulsoSheet;
+  }
+
+  // ---------- Itens por acomodação (quantidade que fica em cada frigobar) ----------
+  function itensFrigobarOrdenados(){
+    return state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+  }
+  function padraoPersonalizadoDe(acId){
+    return (state.itensPadraoAcomodacao||[]).filter(function(r){ return r.acomodacao_id === acId; });
+  }
+  function renderItensPorAcomodacaoHtml(){
+    var ativas = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var html = '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Informe quantos itens de cada tipo ficam em cada acomodação. Ao importar o extrato do Hospedin, o abastecimento repõe só até essa quantidade.</p>';
+    if(!ativas.length) return html + '<div class="empty">Nenhuma acomodação cadastrada.</div>';
+    ativas.forEach(function(a){
+      var pers = padraoPersonalizadoDe(a.id);
+      var total = pers.reduce(function(t,r){ return t + Number(r.quantidade||0); }, 0);
+      var temGrupo = !!GRUPO_POR_ACOMODACAO_NOME[a.nome];
+      var status = pers.length ? ('Personalizado · '+total+' itens no total') : (temGrupo ? 'Usando o padrão do grupo' : 'Ainda não definido');
+      html += '<div class="card" style="margin-bottom:8px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+        '<div style="flex:1;min-width:0;"><p style="margin:0;font-weight:700;font-size:14.5px;">'+escapeHtml(a.nome)+'</p>' +
+        '<p class="item-meta" style="margin:2px 0 0;'+(pers.length?'color:var(--teal-700);font-weight:700;':'')+'">'+status+'</p></div>' +
+        '<button type="button" class="ipaEditar" data-id="'+escapeHtml(a.id)+'" style="background:var(--teal-700);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-family:inherit;font-size:13px;font-weight:700;">'+ic("pencil")+' Editar</button>' +
+      '</div>';
+    });
+    return html;
+  }
+  function ligarItensPorAcomodacao(main){
+    main.querySelectorAll(".ipaEditar").forEach(function(b){
+      b.onclick = function(){ abrirItensAcomodacaoSheet(b.getAttribute("data-id")); };
+    });
+  }
+  function abrirItensAcomodacaoSheet(acId){
+    if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar"); return; }
+    var ac = state.acomodacoes.find(function(a){ return a.id === acId; });
+    if(!ac) return;
+    var itens = itensFrigobarOrdenados();
+    if(!itens.length){ showToast("Não há itens de Frigobar cadastrados no estoque"); return; }
+    var outras = state.acomodacoes.filter(function(a){ return a.ativo && a.id !== acId; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    function valorInicial(nome){
+      var q = quantidadeIdeal(acId, nome);
+      return q == null ? 0 : q;
+    }
+    function linhas(valFn){
+      return itens.map(function(it, i){
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line);">' +
+          '<span style="flex:1;font-size:13.5px;font-weight:600;">'+escapeHtml(it.name)+'</span>' +
+          '<div class="qty-stepper" style="margin:0;"><button type="button" class="ipaMinus" data-i="'+i+'">−</button>' +
+          '<input type="number" class="ipaQty" data-i="'+i+'" step="1" min="0" value="'+valFn(it.name)+'">' +
+          '<button type="button" class="ipaPlus" data-i="'+i+'">+</button></div></div>';
+      }).join("");
+    }
+    var html = '<div class="sheet-overlay open" id="ipaOverlay"><div class="sheet" style="max-height:90vh;overflow:auto;">' +
+      '<h2>'+escapeHtml(ac.nome)+'</h2>' +
+      '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 8px;">Quantos de cada item ficam nesta acomodação (0 = não tem).</p>' +
+      (outras.length ? '<select id="ipaCopiar" style="width:100%;padding:9px 11px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;background:var(--sand-50);"><option value="">Copiar quantidades de outra acomodação…</option>' +
+        outras.map(function(o){ return '<option value="'+escapeHtml(o.id)+'">'+escapeHtml(o.nome)+'</option>'; }).join("") + '</select>' : '') +
+      '<div id="ipaLinhas">'+linhas(valorInicial)+'</div>' +
+      '<div class="sheet-actions" style="margin-top:12px;"><button type="button" class="btn-secondary" id="ipaCancel">Cancelar</button>' +
+      '<button type="button" class="btn-primary" id="ipaSalvar">'+ic("check")+' Salvar</button></div>' +
+      (padraoPersonalizadoDe(acId).length ? '<button type="button" id="ipaReset" style="display:block;width:100%;margin-top:8px;background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12.5px;font-weight:700;">Voltar ao padrão do grupo</button>' : '') +
+      '</div></div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var ov = document.getElementById("ipaOverlay");
+    function ligarSteppers(){
+      ov.querySelectorAll(".ipaMinus").forEach(function(b){ b.onclick = function(){ var inp = ov.querySelector('.ipaQty[data-i="'+b.getAttribute("data-i")+'"]'); inp.value = Math.max(0, (parseInt(inp.value,10)||0)-1); }; });
+      ov.querySelectorAll(".ipaPlus").forEach(function(b){ b.onclick = function(){ var inp = ov.querySelector('.ipaQty[data-i="'+b.getAttribute("data-i")+'"]'); inp.value = (parseInt(inp.value,10)||0)+1; }; });
+    }
+    ligarSteppers();
+    document.getElementById("ipaCancel").onclick = function(){ ov.remove(); };
+    ov.addEventListener("click", function(e){ if(e.target === ov) ov.remove(); });
+    var sel = document.getElementById("ipaCopiar");
+    if(sel) sel.onchange = function(){
+      if(!sel.value) return;
+      var origem = sel.value;
+      document.getElementById("ipaLinhas").innerHTML = linhas(function(nome){ var q = quantidadeIdeal(origem, nome); return q == null ? 0 : q; });
+      ligarSteppers();
+    };
+    var rs = document.getElementById("ipaReset");
+    if(rs) rs.onclick = async function(){
+      if(!confirm("Voltar ao padrão do grupo para "+ac.nome+"?")) return;
+      try{
+        var r = await sb.from("acomodacao_itens_padrao").delete().eq("acomodacao_id", acId);
+        if(r.error) throw r.error;
+        state.itensPadraoAcomodacao = (state.itensPadraoAcomodacao||[]).filter(function(x){ return x.acomodacao_id !== acId; });
+        ov.remove(); showToast("Voltou ao padrão"); renderAbastecimento();
+      }catch(err){ console.error(err); showToast("Erro ao salvar"); }
+    };
+    document.getElementById("ipaSalvar").onclick = async function(){
+      var btn = this; btn.disabled = true;
+      var agora = new Date().toISOString();
+      var rows = itens.map(function(it, i){
+        var v = parseInt(ov.querySelector('.ipaQty[data-i="'+i+'"]').value, 10);
+        return {id: acId+"|"+it.name, acomodacao_id: acId, nome_item: it.name, quantidade: (isNaN(v)||v<0)?0:v, atualizado_em: agora, atualizado_por: (currentUser?currentUser.nome:null)};
+      });
+      try{
+        var r = await sb.from("acomodacao_itens_padrao").upsert(rows);
+        if(r.error) throw r.error;
+        state.itensPadraoAcomodacao = (state.itensPadraoAcomodacao||[]).filter(function(x){ return x.acomodacao_id !== acId; }).concat(rows);
+        ov.remove(); showToast("Itens de "+ac.nome+" salvos"); renderAbastecimento();
+      }catch(err){
+        console.error(err); showToast("Erro ao salvar (rode a migração v34 no Supabase)"); btn.disabled = false;
+      }
+    };
   }
 
   function abrirEditarItensPedidoSheet(s){
@@ -9846,6 +9955,13 @@
     "Cabana Zazu 01":"padrao_sem_agua_saborizada","Cabana Zazu 02":"padrao_sem_agua_saborizada","Cabana Zazu 03":"padrao_sem_agua_saborizada"
   };
   function quantidadeIdeal(acomodacaoId, nomeItem){
+    // Quantidades cadastradas pela equipe (aba "Itens por acomodação") valem mais que a tabela fixa.
+    var custom = (state.itensPadraoAcomodacao||[]).filter(function(r){ return r.acomodacao_id === acomodacaoId; });
+    if(custom.length){
+      var alvoN = normalizarBusca(nomeItem);
+      var r = custom.find(function(x){ return normalizarBusca(x.nome_item) === alvoN; });
+      return r ? Number(r.quantidade) : null;
+    }
     var nome = acomodacaoNome(acomodacaoId);
     var grupo = GRUPO_POR_ACOMODACAO_NOME[nome];
     if(!grupo) return null;
