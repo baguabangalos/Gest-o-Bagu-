@@ -1154,7 +1154,7 @@
   function mapTurnoAtividadeFromRow(r){
     return {id:r.id, turnoId:r.turno_id, titulo:r.titulo, tipo:r.tipo||"livre", horaInicio:r.hora_inicio, horaFim:r.hora_fim,
       intervaloMinutos:r.intervalo_minutos||null, ordem:r.ordem, diasSemana:r.dias_semana||[], observacao:r.observacao||null,
-      vinculoAtividadeId:r.vinculo_atividade_id||null};
+      vinculoAtividadeId:r.vinculo_atividade_id||null, pedeQuantidade:!!r.pede_quantidade, rotuloQuantidade:r.rotulo_quantidade||""};
   }
   var DIAS_SEMANA_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   function atividadeAplicaNoDia(atividade, dataStr){
@@ -1298,7 +1298,7 @@
   function mapTurnoAtividadeExecucaoFromRow(r){
     return {id:r.id, turnoExecucaoId:r.turno_execucao_id, turnoAtividadeId:r.turno_atividade_id, status:r.status||"pendente",
       motivo:r.motivo, marcadoEm:(r.marcado_em?new Date(r.marcado_em).getTime():null), marcadoPor:r.marcado_por,
-      repassadoTurnoId:r.repassado_turno_id||null, slotHora:r.slot_hora||null, atrasado:!!r.atrasado};
+      repassadoTurnoId:r.repassado_turno_id||null, slotHora:r.slot_hora||null, atrasado:!!r.atrasado, quantidade:(r.quantidade===null||r.quantidade===undefined)?null:Number(r.quantidade)};
   }
   function mapSolicitacaoFromRow(r){
     return {id:r.id, acomodacaoId:r.acomodacao_id, tipo:r.tipo, contexto:r.contexto, origem:r.origem,
@@ -1530,7 +1530,7 @@
     var cutoffCk = new Date(Date.now() - 60*86400000), cutoffCkStr = cutoffCk.getFullYear()+"-"+String(cutoffCk.getMonth()+1).padStart(2,"0")+"-"+String(cutoffCk.getDate()).padStart(2,"0");
     var idsExecRecentes = ((results[16] && results[16].data) || []).filter(function(e){ return String(e.data).slice(0,10) >= cutoffCkStr; }).map(function(e){ return e.id; });
     var linhasAtivExec = await carregarAtividadeExecucoes(idsExecRecentes);
-    if(linhasAtivExec === null) linhasAtivExec = (state && state.turnoAtividadeExecucoes) ? state.turnoAtividadeExecucoes.map(function(x){ return {id:x.id, turno_execucao_id:x.turnoExecucaoId, turno_atividade_id:x.turnoAtividadeId, status:x.status, motivo:x.motivo, marcado_em:(x.marcadoEm?new Date(x.marcadoEm).toISOString():null), marcado_por:x.marcadoPor, repassado_turno_id:x.repassadoTurnoId, slot_hora:x.slotHora, atrasado:x.atrasado}; }) : [];
+    if(linhasAtivExec === null) linhasAtivExec = (state && state.turnoAtividadeExecucoes) ? state.turnoAtividadeExecucoes.map(function(x){ return {id:x.id, turno_execucao_id:x.turnoExecucaoId, turno_atividade_id:x.turnoAtividadeId, status:x.status, motivo:x.motivo, marcado_em:(x.marcadoEm?new Date(x.marcadoEm).toISOString():null), marcado_por:x.marcadoPor, repassado_turno_id:x.repassadoTurnoId, slot_hora:x.slotHora, atrasado:x.atrasado, quantidade:x.quantidade}; }) : [];
     results[17] = {data:linhasAtivExec};
     var feriadosRes=results[21], feriadoTrabRes=results[22];
     var itemsRes=results[0], movRes=results[1], supRes=results[2], csRes=results[3], procRes=results[4], manRes=results[5], hospedinRes=results[6], acoRes=results[7], solRes=results[8], staffRes=results[9], pedRes=results[10], syncSettingRes=results[11], equipRes=results[12], equipEvRes=results[13], turnosRes=results[14], turnoAtivRes=results[15], turnoExecRes=results[16], turnoAtivExecRes=results[17], staffProfilesRes=results[18], escalaSemanalRes=results[19], escalaExcecoesRes=results[20];
@@ -6298,7 +6298,7 @@
   // Marca a mesma atividade como "feita" nos turnos irmãos (mesmo título +
   // horário, ou vínculo manual) — pra quem já fez não precisar repetir.
   // Silenciosa: erro num turno irmão não deve travar a marcação principal.
-  async function propagarAtividadeParaOutrosTurnos(atividade, execucao, status, motivo, atrasado, slotHora){
+  async function propagarAtividadeParaOutrosTurnos(atividade, execucao, status, motivo, atrasado, slotHora, quantidade){
     if(status !== "feito") return;
     var irmas = atividadesIrmas(atividade);
     for(var i=0; i<irmas.length; i++){
@@ -6311,6 +6311,7 @@
         if(existente && existente.status === "feito") continue; // já feita lá, não sobrescreve
         var payload = {status:status, motivo:(motivo||null), atrasado: !!atrasado, marcado_em:new Date().toISOString(),
           marcado_por:(currentUser?currentUser.nome:null)+" (via "+ (state.turnos.find(function(t){return t.id===atividade.turnoId;})||{}).nome +")"};
+        if(quantidade !== null && quantidade !== undefined) payload.quantidade = quantidade;
         if(existente){
           var upd = await dbUpdate("turno_atividade_execucoes", existente.id, payload, mapTurnoAtividadeExecucaoFromRow);
           var idx = state.turnoAtividadeExecucoes.findIndex(function(x){ return x.id===existente.id; });
@@ -6493,6 +6494,8 @@
         '</div>' +
       '</div>';
       html += '<textarea class="nova-atividade-obs" rows="2" placeholder="Observação (opcional) — instrução que aparece toda vez que essa atividade repetir" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;"></textarea>';
+      html += '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-top:8px;"><input type="checkbox" class="nova-atividade-qtd"> Pedir a quantidade ao marcar como feito</label>' +
+        '<input type="text" class="nova-atividade-qtd-rotulo" placeholder="O que contar? (ex: toalhas, kits, lençóis)" style="width:100%;margin-top:4px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">';
       html += '<label class="item-meta" style="display:block;margin-top:6px;">É a mesma atividade de outro turno? (opcional, só se o título for diferente)' +
         '<select class="nova-atividade-vinculo" style="width:100%;margin-top:2px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:12.5px;">' +
         vinculoOptionsHtml(t.id, null) +
@@ -6617,8 +6620,13 @@
           var obsTxt = block.querySelector(".nova-atividade-obs").value.trim();
           var vinculoSel = block.querySelector(".nova-atividade-vinculo");
           var vinculoId = vinculoSel && vinculoSel.value ? vinculoSel.value : null;
+          var novoPayload = {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId};
+          if(block.querySelector(".nova-atividade-qtd").checked){
+            novoPayload.pede_quantidade = true;
+            novoPayload.rotulo_quantidade = block.querySelector(".nova-atividade-qtd-rotulo").value.trim() || null;
+          }
           try{
-            var nova = await dbInsert("turno_atividades", {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId}, mapTurnoAtividadeFromRow);
+            var nova = await dbInsert("turno_atividades", novoPayload, mapTurnoAtividadeFromRow);
             state.turnoAtividades.push(nova);
             showToast("Atividade adicionada"); renderChecklistTurno();
             sincronizarNotificacoesTurno(true);
@@ -6660,6 +6668,8 @@
           '</div>' +
           '<label>Observação (opcional)</label>' +
           '<textarea id="eaObs" rows="2" style="width:100%;padding:10px 12px;margin-bottom:4px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;">'+escapeHtml(a.observacao||"")+'</textarea>' +
+          '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-top:6px;"><input type="checkbox" id="eaPedeQtd"'+(a.pedeQuantidade?" checked":"")+'> Pedir a quantidade ao marcar como feito</label>' +
+          '<input type="text" id="eaRotuloQtd" value="'+escapeHtml(a.rotuloQuantidade||"")+'" placeholder="O que contar? (ex: toalhas, kits)" style="width:100%;padding:9px 11px;margin:4px 0 4px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
           '<label style="margin-top:6px;">É a mesma atividade de outro turno? (opcional, só se o título for diferente)</label>' +
           '<select id="eaVinculo" style="width:100%;padding:10px 12px;margin-bottom:4px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:12.5px;background:var(--sand-50);">' +
           vinculoOptionsHtml(a.turnoId, a.vinculoAtividadeId) +
@@ -6703,7 +6713,13 @@
       var vinculoId = vinculoSel && vinculoSel.value ? vinculoSel.value : null;
       var btn = document.getElementById("eaSalvar"); btn.disabled = true;
       try{
-        var atualizada = await dbUpdate("turno_atividades", a.id, {titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId}, mapTurnoAtividadeFromRow);
+        var updPayload = {titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId};
+        var pedeQ = document.getElementById("eaPedeQtd").checked;
+        if(pedeQ || a.pedeQuantidade){
+          updPayload.pede_quantidade = pedeQ;
+          updPayload.rotulo_quantidade = pedeQ ? (document.getElementById("eaRotuloQtd").value.trim()||null) : null;
+        }
+        var atualizada = await dbUpdate("turno_atividades", a.id, updPayload, mapTurnoAtividadeFromRow);
         var idx = state.turnoAtividades.findIndex(function(x){ return x.id===a.id; });
         if(idx>-1) state.turnoAtividades[idx] = atualizada;
         overlay.remove();
@@ -6974,9 +6990,9 @@
       if(est.fase === "bloqueado"){
         html += '<p class="item-meta">'+ic("lockClosed")+' libera às '+fmtHM(est.libera)+'</p>';
       } else if(est.fase === "feito"){
-        html += '<p class="item-meta">'+ic("check")+' Feito'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+'</p>';
+        html += '<p class="item-meta">'+ic("check")+' Feito'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+quantidadeTxt(a, item)+'</p>';
       } else if(est.fase === "feito_atrasado"){
-        html += '<p class="item-meta">'+ic("dotAmber")+' Feito com atraso'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
+        html += '<p class="item-meta">'+ic("dotAmber")+' Feito com atraso'+(item.marcadoEm?(' às '+fmtDate(item.marcadoEm).split(" ")[1]):'')+(item.marcadoPor?(' — '+escapeHtml(item.marcadoPor)):'')+(item.motivo?(': '+escapeHtml(item.motivo)):'')+quantidadeTxt(a, item)+'</p>';
       } else if(est.fase === "nao_feito"){
         html += '<p class="item-meta">'+ic("close")+' Não realizado'+(item.motivo?(': '+escapeHtml(item.motivo)):'')+'</p>';
       } else {
@@ -7176,13 +7192,51 @@
     return ordenados[(idx+1) % ordenados.length];
   }
 
+  // Pergunta a quantidade (atividades configuradas com "pedir quantidade").
+  // Resolve com o número, ou null se cancelar.
+  function pedirQuantidade(atividade){
+    return new Promise(function(resolve){
+      var rot = atividade.rotuloQuantidade || "";
+      var html = '<div class="sheet-overlay open" id="qtdOverlay"><div class="sheet">' +
+        '<h2>'+ic("check")+' Quantidade</h2>' +
+        '<p class="item-meta" style="margin:0 0 8px;">'+escapeHtml(atividade.titulo)+'</p>' +
+        '<label>Quantas'+(rot?(' '+escapeHtml(rot)):'')+'?</label>' +
+        '<input type="number" inputmode="decimal" min="0" step="any" id="qtdInput" style="width:100%;padding:12px;margin-bottom:6px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:18px;background:var(--sand-50);">' +
+        '<div class="sheet-actions"><button type="button" class="btn-secondary" id="qtdCancel">Cancelar</button>' +
+        '<button type="button" class="btn-primary" id="qtdOk">'+ic("check")+' Confirmar</button></div></div></div>';
+      document.body.insertAdjacentHTML("beforeend", html);
+      var ov = document.getElementById("qtdOverlay"), inp = document.getElementById("qtdInput");
+      setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 50);
+      function fim(v){ ov.remove(); resolve(v); }
+      document.getElementById("qtdCancel").onclick = function(){ fim(null); };
+      ov.addEventListener("click", function(e){ if(e.target===ov) fim(null); });
+      document.getElementById("qtdOk").onclick = function(){
+        var v = parseFloat(String(inp.value).replace(",", "."));
+        if(isNaN(v) || v < 0){ showToast("Informe a quantidade"); return; }
+        fim(v);
+      };
+    });
+  }
+  function quantidadeTxt(atividade, item){
+    if(!item || item.quantidade === null || item.quantidade === undefined) return "";
+    var n = String(item.quantidade).replace(".", ",");
+    return ' · '+ic("check")+' Quantidade: <strong>'+escapeHtml(n)+'</strong>'+(atividade && atividade.rotuloQuantidade ? ' '+escapeHtml(atividade.rotuloQuantidade) : '');
+  }
+
   async function resolverPendenciaHerdada(item, status, motivo){
     if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para marcar o checklist"); return; }
+    var atvQ = state.turnoAtividades.find(function(a){ return a.id===item.turnoAtividadeId; });
+    var qtd = null;
+    if(status === "feito" && atvQ && atvQ.pedeQuantidade){
+      qtd = await pedirQuantidade(atvQ);
+      if(qtd === null) return;
+    }
     try{
       // Uma pendência herdada só chega até aqui porque já passou da hora
       // do turno anterior — então, quando resolvida como "feito", já
       // nasce marcada como atrasada.
       var payload = {status:status, motivo:motivo, atrasado: status==="feito", marcado_em:new Date().toISOString(), marcado_por:(currentUser?currentUser.nome:null)};
+      if(qtd !== null) payload.quantidade = qtd;
       var upd = await dbUpdate("turno_atividade_execucoes", item.id, payload, mapTurnoAtividadeExecucaoFromRow);
       var idx = state.turnoAtividadeExecucoes.findIndex(function(x){ return x.id===item.id; });
       if(idx>-1) state.turnoAtividadeExecucoes[idx] = upd;
@@ -7224,9 +7278,16 @@
 
   async function marcarAtividadeTurno(execucao, atividadeId, status, motivo, atrasado, slotHora){
     if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para marcar o checklist"); return; }
+    var atvQ = state.turnoAtividades.find(function(a){ return a.id===atividadeId; });
+    var qtd = null;
+    if(status === "feito" && atvQ && atvQ.pedeQuantidade){
+      qtd = await pedirQuantidade(atvQ);
+      if(qtd === null) return;
+    }
     try{
       var existente = slotHora ? itemExecucaoSlot(execucao.id, atividadeId, slotHora) : atividadeExecucaoFor(execucao.id, atividadeId);
       var payload = {status:status, motivo:motivo, atrasado: !!atrasado, marcado_em:new Date().toISOString(), marcado_por:(currentUser?currentUser.nome:null)};
+      if(qtd !== null) payload.quantidade = qtd;
       if(existente){
         var upd = await dbUpdate("turno_atividade_execucoes", existente.id, payload, mapTurnoAtividadeExecucaoFromRow);
         var idx = state.turnoAtividadeExecucoes.findIndex(function(x){ return x.id===existente.id; });
@@ -7238,7 +7299,7 @@
         state.turnoAtividadeExecucoes.push(nova);
       }
       var atividadeObj = state.turnoAtividades.find(function(a){ return a.id===atividadeId; });
-      if(atividadeObj) await propagarAtividadeParaOutrosTurnos(atividadeObj, execucao, status, motivo, atrasado, slotHora);
+      if(atividadeObj) await propagarAtividadeParaOutrosTurnos(atividadeObj, execucao, status, motivo, atrasado, slotHora, qtd);
       showToast(status==="feito" ? (atrasado ? "Marcado como feito (atrasado)" : "Marcado como feito") : "Registrado como não realizado");
       renderApp();
     }catch(err){
@@ -11520,7 +11581,7 @@
     state.turnoAtividadeExecucoes.forEach(function(a){
       if(a.status==="pendente") return;
       var at = null; (state.turnoAtividades||[]).forEach(function(x){ if(x.id===a.turnoAtividadeId) at=x; });
-      add(a.marcadoEm, ic("check"), "Atividade de turno ("+a.status+"): "+(at?at.titulo:"—"), a.marcadoPor?nomeStaff(a.marcadoPor):"");
+      add(a.marcadoEm, ic("check"), "Atividade de turno ("+a.status+"): "+(at?at.titulo:"—")+((a.quantidade!==null && a.quantidade!==undefined)?" — qtd "+a.quantidade+(at&&at.rotuloQuantidade?" "+at.rotuloQuantidade:""):""), a.marcadoPor?nomeStaff(a.marcadoPor):"");
     });
     state.equipamentoEventos.forEach(function(e){
       var eq = state.equipamentos.find(function(x){ return x.id===e.equipamentoId; });
