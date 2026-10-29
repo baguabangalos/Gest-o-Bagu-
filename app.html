@@ -1643,6 +1643,7 @@
     var profRes = await sb.from("profiles").select("*").eq("id", userId).single();
     if(profRes.error) throw profRes.error;
     if(profRes.data.ativo === false){ var errAtivo = new Error("conta desativada"); errAtivo.contaDesativada = true; throw errAtivo; }
+    if(profRes.data.aprovado === false && profRes.data.role !== "admin"){ var errPend = new Error("conta aguardando aprovação"); errPend.contaPendente = true; throw errPend; }
     var permRes = await sb.from("permissoes").select("*").eq("user_id", userId);
     var permissoes = {};
     (permRes.data||[]).forEach(function(p){ permissoes[p.modulo] = {ver:p.pode_ver, editar:p.pode_editar, excluir:p.pode_excluir}; });
@@ -1969,6 +1970,7 @@
       currentUser = await carregarPerfil(session.user.id);
     }catch(err){
       console.error(err);
+      if(err && err.contaPendente){ try{ await sb.auth.signOut(); }catch(e){} showLogin(); showLoginInfo("Seu cadastro foi recebido e está aguardando a aprovação do administrador. Quando for aprovado, é só entrar de novo."); return; }
       if(err && err.contaDesativada){ try{ await sb.auth.signOut(); }catch(e){} showLogin("Esta conta foi desativada. Fale com o administrador se precisar de acesso."); return; }
       var detalhe = (err && (err.message || err.details || err.hint)) ? (" (" + (err.message||err.details||err.hint) + ")") : "";
       showLogin("Não consegui carregar seu perfil" + detalhe + ". Peça para o administrador liberar seu acesso.");
@@ -1980,6 +1982,11 @@
     await carregarAppConfig();
     state = await loadAllFromSupabase();
     carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
+    if(currentUser.role === "admin"){
+      sb.from("profiles").select("id", {count:"exact", head:true}).eq("aprovado", false).neq("ativo", false).then(function(r){
+        if(!r.error && typeof r.count === "number"){ adminPendentesN = r.count; if(appSection==="home") renderApp(); }
+      }, function(){});
+    }
     // Feriados: confere sozinho quem trabalhou nos feriados que já passaram.
     apurarFeriados(false).catch(function(e){ console.error("apurarFeriados", e); });
     if(podeEditar("limpeza")) reconciliarTarefasTrocaDeQuarto().then(function(n){ if(n) renderApp(); }).catch(function(e){ console.error(e); });
@@ -2816,7 +2823,7 @@
       cards.push({section:"tarefasdia", titulo:"Tarefas do dia", icon:ic("check"), sub:(tdPend ? (tdPend+(tdPend===1?" tarefa pra você":" tarefas pra você")) : "atividades por pessoa"), subVermelho:tdPend>0});
     }
     if(currentUser && currentUser.role === "admin") cards.push({section:"supervisao", titulo:"Supervisão", icon:ic("search"), sub:"painel geral e histórico"});
-    if(currentUser && currentUser.role === "admin") cards.push({section:"admin", titulo:"Administração", icon:ic("key"), sub:"gerenciar quem acessa o quê"});
+    if(currentUser && currentUser.role === "admin") cards.push({section:"admin", titulo:"Administração", icon:ic("key"), sub:(adminPendentesN>0 ? (adminPendentesN+(adminPendentesN===1?" conta aguardando aprovação":" contas aguardando aprovação")) : "gerenciar quem acessa o quê")});
     if(currentUser && currentUser.role === "admin") cards.push({section:"personalizar", titulo:"Personalizar", icon:ic("pencil"), sub:"abas, cards e listas do app"});
     cards.push({section:"configuracoes", titulo:"Configurações", icon:ic("logout"), sub:"minha conta e sair"});
     cards = aplicarConfigHome(cards);
@@ -12282,8 +12289,8 @@
         permissoes[x.modulo] = {ver:x.pode_ver, editar:x.pode_editar, excluir:x.pode_excluir};
       });
       var turnoIds = (p.turno_ids && p.turno_ids.length) ? p.turno_ids : (p.turno_id ? [p.turno_id] : []);
-      return {id:p.id, nome:p.nome, email:p.email, role:p.role, ativo:p.ativo, turnoIds:turnoIds, equipe:p.equipe||null, permissoes:permissoes, empresa:p.empresa||"pousada"};
-    });
+      return {id:p.id, nome:p.nome, email:p.email, role:p.role, ativo:p.ativo, turnoIds:turnoIds, equipe:p.equipe||null, permissoes:permissoes, empresa:p.empresa||"pousada", aprovado:(p.aprovado !== false || p.role === "admin")};
+    }).sort(function(a,b){ return (a.aprovado === b.aprovado) ? 0 : (a.aprovado ? 1 : -1); });
   }
 
   var adminUsersSearchQuery = "";
@@ -12797,11 +12804,13 @@
     });
   }
 
+  var adminPendentesN = 0;
   async function renderAdmin(){
     var main = document.getElementById("adminView");
     main.innerHTML = '<div class="empty">Carregando usuários…</div>';
     try{
       adminUsersCache = await loadAdminUsers();
+      adminPendentesN = adminUsersCache.filter(function(u){ return !u.aprovado && u.ativo !== false; }).length;
       relatorioEmailsCache = await loadRelatorioEmails();
     }catch(err){
       console.error(err);
@@ -12855,6 +12864,16 @@
       html += '<div class="empty">Nenhuma pessoa encontrada com "'+escapeHtml(adminUsersSearchQuery.trim())+'".</div>';
     }
     usuariosFiltrados.forEach(function(u){
+      if(!u.aprovado){
+        html += '<div class="admin-user-card" data-uid="'+u.id+'" style="border-left:4px solid var(--amber-600);">' +
+          '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+'<span class="admin-badge" style="background:var(--amber-600);">aguardando aprovação</span></div>' +
+          '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>' +
+          '<p class="item-meta" style="margin:0 0 4px;">Criou a conta sozinha(o) e ainda não tem acesso. Só aprove se for da equipe — se for hóspede ou desconhecido, recuse.</p>' +
+          '<button type="button" class="admin-role-btn" data-act="aprovar" style="background:var(--teal-700);color:#fff;border-color:var(--teal-700);">Aprovar acesso</button> ' +
+          '<button type="button" class="admin-role-btn" data-act="remover" style="color:#c0392b;border-color:#c0392b;">Recusar e remover</button>' +
+        '</div>';
+        return;
+      }
       html += '<div class="admin-user-card" data-uid="'+u.id+'">';
       html += '<div class="admin-user-name">'+escapeHtml(u.nome||u.email)+(u.role==="admin" ? '<span class="admin-badge">admin</span>' : '')+(u.ativo===false ? '<span class="admin-badge" style="background:#c0392b;">removido</span>' : '')+'</div>';
       html += '<div class="admin-user-email">'+escapeHtml(u.email)+'</div>';
@@ -13057,6 +13076,15 @@
         roleBtn.onclick = async function(){
           var act = roleBtn.getAttribute("data-act");
           if(act === "remover" || act === "reativar"){ removerContaApp(uid, act); return; }
+          if(act === "aprovar"){
+            try{
+              var ra = await sb.from("profiles").update({aprovado:true}).eq("id", uid);
+              if(ra.error) throw ra.error;
+              showToast("Acesso aprovado — agora defina as permissões dessa pessoa");
+              renderAdmin();
+            }catch(err){ console.error(err); showToast("Erro ao aprovar (rode a migração v35 no Supabase)"); }
+            return;
+          }
           var novoRole = act === "promote" ? "admin" : "staff";
           var msg = act === "promote" ? "Tornar esta pessoa administradora? Ela passará a ter acesso total." : "Remover o privilégio de administrador desta pessoa?";
           if(!confirm(msg)) return;
