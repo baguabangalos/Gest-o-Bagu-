@@ -188,6 +188,8 @@
     agendarHorario: {pt:"Agendar horário", en:"Schedule a time", es:"Programar horario", fr:"Choisir un horaire"},
     ligarSauna: {pt:"Ligar a sauna", en:"Turn on the sauna", es:"Encender la sauna", fr:"Allumer le sauna"},
     pedirLigarAgora: {pt:"Pedir pra equipe ligar agora", en:"Ask the team to turn it on now", es:"Pedir al equipo que la encienda ahora", fr:"Demander à l'équipe de l'allumer"},
+    trocarLenha: {pt:"Trocar lenha molhada", en:"Swap wet firewood", es:"Cambiar leña mojada", fr:"Échanger du bois mouillé"},
+    trocarLenhaSub: {pt:"Sem custo — levamos lenha seca", en:"No charge — we bring dry firewood", es:"Sin costo — llevamos leña seca", fr:"Sans frais — nous apportons du bois sec"},
     reposicaoLenha: {pt:"Reposição de lenha", en:"Firewood restock", es:"Reposición de leña", fr:"Réapprovisionnement en bois"},
     pedirMaisLenha: {pt:"Pedir mais lenha na acomodação", en:"Request more firewood", es:"Pedir más leña", fr:"Demander plus de bois"},
     faleGestao: {pt:"Fale com a gestão", en:"Talk to management", es:"Hable con la gerencia", fr:"Parler à la direction"},
@@ -214,6 +216,7 @@
     reparoPlaceholder: {pt:"Ex: chuveiro sem água quente, luminária do quarto queimada...", en:"E.g: shower has no hot water, room light bulb burned out...", es:"Ej: la ducha no tiene agua caliente, la lámpara de la habitación está quemada...", fr:"Ex : douche sans eau chaude, ampoule de la chambre grillée..."},
     descrevaProblema: {pt:"Descreva rapidamente o problema", en:"Briefly describe the issue", es:"Describa brevemente el problema", fr:"Décrivez brièvement le problème"},
     enviando: {pt:"Enviando…", en:"Sending…", es:"Enviando…", fr:"Envoi…"},
+    jaTemPedido: {pt:"Já existe um pedido igual em andamento para esta acomodação — a equipe já foi avisada. Acompanhe por aqui.", en:"There is already an identical request in progress for this accommodation — the team has been notified. You can follow it here.", es:"Ya hay un pedido igual en curso para este alojamiento — el equipo ya fue avisado. Puede seguirlo aquí.", fr:"Une demande identique est déjà en cours pour ce logement — l'équipe a été prévenue. Vous pouvez la suivre ici."},
     erroEnviar: {pt:"Não consegui enviar agora. Tente de novo ou fale com a recepção.", en:"Couldn't send it right now. Try again or speak with the front desk.", es:"No se pudo enviar ahora. Intente de nuevo o hable con recepción.", fr:"Impossible d'envoyer pour le moment. Réessayez ou contactez la réception."},
     seusPedidos: {pt:"📋 Seus pedidos", en:"📋 Your requests", es:"📋 Sus pedidos", fr:"📋 Vos demandes"},
     fazerOutroPedido: {pt:"+ Fazer outro pedido", en:"+ Make another request", es:"+ Hacer otro pedido", fr:"+ Faire une autre demande"},
@@ -460,6 +463,7 @@
         '<button class="btn-opt" data-tipo="reparo"><span class="ic">🔧</span><span><span>'+t("naoFunciona")+'</span><span class="sub">'+t("reparoSub")+'</span></span></button>' +
         '<a class="btn-opt" href="https://calendly.com/baguabangalos/jacuzzi" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛁</span><span><span>'+t("reservarJacuzzi")+'</span><span class="sub">'+t("agendarHorario")+'</span></span></a>' +
         '<button class="btn-opt" data-tipo="sauna"><span class="ic">🧖</span><span><span>'+t("ligarSauna")+'</span><span class="sub">'+t("pedirLigarAgora")+'</span></span></button>' +
+        (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha_troca"><span class="ic">💧</span><span><span>'+t("trocarLenha")+'</span><span class="sub">'+t("trocarLenhaSub")+'</span></span></button>' : '') +
         (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha"><span class="ic">🪵</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' : '') +
         '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>'+t("faleGestao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></button>' +
       '</div>';
@@ -468,6 +472,7 @@
         var tipo = b.getAttribute("data-tipo");
         if(tipo === "reparo") renderReparoForm();
         else if(tipo === "limpeza") renderLimpezaForm();
+        else if(tipo === "lenha_troca") enviarSolicitacao("lenha", {contexto:"troca_lenha_molhada"});
         else if(tipo === "lenha" && PRECO_LENHA != null) renderLenhaConfirm();
         else enviarSolicitacao(tipo);
       };
@@ -654,9 +659,33 @@
     return res;
   }
 
+  // Já existe um pedido igual (mesmo tipo) ainda em aberto para esta acomodação?
+  // Vale pra qualquer aparelho/hóspede: evita pedidos duplicados de limpeza etc.
+  async function pedidoAbertoIgual(tipo, contexto){
+    try{
+      var r = await sb.from("solicitacoes_acomodacao").select("id,status,contexto").eq("acomodacao_id", slug).eq("tipo", tipo)
+        .in("status", ["pendente","em_andamento","bloqueada"]).is("excluido_em", null).limit(10);
+      if(r.error || !r.data || !r.data.length) return null;
+      // troca de lenha molhada e reposição de lenha são pedidos diferentes
+      var achado = r.data.filter(function(x){ return tipo !== "lenha" || ((x.contexto === "troca_lenha_molhada") === (contexto === "troca_lenha_molhada")); })[0];
+      return achado || null;
+    }catch(e){ return null; }
+  }
+  function acompanharPedidoExistente(ped, tipo){
+    try{
+      var lista = carregarPedidosLocaisBrutos();
+      if(!lista.some(function(x){ return x.id === ped.id; })) salvarPedidoLocal(ped.id, "solicitacoes_acomodacao", TIPO_LABEL_KEY[tipo] || tipo);
+    }catch(e){}
+    showToast(t("jaTemPedido"));
+    renderAcompanhamento();
+  }
+
   async function enviarSolicitacao(tipo, extras){
     content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">'+t("enviando")+'</div>';
     try{
+      var ehTroca = !!(extras && extras.contexto === "troca_lenha_molhada");
+      var existente = await pedidoAbertoIgual(tipo, ehTroca ? "troca_lenha_molhada" : null);
+      if(existente){ acompanharPedidoExistente(existente, ehTroca ? "lenha_troca" : tipo); return; }
       var id = uid();
       var payload = {
         id: id,
@@ -668,7 +697,7 @@
       };
       var res = await inserirComExtras("solicitacoes_acomodacao", payload, extras);
       if(res.error) throw res.error;
-      salvarPedidoLocal(id, "solicitacoes_acomodacao", TIPO_LABEL_KEY[tipo] || tipo);
+      salvarPedidoLocal(id, "solicitacoes_acomodacao", ehTroca ? "trocarLenha" : (TIPO_LABEL_KEY[tipo] || tipo));
       renderAcompanhamento();
     }catch(err){
       console.error(err);
@@ -681,6 +710,8 @@
   async function enviarFrigobar(itens){
     content.innerHTML = '<div class="card error-box" style="color:var(--ink-600);">'+t("enviando")+'</div>';
     try{
+      var existenteF = await pedidoAbertoIgual("frigobar");
+      if(existenteF){ acompanharPedidoExistente(existenteF, "frigobar"); return; }
       var id = uid();
       var payload = {
         id: id,
@@ -728,7 +759,7 @@
 
   var TIPO_LABEL_KEY = {
     limpeza: "tipoLimpeza", reparo: "tipoReparo",
-    sauna: "ligarSauna", lenha: "reposicaoLenha", frigobar: "tipoFrigobar"
+    sauna: "ligarSauna", lenha: "reposicaoLenha", lenha_troca: "trocarLenha", frigobar: "tipoFrigobar"
   };
 
   var canaisAbertos = [];

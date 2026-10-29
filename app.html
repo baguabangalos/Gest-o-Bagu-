@@ -2355,7 +2355,7 @@
         if(!state.solicitacoes.some(function(x){ return x.id===s.id; })) state.solicitacoes.unshift(s);
         if(payload.new.origem === "hospede"){
           playNotifySound();
-          var label = TIPO_LABEL[s.tipo] || s.tipo;
+          var label = tipoLabelCompleto(s);
           mostrarAlertaPedido(label + " — " + acomodacaoNome(s.acomodacaoId));
         }
         // Não recarrega a tela se a pessoa estiver contando o estoque —
@@ -8467,6 +8467,7 @@
       if(s.contexto === "checkin") return base + " · Check-in";
       if(s.contexto === "checkout") return base + " · Checkout";
     }
+    if(s.tipo === "lenha" && s.contexto === "troca_lenha_molhada") return "Trocar lenha molhada";
     if(s.tipo === "limpeza" && s.contexto === "estadia") return base + " · Manutenção";
     if(s.tipo === "limpeza" && s.contexto === "estadia_recusada") return base + " · Hóspede não quis";
     if(s.tipo === "roupa_cama" && s.contexto) return base + " · Dia " + s.contexto + " da estadia";
@@ -8505,7 +8506,9 @@
         }
       }
     }
-    if(s.tipo === "lenha"){
+    if(s.tipo === "lenha" && s.contexto === "troca_lenha_molhada"){
+      html += '<p class="item-meta" style="margin-bottom:4px;font-weight:800;color:var(--teal-700);">Troca sem custo — levar lenha seca e recolher a molhada</p>';
+    } else if(s.tipo === "lenha"){
       var vl = (cfgGet("valores",{})).lenha;
       if(vl!=null && vl!=="") html += '<p class="item-meta" style="margin-bottom:4px;font-weight:800;color:var(--ink-900);">Carga de lenha: '+restMoney(Number(vl))+' a lançar</p>';
     }
@@ -8583,7 +8586,7 @@
         (faltam!=null ? (faltam>0 ? (' · checar em '+faltam+' min') : ' · já passou da hora de checar') : '') + '</p>';
     } else {
       var dur = (s.concluidoEm && s.criadoEm) ? Math.floor((s.concluidoEm-s.criadoEm)/60000) : null;
-      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "sauna" ? "desligada" : (s.tipo === "lenha" ? "reposta" : "concluído"))));
+      var verbo = s.tipo === "frigobar" ? "abastecido" : (s.tipo === "ventilacao" ? "fechada" : (s.tipo === "roupa_cama" ? "trocada" : (s.tipo === "sauna" ? "desligada" : (s.tipo === "lenha" ? (s.contexto === "troca_lenha_molhada" ? "trocada" : "reposta") : "concluído"))));
       html += '<p class="item-meta">'+verbo+' por '+escapeHtml(nomeStaff(s.concluidoPor))+(dur!=null?(' · levou '+fmtDuration(dur)):'')+'</p>';
     }
     if(currentUser && currentUser.role === "admin"){
@@ -8605,7 +8608,7 @@
         else if(s.tipo === "ventilacao"){ acaoLabel = ""+ic('check')+" Fechou"; acaoAct = "finalizar"; }
         else if(s.tipo === "roupa_cama"){ acaoLabel = ""+ic('check')+" Trocou"; acaoAct = "finalizar"; }
         else if(s.tipo === "sauna"){ acaoLabel = ""+ic('check')+" Ligada"; acaoAct = "finalizar"; }
-        else if(s.tipo === "lenha"){ acaoLabel = ""+ic('check')+" Reposta"; acaoAct = "finalizar"; }
+        else if(s.tipo === "lenha"){ acaoLabel = ""+ic('check')+(s.contexto === "troca_lenha_molhada" ? " Trocada" : " Reposta"); acaoAct = "finalizar"; }
         var editarItensHtml = (s.tipo === "frigobar" && podeEditar("estoque")) ?
           '<button class="btn btn-out" data-act="editarItensPedido" data-id="'+s.id+'">'+ic("pencil")+' Editar itens</button>' : '';
         html += '<div class="item-actions"><button class="btn btn-in" data-act="'+acaoAct+'" data-id="'+s.id+'">'+acaoLabel+'</button>'+editarItensHtml+obsHtml+histHtml+lixoHtml+'</div>';
