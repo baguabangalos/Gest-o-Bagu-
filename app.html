@@ -1580,10 +1580,10 @@
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
     restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", restricoes:"restaurante_restricoes"}},
-    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", qr:"recepcao_qr", itens:"recepcao_itens"}},
+    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", qr:"recepcao_qr", itens:"recepcao_itens", entrada:"recepcao_entrada"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
-    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao"}},
+    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada"}},
     manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas", equipamentos:"equipamentos"}}
   };
   var PERM_ACOES = {
@@ -1982,6 +1982,7 @@
     await carregarAppConfig();
     state = await loadAllFromSupabase();
     carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
+    carregarPendenciasEntrada().then(function(){ if(appSection==="home") renderApp(); });
     if(currentUser.role === "admin"){
       sb.from("profiles").select("id", {count:"exact", head:true}).eq("aprovado", false).neq("ativo", false).then(function(r){
         if(!r.error && typeof r.count === "number"){ adminPendentesN = r.count; if(appSection==="home") renderApp(); }
@@ -2594,10 +2595,10 @@
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
     restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições"},
-    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", qr:"QR Code", itens:"Itens"},
+    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", qr:"QR Code", itens:"Itens", entrada:"Pendências de entrada"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
-    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias"},
+    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada"},
     manutencao:{pendentes:"Pendentes", concluidas:"Concluídas", equipamentos:"Equipamentos"}
   };
   var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
@@ -9270,9 +9271,12 @@
       '<button data-lsub="abertos" class="'+(limpezaSubView==="abertos"?"active":"")+'">Em aberto'+(abertos.length?(' · '+abertos.length):'')+'</button>' +
       '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
       '<button data-lsub="previsao" class="'+(limpezaSubView==="previsao"?"active":"")+'">Previsão 7 dias</button>' +
+      '<button data-lsub="entrada" class="'+(limpezaSubView==="entrada"?"active":"")+'">Pendências de entrada'+(pendenciasEntradaAbertas().length?(' · '+pendenciasEntradaAbertas().length):'')+'</button>' +
     '</div>';
 
-    if(limpezaSubView === "abertos"){
+    if(limpezaSubView === "entrada"){
+      html += renderPendenciasEntradaHtml();
+    } else if(limpezaSubView === "abertos"){
       // Agrupa cada tarefa aberta num dos 4 blocos.
       function grupoDe(s){
         if(s.tipo === "lavagem") return (s.contexto === "checkin") ? "checkin" : "checkout";
@@ -9362,8 +9366,10 @@
       }
     }
     main.innerHTML = html;
+    if(limpezaSubView === "entrada") ligarPendenciasEntrada(main, renderLimpeza);
     main.querySelectorAll("[data-lsub]").forEach(function(b){
-      b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza(); };
+      b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza();
+        if(limpezaSubView === "entrada") carregarPendenciasEntrada().then(function(){ if(limpezaSubView === "entrada") renderLimpeza(); }); };
     });
     main.querySelectorAll("[data-recriar-id]").forEach(function(b){
       b.onclick = async function(){
@@ -11295,6 +11301,7 @@
       '<button data-rsub="chegadas" class="'+(recepcaoSubView==="chegadas"?"active":"")+'">'+ic("bed")+' Chegadas'+(preCheckinsNaoVistos().length?' ('+preCheckinsNaoVistos().length+')':'')+'</button>' +
       '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
       '<button data-rsub="itens" class="'+(recepcaoSubView==="itens"?"active":"")+'">'+ic("cube")+' Itens</button>' +
+      '<button data-rsub="entrada" class="'+(recepcaoSubView==="entrada"?"active":"")+'">'+ic("bed")+' Pendências de entrada'+(pendenciasEntradaAbertas().length?(' ('+pendenciasEntradaAbertas().length+')'):'')+'</button>' +
     '</div>';
 
     if(recepcaoSubView === "limpeza"){
@@ -11516,9 +11523,13 @@
     else if(recepcaoSubView === "itens"){
       html += renderItensPorAcomodacaoHtml();
     }
+    else if(recepcaoSubView === "entrada"){
+      html += renderPendenciasEntradaHtml();
+    }
 
     main.innerHTML = html;
     if(recepcaoSubView === "itens") ligarItensPorAcomodacao(main);
+    if(recepcaoSubView === "entrada") ligarPendenciasEntrada(main, renderRecepcao);
     wireSolicitacaoActions(main);
 
     main.querySelectorAll("[data-rsub]").forEach(function(b){
@@ -11526,6 +11537,7 @@
         recepcaoSubView = b.getAttribute("data-rsub");
         renderRecepcao();
         if(recepcaoSubView === "chegadas") carregarPreCheckins().then(function(){ if(recepcaoSubView === "chegadas") renderRecepcao(); });
+        if(recepcaoSubView === "entrada") carregarPendenciasEntrada().then(function(){ if(recepcaoSubView === "entrada") renderRecepcao(); });
       };
     });
     ligarCopiarMsgRestricao(main);
@@ -12240,6 +12252,8 @@
     {key:"limpeza_abertos", label:"Limpeza — só Em aberto", sub:true},
     {key:"limpeza_concluidos", label:"Limpeza — só Concluídos hoje", sub:true},
     {key:"limpeza_previsao", label:"Limpeza — só Previsão 7 dias", sub:true},
+    {key:"limpeza_entrada", label:"Limpeza — só Pendências de entrada", sub:true},
+    {key:"recepcao_entrada", label:"Recepção — só Pendências de entrada", sub:true},
     {key:"limpeza_acao_sem_qr", label:"Limpeza — iniciar/finalizar acomodação sem precisar do QR Code", acao:true},
     {key:"recepcao", label:"Recepção (painel de acompanhamento)"},
     {key:"recepcao_solicitacoes", label:"Recepção — só Solicitações", sub:true},
@@ -12380,6 +12394,88 @@
   function podeAtribuirTarefas(){ return !!currentUser && (currentUser.role==="admin" || permFlag("tarefas_dia","editar") || permFlag("tarefas_dia_acao_atribuir","ver")); }
   function mapTarefaDia(r){ return {id:r.id, titulo:r.titulo, descricao:r.descricao||"", para:r.atribuida_para, data:String(r.data||"").slice(0,10), prazo:(r.prazo?String(r.prazo).slice(0,10):""), status:r.status||"pendente",
     concluidaEm:(r.concluida_em?new Date(r.concluida_em).getTime():null), obs:r.obs_conclusao||"", criadoPor:r.criado_por, criadoPorNome:r.criado_por_nome||"", criadoEm:(r.criado_em?new Date(r.criado_em).getTime():null)}; }
+  // ---------- Pendências de entrada (o que precisa ser feito na acomodação antes do check-in) ----------
+  var pendenciasEntrada = {lista:[], erro:false};
+  async function carregarPendenciasEntrada(){
+    try{
+      var r = await sb.from("pendencias_entrada").select("*").order("criado_em", {ascending:false}).limit(500);
+      if(r.error) throw r.error;
+      pendenciasEntrada.lista = r.data || []; pendenciasEntrada.erro = false;
+    }catch(err){ pendenciasEntrada.erro = true; console.error("pendencias_entrada:", err); }
+  }
+  function pendenciasEntradaAbertas(){ return pendenciasEntrada.lista.filter(function(p){ return p.status === "pendente"; }); }
+  function podeMexerPendenciaEntrada(){ return podeEditar("limpeza") || podeEditar("recepcao"); }
+  function renderPendenciasEntradaHtml(){
+    var podeEd = podeMexerPendenciaEntrada();
+    var html = '<p class="item-meta" style="margin:0 0 10px;">Anote aqui o que precisa ser feito em uma acomodação antes da entrada do hóspede (ex.: falta almofada). A equipe vê a lista e marca como feito.</p>';
+    if(pendenciasEntrada.erro) return html + '<div class="empty">Não consegui carregar. Se for a primeira vez, rode a migração <b>v36</b> no Supabase.</div>';
+    if(podeEd){
+      var ativas = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+      html += '<div class="card" style="margin-bottom:12px;">' +
+        '<select id="peAcom" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Escolha a acomodação…</option>' +
+        ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(a.nome)+'</option>'; }).join("") + '</select>' +
+        '<textarea id="peDesc" rows="2" placeholder="O que precisa ser feito? (ex.: está sem almofada)" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;"></textarea>' +
+        '<label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:8px;">Para a entrada do dia (opcional)<input type="date" id="peData" style="display:block;margin-top:3px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
+        '<button type="button" id="peAdd" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Adicionar pendência</button></div>';
+    }
+    var abertas = pendenciasEntradaAbertas().sort(function(a,b){ return String(a.data_entrada||"9999").localeCompare(String(b.data_entrada||"9999")) || String(a.criado_em).localeCompare(String(b.criado_em)); });
+    if(!abertas.length) html += '<div class="empty">Nenhuma pendência de entrada em aberto.</div>';
+    abertas.forEach(function(p){
+      html += '<div class="card" style="margin-bottom:8px;border-left:4px solid var(--amber-600);">' +
+        '<p class="item-name" style="margin:0 0 3px;">'+ic("bed")+' '+escapeHtml(acomodacaoNome(p.acomodacao_id))+'</p>' +
+        '<p style="margin:0 0 4px;font-size:14.5px;font-weight:600;">'+escapeHtml(p.descricao)+'</p>' +
+        '<p class="item-meta">'+(p.data_entrada?('Para a entrada de '+dataBrCompleta(p.data_entrada)+' · '):'')+'por '+escapeHtml(p.criado_por_nome||"—")+' em '+escapeHtml(fmtDate(new Date(p.criado_em).getTime()))+'</p>' +
+        (podeEd ? '<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" class="peFeito btn btn-in" data-id="'+escapeHtml(p.id)+'" style="flex:1;">'+ic("check")+' Feito</button>' +
+          '<button type="button" class="peExcluir btn btn-out" data-id="'+escapeHtml(p.id)+'" title="Excluir">'+ic("trash")+'</button></div>' : '') +
+      '</div>';
+    });
+    var corte = Date.now() - 7*86400000;
+    var feitas = pendenciasEntrada.lista.filter(function(p){ return p.status === "concluido" && p.concluido_em && new Date(p.concluido_em).getTime() >= corte; })
+      .sort(function(a,b){ return String(b.concluido_em).localeCompare(String(a.concluido_em)); });
+    if(feitas.length){
+      html += '<details style="margin-top:12px;"><summary class="item-meta" style="cursor:pointer;">Feitas nos últimos 7 dias ('+feitas.length+')</summary>' +
+        feitas.map(function(p){ return '<p class="item-meta" style="margin:6px 0;">'+ic("check")+' <b>'+escapeHtml(acomodacaoNome(p.acomodacao_id))+'</b> — '+escapeHtml(p.descricao)+' · '+escapeHtml(p.concluido_por_nome||"")+'</p>'; }).join("") + '</details>';
+    }
+    return html;
+  }
+  function ligarPendenciasEntrada(root, rerender){
+    var add = root.querySelector("#peAdd");
+    if(add) add.onclick = async function(){
+      var ac = root.querySelector("#peAcom").value, desc = root.querySelector("#peDesc").value.trim(), data = root.querySelector("#peData").value;
+      if(!ac){ showToast("Escolha a acomodação"); return; }
+      if(!desc){ showToast("Descreva o que precisa ser feito"); return; }
+      add.disabled = true;
+      try{
+        var payload = {id:uid(), acomodacao_id:ac, descricao:desc, status:"pendente"};
+        if(data) payload.data_entrada = data;
+        var nova = await dbInsert("pendencias_entrada", payload, function(r){ return r; });
+        pendenciasEntrada.lista.unshift(nova);
+        showToast("Pendência adicionada"); rerender();
+      }catch(err){ console.error(err); showToast("Erro ao salvar (rode a migração v36 no Supabase)"); add.disabled = false; }
+    };
+    root.querySelectorAll(".peFeito").forEach(function(b){
+      b.onclick = async function(){
+        b.disabled = true;
+        try{
+          var upd = await dbUpdate("pendencias_entrada", b.getAttribute("data-id"), {status:"concluido", concluido_em:new Date().toISOString(), concluido_por_nome:(currentUser?currentUser.nome:null)}, function(r){ return r; });
+          var i = pendenciasEntrada.lista.findIndex(function(x){ return x.id === upd.id; });
+          if(i > -1) pendenciasEntrada.lista[i] = upd;
+          showToast("Marcado como feito"); rerender();
+        }catch(err){ console.error(err); showToast("Erro ao salvar"); b.disabled = false; }
+      };
+    });
+    root.querySelectorAll(".peExcluir").forEach(function(b){
+      b.onclick = async function(){
+        if(!confirm("Excluir esta pendência?")) return;
+        try{
+          await dbDelete("pendencias_entrada", b.getAttribute("data-id"));
+          pendenciasEntrada.lista = pendenciasEntrada.lista.filter(function(x){ return x.id !== b.getAttribute("data-id"); });
+          rerender();
+        }catch(err){ console.error(err); showToast("Erro ao excluir"); }
+      };
+    });
+  }
+
   async function carregarTarefasDia(){
     try{
       var desde = new Date(Date.now() - 30*86400000); var ini = desde.getFullYear()+"-"+String(desde.getMonth()+1).padStart(2,"0")+"-"+String(desde.getDate()).padStart(2,"0");
