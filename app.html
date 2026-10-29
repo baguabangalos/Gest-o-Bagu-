@@ -8691,7 +8691,7 @@
             abrirProblemaAcomodacaoSheet(s);
           } else if(act === "iniciar"){
             if(s.tipo === "lavagem" || s.tipo === "limpeza"){
-              if(podeSemQr()){ efetivarIniciarSolicitacao(id); } else abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarIniciarSolicitacao(id); });
+              if(podeSemQr()){ if(confirm("Iniciar a limpeza de "+acomodacaoNome(s.acomodacaoId)+" sem ler o QR Code?")) efetivarIniciarSolicitacao(id); } else abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarIniciarSolicitacao(id); });
               return;
             }
             var s1 = await dbUpdate("solicitacoes_acomodacao", id, {status:"em_andamento", iniciado_em:new Date().toISOString(), iniciado_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
@@ -8737,7 +8737,7 @@
             showToast("Sauna desligada"); renderApp();
           } else if(act === "finalizar"){
             if(s.tipo === "lavagem" || s.tipo === "limpeza"){
-              if(podeSemQr()){ efetivarFinalizarSolicitacao(id); } else abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarFinalizarSolicitacao(id); });
+              if(podeSemQr()){ if(confirm("Finalizar a limpeza de "+acomodacaoNome(s.acomodacaoId)+" sem ler o QR Code?")) efetivarFinalizarSolicitacao(id); } else abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarFinalizarSolicitacao(id); });
               return;
             }
             var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
