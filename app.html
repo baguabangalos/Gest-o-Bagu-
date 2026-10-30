@@ -10383,7 +10383,7 @@
       '<button data-rsub="historico" class="'+(restSub==="historico"?"active":"")+'">Histórico</button>' +
       '<button data-rsub="cardapio" class="'+(restSub==="cardapio"?"active":"")+'">Cardápio</button>' +
       '<button data-rsub="relatorio" class="'+(restSub==="relatorio"?"active":"")+'">Relatório</button>' +
-      '<button data-rsub="restricoes" class="'+(restSub==="restricoes"?"active":"")+'">Restrições'+(restricoesAtivas().length?(' · '+restricoesAtivas().length):'')+'</button>' +
+      '<button data-rsub="restricoes" class="'+(restSub==="restricoes"?"active":"")+'">Restrições'+(restricoesPendentesN()?(' · '+restricoesPendentesN()):'')+'</button>' +
     '</div>';
 
     if(restSub === "abertas"){
@@ -11154,7 +11154,21 @@
       var hoje = new Date(); hoje.setHours(0,0,0,0);
       var fim = p.checkout ? parseDataLocal(p.checkout) : (p.checkin ? parseDataLocal(p.checkin) : null);
       return !fim || fim.getTime() >= hoje.getTime();
-    }).sort(function(a,b){ return String(a.checkin||"9999").localeCompare(String(b.checkin||"9999")); });
+    }).sort(function(a,b){
+      var ea = a.restricao_enviada_em ? 1 : 0, eb = b.restricao_enviada_em ? 1 : 0;
+      if(ea !== eb) return ea - eb;
+      return String(a.checkin||"9999").localeCompare(String(b.checkin||"9999"));
+    });
+  }
+  function restricoesPendentesN(){ return restricoesAtivas().filter(function(p){ return !p.restricao_enviada_em; }).length; }
+  function podeMarcarRestricaoEnviada(){ return podeEditar("restaurante") || podeEditar("recepcao"); }
+  function statusEnviadaRestricaoHtml(p){
+    if(p.restricao_enviada_em){
+      return '<p class="item-meta" style="margin-top:6px;font-weight:700;color:var(--teal-900);">'+ic("check")+' Enviada para a equipe'+(p.restricao_enviada_por_nome?' por '+escapeHtml(p.restricao_enviada_por_nome):'')+' em '+fmtDate(new Date(p.restricao_enviada_em).getTime())+'</p>' +
+        (podeMarcarRestricaoEnviada() ? '<button type="button" class="restricaoEnviadaBtn" data-id="'+escapeHtml(p.id)+'" data-desfazer="1" style="display:block;width:100%;margin-top:4px;background:none;border:none;color:var(--ink-600);font-family:inherit;font-size:12px;font-weight:700;">Desmarcar</button>' : '');
+    }
+    if(!podeMarcarRestricaoEnviada()) return '<p class="item-meta" style="margin-top:6px;font-weight:700;color:var(--amber-600);">Ainda não enviada para a equipe</p>';
+    return '<button type="button" class="restricaoEnviadaBtn btn-primary" data-id="'+escapeHtml(p.id)+'" style="width:100%;margin-top:6px;">'+ic("check")+' Marcar como enviada</button>';
   }
   function copiarTextoApp(txt){
     function fallback(){
@@ -11174,6 +11188,20 @@
       b.onclick = function(){
         var p = preCheckins.find(function(x){ return String(x.id) === b.getAttribute("data-id"); });
         if(p) copiarTextoApp(mensagemRestricao(p));
+      };
+    });
+    root.querySelectorAll(".restricaoEnviadaBtn").forEach(function(b){
+      b.onclick = async function(){
+        if(!podeMarcarRestricaoEnviada()){ showToast("Você não tem permissão para essa ação"); return; }
+        var desfazer = b.getAttribute("data-desfazer") === "1";
+        b.disabled = true;
+        try{
+          await dbUpdate("pre_checkins", b.getAttribute("data-id"), desfazer
+            ? {restricao_enviada_em:null, restricao_enviada_por_nome:null}
+            : {restricao_enviada_em:new Date().toISOString(), restricao_enviada_por_nome:(currentUser?currentUser.nome:null)}, function(r){ return r; });
+          await carregarPreCheckins();
+          renderApp();
+        }catch(err){ console.error(err); showToast("Não consegui marcar — rode a migração v37 no Supabase"); b.disabled = false; }
       };
     });
     var ed = root.querySelector("#editarMsgRestricaoBtn");
@@ -11209,11 +11237,11 @@
       var nomeAc = ac ? ac.nome : (p.acomodacao_nome || "Acomodação não identificada");
       var quando = [preCheckinRotuloDia(p)];
       if(p.checkout) quando.push("saída " + dataBr(p.checkout));
-      html += '<div class="card" style="margin-bottom:10px;border-left:4px solid var(--amber-600);">' +
+      html += '<div class="card" style="margin-bottom:10px;'+(p.restricao_enviada_em?'opacity:.8;border-left:4px solid var(--teal-700);':'border-left:4px solid var(--amber-600);')+'">' +
         '<p class="item-name" style="margin:0 0 3px;">'+ic("bed")+' '+escapeHtml(nomeAc)+(p.hospede_nome ? ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(p.hospede_nome)+'</span>' : '')+'</p>' +
         '<p class="item-meta">'+ic("calendar")+' '+quando.join(" · ")+'</p>' +
         restricoesDoPreCheckin(p).map(function(t){ return '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);margin-top:4px;">'+escapeHtml(t)+'</p>'; }).join("") +
-        botaoCopiarRestricaoHtml(p) + '</div>';
+        botaoCopiarRestricaoHtml(p) + statusEnviadaRestricaoHtml(p) + '</div>';
     });
     return html;
   }
@@ -11235,7 +11263,7 @@
       html += '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);margin-top:4px;"><b>'+escapeHtml(rotulo)+'</b>'+(x.descricao?': '+escapeHtml(x.descricao):'')+'</p>';
     });
     if(p.observacao) html += '<p class="item-meta" style="margin-top:4px;">'+ic("pencil")+' '+escapeHtml(p.observacao)+'</p>';
-    if(restricoesDoPreCheckin(p).length) html += botaoCopiarRestricaoHtml(p);
+    if(restricoesDoPreCheckin(p).length) html += botaoCopiarRestricaoHtml(p) + statusEnviadaRestricaoHtml(p);
     var extras = (p.dados && typeof p.dados === "object") ? Object.keys(p.dados) : [];
     extras.forEach(function(k){
       var v = p.dados[k];
