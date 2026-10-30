@@ -12541,6 +12541,7 @@
         '<p style="margin:0 0 4px;font-size:14.5px;font-weight:600;">'+escapeHtml(p.descricao)+'</p>' +
         '<p class="item-meta">'+(p.data_entrada?('Para a entrada de '+dataBrCompleta(p.data_entrada)+' · '):'')+'por '+escapeHtml(p.criado_por_nome||"—")+' em '+escapeHtml(fmtDate(new Date(p.criado_em).getTime()))+'</p>' +
         (podeEd ? '<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" class="peFeito btn btn-in" data-id="'+escapeHtml(p.id)+'" style="flex:1;">'+ic("check")+' Feito</button>' +
+          '<button type="button" class="peEditar btn btn-out" data-id="'+escapeHtml(p.id)+'" title="Editar">'+ic("pencil")+'</button>' +
           '<button type="button" class="peExcluir btn btn-out" data-id="'+escapeHtml(p.id)+'" title="Excluir">'+ic("trash")+'</button></div>' : '') +
       '</div>';
     });
@@ -12579,6 +12580,42 @@
           if(i > -1) pendenciasEntrada.lista[i] = upd;
           showToast("Marcado como feito"); rerender();
         }catch(err){ console.error(err); showToast("Erro ao salvar"); b.disabled = false; }
+      };
+    });
+    root.querySelectorAll(".peEditar").forEach(function(b){
+      b.onclick = function(){
+        var id = b.getAttribute("data-id");
+        var p = pendenciasEntrada.lista.find(function(x){ return x.id === id; });
+        if(!p) return;
+        var estilo = 'width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);';
+        var ativas = state.acomodacoes.filter(function(a){ return a.ativo || a.id === p.acomodacao_id; }).sort(function(a,c){ return (a.ordem||0)-(c.ordem||0); });
+        var html = '<div class="sheet-overlay open" id="editPeOverlay"><div class="sheet" style="max-height:90vh;overflow:auto;">' +
+          '<h2>Editar pendência</h2>' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Acomodação</label>' +
+          '<select id="epeAcom" style="'+estilo+'">' + ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'"'+(a.id===p.acomodacao_id?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("") + '</select>' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Setor responsável</label>' +
+          '<select id="epeSetor" style="'+estilo+'"><option value=""'+(!p.setor?' selected':'')+'>Geral (sem setor)</option><option value="limpeza"'+(p.setor==="limpeza"?' selected':'')+'>Limpeza</option><option value="recepcao"'+(p.setor==="recepcao"?' selected':'')+'>Recepção</option></select>' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">O que precisa ser feito</label>' +
+          '<textarea id="epeDesc" rows="3" style="'+estilo+'resize:vertical;">'+escapeHtml(p.descricao||"")+'</textarea>' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Para a entrada do dia (opcional)</label>' +
+          '<input type="date" id="epeData" style="'+estilo+'" value="'+escapeHtml(p.data_entrada?String(p.data_entrada).slice(0,10):"")+'">' +
+          '<div class="sheet-actions"><button type="button" class="btn-secondary" id="epeCancel">Cancelar</button><button type="button" class="btn-primary" id="epeSalvar">'+ic("check")+' Salvar</button></div>' +
+        '</div></div>';
+        document.body.insertAdjacentHTML("beforeend", html);
+        var ov = document.getElementById("editPeOverlay");
+        document.getElementById("epeCancel").onclick = function(){ ov.remove(); };
+        ov.addEventListener("click", function(e){ if(e.target === ov) ov.remove(); });
+        document.getElementById("epeSalvar").onclick = async function(){
+          var desc = document.getElementById("epeDesc").value.trim();
+          if(!desc){ showToast("Descreva o que precisa ser feito"); return; }
+          var btnS = document.getElementById("epeSalvar"); btnS.disabled = true;
+          try{
+            var upd = await dbUpdate("pendencias_entrada", id, {acomodacao_id:document.getElementById("epeAcom").value, setor:document.getElementById("epeSetor").value||null, descricao:desc, data_entrada:document.getElementById("epeData").value||null}, function(r){ return r; });
+            var i = pendenciasEntrada.lista.findIndex(function(x){ return x.id === id; });
+            if(i > -1) pendenciasEntrada.lista[i] = upd;
+            ov.remove(); showToast("Pendência atualizada"); rerender();
+          }catch(err){ console.error(err); showToast("Erro ao salvar"); btnS.disabled = false; }
+        };
       };
     });
     root.querySelectorAll(".peExcluir").forEach(function(b){
