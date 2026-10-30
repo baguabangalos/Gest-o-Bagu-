@@ -11372,7 +11372,7 @@
             ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local||"")+'</span></p>' +
             (m.description ? '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+escapeHtml(m.description)+'</p>' : '') +
             '<p class="item-meta">'+pInfo.label+(m.criadoPorNome ? ' · reportado por '+escapeHtml(m.criadoPorNome) : '')+'</p>' +
-            (podeEditar("recepcao") ? '<div class="item-actions"><button class="btn btn-in" data-act="resolverProblemaLimpeza" data-id="'+m.id+'">'+ic("check")+' Resolvido</button></div>' : '') +
+            (podeEditar("recepcao") ? '<div class="item-actions"><button class="btn btn-in" data-act="resolverProblemaLimpeza" data-id="'+m.id+'">'+ic("check")+' Resolvido</button><button class="btn btn-out" data-act="editarProblemaLimpeza" data-id="'+m.id+'">'+ic("pencil")+' Editar</button></div>' : '') +
           '</div>';
         });
         html += '</div>';
@@ -11634,6 +11634,45 @@
           console.error(err); showToast("Erro ao atualizar o reparo");
           btn.disabled = false;
         }
+      };
+    });
+
+    main.querySelectorAll('[data-act="editarProblemaLimpeza"]').forEach(function(btn){
+      btn.onclick = function(){
+        var id = btn.getAttribute("data-id");
+        if(!podeEditar("recepcao")){ showToast("Você não tem permissão para essa ação"); return; }
+        var m = state.manutencoes.find(function(x){ return x.id===id; });
+        if(!m) return;
+        var estilo = 'width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);';
+        var html = '<div class="sheet-overlay open" id="editProbOverlay"><div class="sheet" style="max-height:90vh;overflow:auto;">' +
+          '<h2>Editar problema</h2>' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Título</label>' +
+          '<input type="text" id="epTitulo" style="'+estilo+'" value="'+escapeHtml(m.title||"")+'">' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Local</label>' +
+          '<input type="text" id="epLocal" style="'+estilo+'" value="'+escapeHtml(m.local||"")+'">' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Descrição</label>' +
+          '<textarea id="epDesc" rows="4" style="'+estilo+'resize:vertical;">'+escapeHtml(m.description||"")+'</textarea>' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Prioridade</label>' +
+          '<select id="epPrio" style="'+estilo+'">' +
+            ['alta','media','baixa'].map(function(k){ return '<option value="'+k+'"'+((m.prioridade||"media")===k?' selected':'')+'>'+({alta:"Alta",media:"Média",baixa:"Baixa"})[k]+'</option>'; }).join("") +
+          '</select>' +
+          '<div class="sheet-actions"><button type="button" class="btn-secondary" id="epCancel">Cancelar</button><button type="button" class="btn-primary" id="epSalvar">'+ic("check")+' Salvar</button></div>' +
+        '</div></div>';
+        document.body.insertAdjacentHTML("beforeend", html);
+        var ov = document.getElementById("editProbOverlay");
+        document.getElementById("epCancel").onclick = function(){ ov.remove(); };
+        ov.addEventListener("click", function(e){ if(e.target === ov) ov.remove(); });
+        document.getElementById("epSalvar").onclick = async function(){
+          var titulo = document.getElementById("epTitulo").value.trim();
+          if(!titulo){ showToast("Informe o título"); return; }
+          var sb2 = document.getElementById("epSalvar"); sb2.disabled = true;
+          try{
+            var upd = await dbUpdate("manutencoes", id, {title:titulo, local:document.getElementById("epLocal").value.trim()||null, description:document.getElementById("epDesc").value.trim()||null, prioridade:document.getElementById("epPrio").value}, mapManutencaoFromRow);
+            var ix = state.manutencoes.findIndex(function(x){ return x.id===id; });
+            if(ix>-1) state.manutencoes[ix] = upd;
+            ov.remove(); showToast("Problema atualizado"); renderApp();
+          }catch(err){ console.error(err); showToast("Erro ao salvar"); sb2.disabled = false; }
+        };
       };
     });
 
