@@ -8500,6 +8500,7 @@
     if(s.observacao){
       html += '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+ic("pencil")+' '+escapeHtml(s.observacao)+'</p>';
     }
+    if((s.tipo === "lavagem" || s.tipo === "limpeza") && s.status !== "concluido") html += pendenciasLimpezaHtml(s.acomodacaoId);
     var frigobarConcluido = s.tipo === "frigobar" && s.status === "concluido";
     if(s.itens && s.itens.length){
       var itensTxt = itensListaTexto(s.itens);
@@ -8653,6 +8654,7 @@
       var s2 = await dbUpdate("solicitacoes_acomodacao", id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por:(currentUser?currentUser.id:null)}, mapSolicitacaoFromRow);
       var idx2 = state.solicitacoes.findIndex(function(x){ return x.id===id; });
       if(idx2>-1) state.solicitacoes[idx2] = s2;
+      if(s2.tipo === "lavagem") await fecharPendenciasLimpeza(s2.acomodacaoId);
       showToast("Concluído — confirmado por QR code"); renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao atualizar pedido");
@@ -9271,11 +9273,11 @@
       '<button data-lsub="abertos" class="'+(limpezaSubView==="abertos"?"active":"")+'">Em aberto'+(abertos.length?(' · '+abertos.length):'')+'</button>' +
       '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
       '<button data-lsub="previsao" class="'+(limpezaSubView==="previsao"?"active":"")+'">Previsão 7 dias</button>' +
-      '<button data-lsub="entrada" class="'+(limpezaSubView==="entrada"?"active":"")+'">Pendências de entrada'+(pendenciasEntradaAbertas().length?(' · '+pendenciasEntradaAbertas().length):'')+'</button>' +
+      '<button data-lsub="entrada" class="'+(limpezaSubView==="entrada"?"active":"")+'">Pendências de entrada'+(pendenciasEntradaAbertas("limpeza").length?(' · '+pendenciasEntradaAbertas("limpeza").length):'')+'</button>' +
     '</div>';
 
     if(limpezaSubView === "entrada"){
-      html += renderPendenciasEntradaHtml();
+      html += renderPendenciasEntradaHtml("limpeza");
     } else if(limpezaSubView === "abertos"){
       // Agrupa cada tarefa aberta num dos 4 blocos.
       function grupoDe(s){
@@ -9369,7 +9371,7 @@
     if(limpezaSubView === "entrada") ligarPendenciasEntrada(main, renderLimpeza);
     main.querySelectorAll("[data-lsub]").forEach(function(b){
       b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza();
-        if(limpezaSubView === "entrada") carregarPendenciasEntrada().then(function(){ if(limpezaSubView === "entrada") renderLimpeza(); }); };
+        carregarPendenciasEntrada().then(function(){ renderLimpeza(); }); };
     });
     main.querySelectorAll("[data-recriar-id]").forEach(function(b){
       b.onclick = async function(){
@@ -11401,6 +11403,7 @@
         aguardandoRevisao.forEach(function(s, i){
           html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
             '<p style="margin:0 0 8px;font-size:14.5px;font-weight:700;">'+ic("home")+' '+escapeHtml(acomodacaoNome(s.acomodacaoId))+'</p>' +
+            pendenciasRecepcaoRevisaoHtml(s.acomodacaoId) +
             '<button type="button" class="marcarRevisaoBtn" data-id="'+s.id+'" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("check")+' Revisão feita — está tudo ok</button>' +
           '</div>';
         });
@@ -11557,7 +11560,7 @@
 
     main.innerHTML = html;
     if(recepcaoSubView === "itens") ligarItensPorAcomodacao(main);
-    if(recepcaoSubView === "entrada") ligarPendenciasEntrada(main, renderRecepcao);
+    if(recepcaoSubView === "entrada" || recepcaoSubView === "limpeza") ligarPendenciasEntrada(main, renderRecepcao);
     wireSolicitacaoActions(main);
 
     main.querySelectorAll("[data-rsub]").forEach(function(b){
@@ -11565,7 +11568,7 @@
         recepcaoSubView = b.getAttribute("data-rsub");
         renderRecepcao();
         if(recepcaoSubView === "chegadas") carregarPreCheckins().then(function(){ if(recepcaoSubView === "chegadas") renderRecepcao(); });
-        if(recepcaoSubView === "entrada") carregarPendenciasEntrada().then(function(){ if(recepcaoSubView === "entrada") renderRecepcao(); });
+        if(recepcaoSubView === "entrada" || recepcaoSubView === "limpeza") carregarPendenciasEntrada().then(function(){ if(recepcaoSubView === "entrada" || recepcaoSubView === "limpeza") renderRecepcao(); });
       };
     });
     ligarCopiarMsgRestricao(main);
@@ -12431,9 +12434,44 @@
       pendenciasEntrada.lista = r.data || []; pendenciasEntrada.erro = false;
     }catch(err){ pendenciasEntrada.erro = true; console.error("pendencias_entrada:", err); }
   }
-  function pendenciasEntradaAbertas(){ return pendenciasEntrada.lista.filter(function(p){ return p.status === "pendente"; }); }
+  var PE_SETORES = {limpeza:"Limpeza", recepcao:"Recepção"};
+  function pendenciasEntradaAbertas(setor){
+    return pendenciasEntrada.lista.filter(function(p){
+      if(p.status !== "pendente") return false;
+      return !setor || p.setor === setor || !p.setor;
+    });
+  }
+  function pendenciasAcomodacao(acId, setor){
+    return pendenciasEntradaAbertas().filter(function(p){ return p.acomodacao_id === acId && (p.setor === setor || (!p.setor && setor === "limpeza")); });
+  }
+  function pendenciasLimpezaHtml(acId){
+    var l = pendenciasAcomodacao(acId, "limpeza");
+    if(!l.length) return "";
+    return '<div style="background:var(--amber-100,#fff4d6);border-radius:7px;padding:6px 9px;margin-top:4px;">' +
+      '<p class="item-meta" style="margin:0 0 2px;font-weight:800;color:var(--amber-600);">'+ic("warning")+' Pendências de entrada — fazer nesta limpeza:</p>' +
+      l.map(function(p){ return '<p class="item-meta" style="margin:2px 0;font-weight:600;color:var(--ink-900);">• '+escapeHtml(p.descricao)+'</p>'; }).join("") + '</div>';
+  }
+  async function fecharPendenciasLimpeza(acId){
+    var l = pendenciasEntradaAbertas().filter(function(p){ return p.acomodacao_id === acId && p.setor === "limpeza"; });
+    for(var i=0;i<l.length;i++){
+      try{
+        var upd = await dbUpdate("pendencias_entrada", l[i].id, {status:"concluido", concluido_em:new Date().toISOString(), concluido_por_nome:(currentUser?currentUser.nome:null)}, function(r){ return r; });
+        var k = pendenciasEntrada.lista.findIndex(function(x){ return x.id === upd.id; });
+        if(k > -1) pendenciasEntrada.lista[k] = upd;
+      }catch(e){ console.error(e); }
+    }
+  }
+  function pendenciasRecepcaoRevisaoHtml(acId){
+    var l = pendenciasAcomodacao(acId, "recepcao");
+    if(!l.length) return "";
+    var podeEd = podeMexerPendenciaEntrada();
+    return '<div style="background:var(--amber-100,#fff4d6);border-radius:8px;padding:8px 10px;margin:0 0 8px;">' +
+      '<p class="item-meta" style="margin:0 0 4px;font-weight:800;color:var(--amber-600);">'+ic("warning")+' Fazer na revisão (pendência de entrada):</p>' +
+      l.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;"><p style="margin:0;flex:1;font-size:13.5px;font-weight:600;">'+escapeHtml(p.descricao)+'</p>' +
+        (podeEd ? '<button type="button" class="peFeito btn btn-in" data-id="'+escapeHtml(p.id)+'" style="padding:6px 10px;">'+ic("check")+' Feito</button>' : '') + '</div>'; }).join("") + '</div>';
+  }
   function podeMexerPendenciaEntrada(){ return podeEditar("limpeza") || podeEditar("recepcao"); }
-  function renderPendenciasEntradaHtml(){
+  function renderPendenciasEntradaHtml(setorFiltro){
     var podeEd = podeMexerPendenciaEntrada();
     var html = '<p class="item-meta" style="margin:0 0 10px;">Anote aqui o que precisa ser feito em uma acomodação antes da entrada do hóspede (ex.: falta almofada). A equipe vê a lista e marca como feito.</p>';
     if(pendenciasEntrada.erro) return html + '<div class="empty">Não consegui carregar. Se for a primeira vez, rode a migração <b>v36</b> no Supabase.</div>';
@@ -12442,15 +12480,16 @@
       html += '<div class="card" style="margin-bottom:12px;">' +
         '<select id="peAcom" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Escolha a acomodação…</option>' +
         ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(a.nome)+'</option>'; }).join("") + '</select>' +
+        '<select id="peSetor" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Quem vai fazer? (setor)…</option><option value="limpeza">Limpeza — aparece no serviço de limpeza</option><option value="recepcao">Recepção — aparece na revisão</option></select>' +
         '<textarea id="peDesc" rows="2" placeholder="O que precisa ser feito? (ex.: está sem almofada)" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;"></textarea>' +
         '<label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:8px;">Para a entrada do dia (opcional)<input type="date" id="peData" style="display:block;margin-top:3px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
         '<button type="button" id="peAdd" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Adicionar pendência</button></div>';
     }
-    var abertas = pendenciasEntradaAbertas().sort(function(a,b){ return String(a.data_entrada||"9999").localeCompare(String(b.data_entrada||"9999")) || String(a.criado_em).localeCompare(String(b.criado_em)); });
+    var abertas = pendenciasEntradaAbertas(setorFiltro).sort(function(a,b){ return String(a.data_entrada||"9999").localeCompare(String(b.data_entrada||"9999")) || String(a.criado_em).localeCompare(String(b.criado_em)); });
     if(!abertas.length) html += '<div class="empty">Nenhuma pendência de entrada em aberto.</div>';
     abertas.forEach(function(p){
       html += '<div class="card" style="margin-bottom:8px;border-left:4px solid var(--amber-600);">' +
-        '<p class="item-name" style="margin:0 0 3px;">'+ic("bed")+' '+escapeHtml(acomodacaoNome(p.acomodacao_id))+'</p>' +
+        '<p class="item-name" style="margin:0 0 3px;">'+ic("bed")+' '+escapeHtml(acomodacaoNome(p.acomodacao_id))+' <span style="background:var(--sand-100);border-radius:6px;padding:2px 7px;font-size:11px;font-weight:800;color:var(--ink-600);">'+escapeHtml(PE_SETORES[p.setor]||"Geral")+'</span></p>' +
         '<p style="margin:0 0 4px;font-size:14.5px;font-weight:600;">'+escapeHtml(p.descricao)+'</p>' +
         '<p class="item-meta">'+(p.data_entrada?('Para a entrada de '+dataBrCompleta(p.data_entrada)+' · '):'')+'por '+escapeHtml(p.criado_por_nome||"—")+' em '+escapeHtml(fmtDate(new Date(p.criado_em).getTime()))+'</p>' +
         (podeEd ? '<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" class="peFeito btn btn-in" data-id="'+escapeHtml(p.id)+'" style="flex:1;">'+ic("check")+' Feito</button>' +
@@ -12471,15 +12510,17 @@
     if(add) add.onclick = async function(){
       var ac = root.querySelector("#peAcom").value, desc = root.querySelector("#peDesc").value.trim(), data = root.querySelector("#peData").value;
       if(!ac){ showToast("Escolha a acomodação"); return; }
+      var setor = root.querySelector("#peSetor").value;
+      if(!setor){ showToast("Escolha o setor responsável"); return; }
       if(!desc){ showToast("Descreva o que precisa ser feito"); return; }
       add.disabled = true;
       try{
-        var payload = {id:uid(), acomodacao_id:ac, descricao:desc, status:"pendente"};
+        var payload = {id:uid(), acomodacao_id:ac, descricao:desc, status:"pendente", setor:setor};
         if(data) payload.data_entrada = data;
         var nova = await dbInsert("pendencias_entrada", payload, function(r){ return r; });
         pendenciasEntrada.lista.unshift(nova);
         showToast("Pendência adicionada"); rerender();
-      }catch(err){ console.error(err); showToast("Erro ao salvar (rode a migração v36 no Supabase)"); add.disabled = false; }
+      }catch(err){ console.error(err); showToast("Erro ao salvar (rode a migração v38 no Supabase)"); add.disabled = false; }
     };
     root.querySelectorAll(".peFeito").forEach(function(b){
       b.onclick = async function(){
