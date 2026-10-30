@@ -11320,13 +11320,22 @@
 
   var recepcaoSubView = "abastecimento"; // 'abastecimento' | 'limpeza' | 'avulsos' | 'qr' | 'chegadas'
 
+  // Quantas coisas a recepção ainda precisa resolver na aba Limpeza: problemas reportados,
+  // acomodações aguardando revisão e aguardando confirmação de checkout.
+  function recepcaoLimpezaPendentesN(){
+    try{
+      var prob = state.manutencoes.filter(function(m){ return m.origem === "limpeza" && m.status !== "concluida"; }).length;
+      var bloq = state.solicitacoes.filter(function(x){ return x.status === "bloqueada"; }).length;
+      return prob + bloq + computeAguardandoRevisao().length;
+    }catch(e){ return 0; }
+  }
   function renderRecepcao(){
     var main = document.getElementById("recepcaoView");
     var podeGerenciar = podeEditar("recepcao") || (currentUser && currentUser.role === "admin");
 
     var html = '<div class="seg-toggle">' +
       '<button data-rsub="abastecimento" class="'+(recepcaoSubView==="abastecimento"?"active":"")+'">'+ic("cube")+' Solicitações</button>' +
-      '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza</button>' +
+      '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza'+(recepcaoLimpezaPendentesN()?' ('+recepcaoLimpezaPendentesN()+')':'')+'</button>' +
       '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">'+ic("plus")+' Avulsos</button>' +
       '<button data-rsub="chegadas" class="'+(recepcaoSubView==="chegadas"?"active":"")+'">'+ic("bed")+' Chegadas'+(preCheckinsNaoVistos().length?' ('+preCheckinsNaoVistos().length+')':'')+'</button>' +
       '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
