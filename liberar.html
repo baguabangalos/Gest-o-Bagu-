@@ -192,6 +192,11 @@
     trocarLenhaSub: {pt:"Sem custo — levamos lenha seca", en:"No charge — we bring dry firewood", es:"Sin costo — llevamos leña seca", fr:"Sans frais — nous apportons du bois sec"},
     reposicaoLenha: {pt:"Reposição de lenha", en:"Firewood restock", es:"Reposición de leña", fr:"Réapprovisionnement en bois"},
     pedirMaisLenha: {pt:"Pedir mais lenha na acomodação", en:"Request more firewood", es:"Pedir más leña", fr:"Demander plus de bois"},
+    massagem: {pt:"Massagens", en:"Massage", es:"Masajes", fr:"Massages"},
+    massagemSub: {pt:"Fale direto com nossas massagistas", en:"Message our therapists directly", es:"Escriba directo a nuestras masajistas", fr:"Écrivez directement à nos masseuses"},
+    massagemTexto1: {pt:"O agendamento é feito diretamente com nossas massagistas parceiras. Escolha uma delas para reservar o seu horário pelo WhatsApp.", en:"Bookings are made directly with our partner massage therapists. Choose one to reserve your time slot on WhatsApp.", es:"La reserva se hace directamente con nuestras masajistas asociadas. Elija una para reservar su horario por WhatsApp.", fr:"La réservation se fait directement auprès de nos masseuses partenaires. Choisissez l'une d'elles pour réserver votre créneau sur WhatsApp."},
+    massagemTexto2: {pt:"Recomendamos agendar com antecedência para garantir a sua preferência de data e horário.", en:"We recommend booking in advance to secure your preferred date and time.", es:"Recomendamos reservar con anticipación para asegurar la fecha y el horario de su preferencia.", fr:"Nous recommandons de réserver à l'avance pour obtenir la date et l'heure de votre choix."},
+    falarCom: {pt:"Falar com ", en:"Message ", es:"Escribir a ", fr:"Écrire à "},
     faleGestao: {pt:"Fale com a gestão", en:"Talk to management", es:"Hable con la gerencia", fr:"Parler à la direction"},
     whatsappDireto: {pt:"Atendimento direto pelo WhatsApp", en:"Direct WhatsApp support", es:"Atención directa por WhatsApp", fr:"Assistance directe via WhatsApp"},
     gestaoTexto1: {pt:"Este canal é da gestão e serve para elogios, críticas ou algum problema com a sua estadia que a recepção não conseguiu resolver.",
@@ -438,6 +443,32 @@
   var mensagemRecepcao = "Olá! 👋 Estou hospedado(a) na acomodação " + nome + " e preciso de ajuda da recepção.";
   var linkRecepcao = "https://wa.me/" + numeroRecepcao + "?text=" + encodeURIComponent(mensagemRecepcao);
 
+  var massagistas = [
+    {nome:"Iris", numero:"5562996094197"},
+    {nome:"Jandira", numero:"5562999267109"}
+  ];
+  function linkMassagista(m){
+    var msg = {
+      pt:"Olá, "+m.nome+"! 👋 Estou hospedado(a) na Pousada Baguá Bangalôs, na acomodação "+nome+", e gostaria de saber mais informações e agendar uma massagem.",
+      en:"Hello, "+m.nome+"! 👋 I'm staying at Pousada Baguá Bangalôs, in "+nome+", and I'd like more information and to book a massage.",
+      es:"¡Hola, "+m.nome+"! 👋 Estoy alojado(a) en la Pousada Baguá Bangalôs, en "+nome+", y me gustaría más información y reservar un masaje.",
+      fr:"Bonjour "+m.nome+" ! 👋 Je séjourne à la Pousada Baguá Bangalôs, dans "+nome+", et j'aimerais plus d'informations et réserver un massage."
+    };
+    return "https://wa.me/" + m.numero + "?text=" + encodeURIComponent(msg[lang] || msg.pt);
+  }
+  function renderMassagem(){
+    content.innerHTML =
+      '<div class="card">' +
+        '<p style="font-size:13.5px;color:var(--ink-600);line-height:1.5;margin:0 0 10px;">'+t("massagemTexto1")+'</p>' +
+        '<p style="font-size:13.5px;color:var(--ink-900);font-weight:600;line-height:1.5;margin:0 0 16px;">'+t("massagemTexto2")+'</p>' +
+        massagistas.map(function(m){
+          return '<a class="btn-opt" href="'+linkMassagista(m)+'" target="_blank" rel="noopener" style="text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">💆‍♀️</span><span><span>'+t("falarCom")+escapeHtml(m.nome)+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>';
+        }).join("") +
+        '<button class="btn-ghost" id="massVoltar">'+t("voltar")+'</button>' +
+      '</div>';
+    document.getElementById("massVoltar").onclick = renderMenu;
+  }
+
   function renderMenu(){
     pararAcompanhamentoRealtime();
     var pedidosAtivos = carregarPedidosLocaisBrutos();
@@ -465,6 +496,7 @@
         '<button class="btn-opt" data-tipo="sauna"><span class="ic">🧖</span><span><span>'+t("ligarSauna")+'</span><span class="sub">'+t("pedirLigarAgora")+'</span></span></button>' +
         (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha_troca"><span class="ic">💧</span><span><span>'+t("trocarLenha")+'</span><span class="sub">'+t("trocarLenhaSub")+'</span></span></button>' : '') +
         (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha"><span class="ic">🪵</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' : '') +
+        '<button class="btn-opt" id="btnMassagem"><span class="ic">💆‍♀️</span><span><span>'+t("massagem")+'</span><span class="sub">'+t("massagemSub")+'</span></span></button>' +
         '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>'+t("faleGestao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></button>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
@@ -478,6 +510,7 @@
       };
     });
     document.getElementById("btnFrigobar").onclick = renderFrigobarForm;
+    document.getElementById("btnMassagem").onclick = renderMassagem;
     document.getElementById("btnGestao").onclick = renderConfirmacaoGestao;
     if(document.getElementById("verMeusPedidos")) document.getElementById("verMeusPedidos").onclick = renderAcompanhamento;
   }
