@@ -1580,10 +1580,10 @@
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
     restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", restricoes:"restaurante_restricoes"}},
-    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", qr:"recepcao_qr", itens:"recepcao_itens", entrada:"recepcao_entrada"}},
+    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
-    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada"}},
+    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada", qr:"limpeza_qr"}},
     manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas", equipamentos:"equipamentos"}}
   };
   var PERM_ACOES = {
@@ -2637,10 +2637,10 @@
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
     restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições"},
-    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", qr:"QR Code", itens:"Itens", entrada:"Pendências de entrada"},
+    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
-    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada"},
+    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada", qr:"QR Code"},
     manutencao:{pendentes:"Pendentes", concluidas:"Concluídas", equipamentos:"Equipamentos"}
   };
   var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
@@ -9316,9 +9316,12 @@
       '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
       '<button data-lsub="previsao" class="'+(limpezaSubView==="previsao"?"active":"")+'">Previsão 7 dias</button>' +
       '<button data-lsub="entrada" class="'+(limpezaSubView==="entrada"?"active":"")+'">Pendências de entrada'+(pendenciasEntradaAbertas("limpeza").length?(' · '+pendenciasEntradaAbertas("limpeza").length):'')+'</button>' +
+      '<button data-lsub="qr" class="'+(limpezaSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
     '</div>';
 
-    if(limpezaSubView === "entrada"){
+    if(limpezaSubView === "qr"){
+      html += renderQrAcomodacoesHtml();
+    } else if(limpezaSubView === "entrada"){
       html += renderPendenciasEntradaHtml("limpeza");
     } else if(limpezaSubView === "abertos"){
       // Agrupa cada tarefa aberta num dos 4 blocos.
@@ -9411,6 +9414,7 @@
     }
     main.innerHTML = html;
     if(limpezaSubView === "entrada") ligarPendenciasEntrada(main, renderLimpeza);
+    if(limpezaSubView === "qr") ligarQrAcomodacoes(main);
     main.querySelectorAll("[data-lsub]").forEach(function(b){
       b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza();
         carregarPendenciasEntrada().then(function(){ renderLimpeza(); }); };
@@ -11380,8 +11384,6 @@
       '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza'+(recepcaoLimpezaPendentesN()?' ('+recepcaoLimpezaPendentesN()+')':'')+'</button>' +
       '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">'+ic("plus")+' Avulsos</button>' +
       '<button data-rsub="chegadas" class="'+(recepcaoSubView==="chegadas"?"active":"")+'">'+ic("bed")+' Chegadas'+(preCheckinsNaoVistos().length?' ('+preCheckinsNaoVistos().length+')':'')+'</button>' +
-      '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
-      '<button data-rsub="itens" class="'+(recepcaoSubView==="itens"?"active":"")+'">'+ic("cube")+' Itens</button>' +
       '<button data-rsub="entrada" class="'+(recepcaoSubView==="entrada"?"active":"")+'">'+ic("bed")+' Pendências de entrada'+(pendenciasEntradaAbertas().length?(' ('+pendenciasEntradaAbertas().length+')'):'')+'</button>' +
     '</div>';
 
@@ -11596,21 +11598,14 @@
       }
     }
 
-    else if(recepcaoSubView === "qr"){
-      html += renderQrAcomodacoesHtml();
-    }
     else if(recepcaoSubView === "chegadas"){
       html += renderPreCheckinsHtml();
-    }
-    else if(recepcaoSubView === "itens"){
-      html += renderItensPorAcomodacaoHtml();
     }
     else if(recepcaoSubView === "entrada"){
       html += renderPendenciasEntradaHtml();
     }
 
     main.innerHTML = html;
-    if(recepcaoSubView === "itens") ligarItensPorAcomodacao(main);
     if(recepcaoSubView === "entrada" || recepcaoSubView === "limpeza") ligarPendenciasEntrada(main, renderRecepcao);
     wireSolicitacaoActions(main);
 
@@ -11840,28 +11835,7 @@
       };
     }
 
-    // --- QR Code ---
-    var imprimirQrsBtn = main.querySelector("#imprimirQrsBtn");
-    function qrAtualizarBotao(){
-      var cards = main.querySelectorAll(".qr-bagua[data-qr-id]"), n = 0;
-      cards.forEach(function(c){ var on = c.querySelector(".qr-sel").checked; c.classList.toggle("qr-fora", !on); qrSelecionados[c.getAttribute("data-qr-id")] = on; if(on) n++; });
-      var b = main.querySelector("#imprimirQrsSelBtn");
-      if(b){ b.innerHTML = ic("printer")+" Imprimir selecionados ("+n+")"; b.disabled = n===0; b.style.opacity = n===0 ? ".5" : "1"; }
-    }
-    main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ cb.onchange = qrAtualizarBotao; });
-    var qrTodos = main.querySelector("#qrSelTodosBtn"), qrNenhum = main.querySelector("#qrSelNenhumBtn");
-    if(qrTodos) qrTodos.onclick = function(){ main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ cb.checked = true; }); qrAtualizarBotao(); };
-    if(qrNenhum) qrNenhum.onclick = function(){ main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ cb.checked = false; }); qrAtualizarBotao(); };
-    var qrSelBtn = main.querySelector("#imprimirQrsSelBtn");
-    if(qrSelBtn) qrSelBtn.onclick = function(){ qrAtualizarBotao(); window.print(); };
-    if(imprimirQrsBtn) imprimirQrsBtn.onclick = function(){
-      // imprime todos: marca tudo antes e restaura a seleção depois
-      var antes = {}; main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ var id = cb.closest(".qr-bagua").getAttribute("data-qr-id"); antes[id] = cb.checked; cb.checked = true; });
-      qrAtualizarBotao(); window.print();
-      main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ var id = cb.closest(".qr-bagua").getAttribute("data-qr-id"); cb.checked = antes[id]; });
-      qrAtualizarBotao();
-    };
-    qrAtualizarBotao();
+    // --- QR Code agora fica em Limpeza (ligarQrAcomodacoes) ---
   }
 
   var supervisaoPeriod = "7"; // '1' | '7' | '30'
@@ -12374,6 +12348,7 @@
     {key:"limpeza_concluidos", label:"Limpeza — só Concluídos hoje", sub:true},
     {key:"limpeza_previsao", label:"Limpeza — só Previsão 7 dias", sub:true},
     {key:"limpeza_entrada", label:"Limpeza — só Pendências de entrada", sub:true},
+    {key:"limpeza_qr", label:"Limpeza — só QR Code", sub:true},
     {key:"recepcao_entrada", label:"Recepção — só Pendências de entrada", sub:true},
     {key:"limpeza_acao_sem_qr", label:"Limpeza — iniciar/finalizar acomodação sem precisar do QR Code", acao:true},
     {key:"recepcao", label:"Recepção (painel de acompanhamento)"},
@@ -12381,8 +12356,6 @@
     {key:"recepcao_limpeza", label:"Recepção — só Limpeza", sub:true},
     {key:"recepcao_avulsos", label:"Recepção — só Avulsos", sub:true},
     {key:"recepcao_chegadas", label:"Recepção — só Chegadas (pré-check-in)", sub:true},
-    {key:"recepcao_itens", label:"Recepção — só Itens por acomodação (ver lista)", sub:true},
-    {key:"recepcao_qr", label:"Recepção — só QR Code", sub:true},
     {key:"recepcao_acao_confirmar_reparo", label:"Recepção — confirmar/pausar reparo com o hóspede", acao:true},
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
     {key:"servico_geral_jacuzzi", label:"Serviço Geral — só Jacuzzi", sub:true},
@@ -12447,6 +12420,30 @@
     return base + "?a=" + encodeURIComponent(acomodacaoId);
   }
   var qrSelecionados = {}; // id -> false quando desmarcado (padrão: todos marcados)
+  function ligarQrAcomodacoes(main){
+    // --- QR Code ---
+    var imprimirQrsBtn = main.querySelector("#imprimirQrsBtn");
+    function qrAtualizarBotao(){
+      var cards = main.querySelectorAll(".qr-bagua[data-qr-id]"), n = 0;
+      cards.forEach(function(c){ var on = c.querySelector(".qr-sel").checked; c.classList.toggle("qr-fora", !on); qrSelecionados[c.getAttribute("data-qr-id")] = on; if(on) n++; });
+      var b = main.querySelector("#imprimirQrsSelBtn");
+      if(b){ b.innerHTML = ic("printer")+" Imprimir selecionados ("+n+")"; b.disabled = n===0; b.style.opacity = n===0 ? ".5" : "1"; }
+    }
+    main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ cb.onchange = qrAtualizarBotao; });
+    var qrTodos = main.querySelector("#qrSelTodosBtn"), qrNenhum = main.querySelector("#qrSelNenhumBtn");
+    if(qrTodos) qrTodos.onclick = function(){ main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ cb.checked = true; }); qrAtualizarBotao(); };
+    if(qrNenhum) qrNenhum.onclick = function(){ main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ cb.checked = false; }); qrAtualizarBotao(); };
+    var qrSelBtn = main.querySelector("#imprimirQrsSelBtn");
+    if(qrSelBtn) qrSelBtn.onclick = function(){ qrAtualizarBotao(); window.print(); };
+    if(imprimirQrsBtn) imprimirQrsBtn.onclick = function(){
+      // imprime todos: marca tudo antes e restaura a seleção depois
+      var antes = {}; main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ var id = cb.closest(".qr-bagua").getAttribute("data-qr-id"); antes[id] = cb.checked; cb.checked = true; });
+      qrAtualizarBotao(); window.print();
+      main.querySelectorAll(".qr-bagua .qr-sel").forEach(function(cb){ var id = cb.closest(".qr-bagua").getAttribute("data-qr-id"); cb.checked = antes[id]; });
+      qrAtualizarBotao();
+    };
+    qrAtualizarBotao();
+  }
   function renderQrAcomodacoesHtml(){
     var html = '<div class="section-title" style="margin-top:22px;">'+ic("camera")+' QR Code das acomodações (check-in de limpeza)</div>';
     html += '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 10px;"><b>Um único QR por acomodação</b> — fixo, sempre o mesmo, e cada acomodação tem o seu. O <b>hóspede</b> aponta a câmera e cai direto na página dele, para pedir limpeza, frigobar etc. A <b>equipe da limpeza</b> usa o mesmo QR: dentro do app, aperta "Iniciar"/"Finalizar" na tarefa e escaneia com a câmera ao vivo (confirma que está ali); ou aponta a câmera do próprio celular — se estiver logada no app, abre direto a tela de check-in daquela acomodação. QRs antigos (só da equipe) continuam funcionando.</p>';
