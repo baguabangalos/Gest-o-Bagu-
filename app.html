@@ -1875,6 +1875,48 @@
     }
   }
 
+  // Admin define uma nova senha para outra pessoa (o e-mail de redefinição do Supabase
+  // só chega para endereços autorizados — esta é a alternativa sem e-mail).
+  function gerarSenhaTemporaria(){
+    var letras = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", out = "";
+    var arr = new Uint32Array(10); (window.crypto||window.msCrypto).getRandomValues(arr);
+    for(var i=0;i<arr.length;i++) out += letras.charAt(arr[i] % letras.length);
+    return out;
+  }
+  function abrirRedefinirSenhaSheet(userId){
+    var u = (adminUsersCache||[]).find(function(x){ return x.id === userId; }) || {};
+    var nome = u.nome || "esta pessoa";
+    var estilo = 'width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:15px;background:var(--sand-50);';
+    var html = '<div class="sheet-overlay open" id="senhaOverlay"><div class="sheet" style="max-height:90vh;overflow:auto;">' +
+      '<h2>Nova senha — '+escapeHtml(nome)+'</h2>' +
+      '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 10px;">Defina uma senha provisória (mínimo 8 caracteres) e passe para a pessoa. Peça para ela trocar depois em Configurações.</p>' +
+      '<input type="text" id="novaSenhaTxt" autocomplete="off" autocapitalize="off" spellcheck="false" style="'+estilo+'" placeholder="Nova senha">' +
+      '<button type="button" id="gerarSenhaBtn" style="display:block;width:100%;margin-bottom:8px;background:none;border:1px dashed var(--line);border-radius:8px;padding:8px;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-600);">Gerar uma senha</button>' +
+      '<div class="sheet-actions"><button type="button" class="btn-secondary" id="senhaCancel">Cancelar</button><button type="button" class="btn-primary" id="senhaSalvar">'+ic("check")+' Definir senha</button></div>' +
+    '</div></div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var ov = document.getElementById("senhaOverlay");
+    document.getElementById("senhaCancel").onclick = function(){ ov.remove(); };
+    ov.addEventListener("click", function(e){ if(e.target === ov) ov.remove(); });
+    document.getElementById("gerarSenhaBtn").onclick = function(){ document.getElementById("novaSenhaTxt").value = gerarSenhaTemporaria(); };
+    document.getElementById("senhaSalvar").onclick = async function(){
+      var senha = document.getElementById("novaSenhaTxt").value;
+      if(!senha || senha.length < 8){ showToast("A senha precisa ter pelo menos 8 caracteres"); return; }
+      var b = document.getElementById("senhaSalvar"); b.disabled = true;
+      try{
+        var res = await sb.functions.invoke("redefinir-senha", {body:{userId:userId, senha:senha}});
+        if(res.error) throw res.error;
+        if(res.data && res.data.erro) throw new Error(res.data.erro);
+        ov.remove();
+        showToast("Senha de "+nome+" redefinida");
+      }catch(err){
+        console.error(err);
+        showToast("Não consegui redefinir (a função redefinir-senha está publicada?)");
+        b.disabled = false;
+      }
+    };
+  }
+
   async function fazerLogout(){
     await sb.auth.signOut();
     if(realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
@@ -13182,6 +13224,9 @@
           html += '<button type="button" class="admin-role-btn" data-act="demote">Remover privilégio de admin</button>';
         }
       }
+      if(currentUser.id !== u.id && u.ativo !== false){
+        html += '<button type="button" class="admin-role-btn" data-act="redefinirSenha">'+ic("lockClosed")+' Definir nova senha</button>';
+      }
       if(currentUser.id !== u.id){
         html += u.ativo===false
           ? '<button type="button" class="admin-role-btn" data-act="reativar">Reativar acesso</button>'
@@ -13326,6 +13371,7 @@
         roleBtn.onclick = async function(){
           var act = roleBtn.getAttribute("data-act");
           if(act === "remover" || act === "reativar"){ removerContaApp(uid, act); return; }
+          if(act === "redefinirSenha"){ abrirRedefinirSenhaSheet(uid); return; }
           if(act === "aprovar"){
             try{
               var ra = await sb.from("profiles").update({aprovado:true}).eq("id", uid);
