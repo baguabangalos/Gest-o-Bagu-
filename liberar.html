@@ -39,7 +39,7 @@
     font-family:inherit; cursor:pointer;
   }
   .btn-opt:active{background:var(--sand-200);}
-  .btn-opt .ic{font-size:22px;}
+  .btn-opt .ic{display:flex;align-items:center;justify-content:center;width:26px;color:var(--teal-700);}
   .btn-opt .sub{display:block; font-size:12.5px; font-weight:400; color:var(--ink-600); margin-top:2px;}
   textarea{
     width:100%; border:1px solid var(--line); border-radius:10px; padding:10px 12px;
@@ -223,7 +223,7 @@
     enviando: {pt:"Enviando…", en:"Sending…", es:"Enviando…", fr:"Envoi…"},
     jaTemPedido: {pt:"Já existe um pedido igual em andamento para esta acomodação — a equipe já foi avisada. Acompanhe por aqui.", en:"There is already an identical request in progress for this accommodation — the team has been notified. You can follow it here.", es:"Ya hay un pedido igual en curso para este alojamiento — el equipo ya fue avisado. Puede seguirlo aquí.", fr:"Une demande identique est déjà en cours pour ce logement — l'équipe a été prévenue. Vous pouvez la suivre ici."},
     erroEnviar: {pt:"Não consegui enviar agora. Tente de novo ou fale com a recepção.", en:"Couldn't send it right now. Try again or speak with the front desk.", es:"No se pudo enviar ahora. Intente de nuevo o hable con recepción.", fr:"Impossible d'envoyer pour le moment. Réessayez ou contactez la réception."},
-    seusPedidos: {pt:"📋 Seus pedidos", en:"📋 Your requests", es:"📋 Sus pedidos", fr:"📋 Vos demandes"},
+    seusPedidos: {pt:"Seus pedidos", en:"Your requests", es:"Sus pedidos", fr:"Vos demandes"},
     fazerOutroPedido: {pt:"+ Fazer outro pedido", en:"+ Make another request", es:"+ Hacer otro pedido", fr:"+ Faire une autre demande"},
     statusConcluido: {pt:"Concluído", en:"Completed", es:"Completado", fr:"Terminé"},
     statusACaminho: {pt:"Equipe a caminho", en:"Team on the way", es:"Equipo en camino", fr:"Équipe en route"},
@@ -260,6 +260,27 @@
     try{ return localStorage.getItem(LANG_KEY) || idiomaPadrao(); }catch(e){ return idiomaPadrao(); }
   })();
 
+  // Ícones em traço (mesmo estilo do app da equipe)
+  var ICONES = {
+    check:'<path d="M5 13l4 4L19 7"/>',
+    doc:'<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+    broom:'<path d="M14 4l6 6-8 8-3-3z"/><path d="M9 15l-5 5M6 15l3 3M4 18l2 2"/>',
+    clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/>',
+    cup:'<path d="M7 8h10l-1 12H8L7 8z"/><path d="M7 8l-1-3h12l-1 3"/>',
+    wrench:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2-2z"/>',
+    bath:'<path d="M3 12h18v2a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5v-2z"/><path d="M7 12V7a3 3 0 0 1 5-2"/>',
+    wind:'<path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 13h15a3 3 0 1 1-3 3"/><path d="M3 18h9a2.5 2.5 0 1 0-2.5-2.5"/>',
+    droplet:'<path d="M12 3c2.5 3 4 5.5 4 8a4 4 0 1 1-8 0c0-2.5 1.5-5 4-8z"/>',
+    flame:'<path d="M12 3c2 3-1 4-1 7a3 3 0 1 0 6 0c0-1-.5-2-1-2 .3 3-2 3-2 1 0-2 1-3-2-6z"/>',
+    heart:'<path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>',
+    chat:'<path d="M4 5h16v11H9l-5 4z"/>',
+    bell:'<path d="M6 10a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M9.5 20a2.5 2.5 0 0 0 5 0"/>'
+  };
+  function icG(nome, tam){
+    var d = ICONES[nome]; if(!d) return "";
+    tam = tam || 24;
+    return '<svg width="'+tam+'" height="'+tam+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;display:block;">'+d+'</svg>';
+  }
   function t(key){
     var entry = T[key];
     if(!entry) return key;
@@ -379,10 +400,10 @@
 
   function statusInfo(tabela, status){
     var concluido = (tabela === "manutencoes") ? "concluida" : "concluido";
-    if(status === concluido) return {icone:"✅", texto:t("statusConcluido"), cor:"var(--teal-700)"};
-    if(status === "em_andamento") return {icone:"🧹", texto:t("statusACaminho"), cor:"var(--ink-900)"};
-    if(status === "bloqueada") return {icone:"⏳", texto:t("statusAguardandoLiberacao"), cor:"var(--ink-600)"};
-    return {icone:"⏳", texto:t("statusAguardandoEquipe"), cor:"var(--ink-600)"};
+    if(status === concluido) return {icone:"check", texto:t("statusConcluido"), cor:"var(--teal-700)"};
+    if(status === "em_andamento") return {icone:"broom", texto:t("statusACaminho"), cor:"var(--ink-900)"};
+    if(status === "bloqueada") return {icone:"clock", texto:t("statusAguardandoLiberacao"), cor:"var(--ink-600)"};
+    return {icone:"clock", texto:t("statusAguardandoEquipe"), cor:"var(--ink-600)"};
   }
 
   renderLangSwitch();
@@ -462,7 +483,7 @@
         '<p style="font-size:13.5px;color:var(--ink-600);line-height:1.5;margin:0 0 10px;">'+t("massagemTexto1")+'</p>' +
         '<p style="font-size:13.5px;color:var(--ink-900);font-weight:600;line-height:1.5;margin:0 0 16px;">'+t("massagemTexto2")+'</p>' +
         massagistas.map(function(m){
-          return '<a class="btn-opt" href="'+linkMassagista(m)+'" target="_blank" rel="noopener" style="text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">💆‍♀️</span><span><span>'+t("falarCom")+escapeHtml(m.nome)+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>';
+          return '<a class="btn-opt" href="'+linkMassagista(m)+'" target="_blank" rel="noopener" style="text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">'+icG("heart")+'</span><span><span>'+t("falarCom")+escapeHtml(m.nome)+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>';
         }).join("") +
         '<button class="btn-ghost" id="massVoltar">'+t("voltar")+'</button>' +
       '</div>';
@@ -475,14 +496,14 @@
     var bannerHtml = "";
     if(pedidosAtivos.length > 0){
       bannerHtml = '<button class="btn-opt" id="verMeusPedidos" style="background:var(--teal-100);border-color:var(--teal-500);">' +
-        '<span class="ic">📋</span><span><span>'+t("verMeusPedidos")+'</span><span class="sub">'+pedidosAtivos.length+t("pedidosRecentes")+'</span></span></button>';
+        '<span class="ic">'+icG("doc")+'</span><span><span>'+t("verMeusPedidos")+'</span><span class="sub">'+pedidosAtivos.length+t("pedidosRecentes")+'</span></span></button>';
     }
     var limpezaHtml;
     if(limpezaDisponivel()){
-      limpezaHtml = '<button class="btn-opt" data-tipo="limpeza"><span class="ic">🧹</span><span><span>'+t("limparQuarto")+'</span><span class="sub">'+t("equipeVaiLa")+'</span></span></button>';
+      limpezaHtml = '<button class="btn-opt" data-tipo="limpeza"><span class="ic">'+icG("broom")+'</span><span><span>'+t("limparQuarto")+'</span><span class="sub">'+t("equipeVaiLa")+'</span></span></button>';
     } else {
       limpezaHtml = '<div style="display:flex;align-items:center;gap:12px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;">' +
-        '<span class="ic" style="font-size:22px;">🕦</span>' +
+        '<span class="ic">'+icG("clock")+'</span>' +
         '<span style="font-size:13.5px;color:var(--ink-600);line-height:1.4;">'+t("limpezaAte")+'<strong>11:30</strong>.</span>' +
       '</div>';
     }
@@ -490,14 +511,14 @@
       '<div class="card">' +
         bannerHtml +
         limpezaHtml +
-        '<button class="btn-opt" id="btnFrigobar"><span class="ic">🥤</span><span><span>'+t("frigobar")+'</span><span class="sub">'+t("escolherRepor")+'</span></span></button>' +
-        '<button class="btn-opt" data-tipo="reparo"><span class="ic">🔧</span><span><span>'+t("naoFunciona")+'</span><span class="sub">'+t("reparoSub")+'</span></span></button>' +
-        '<a class="btn-opt" href="https://calendly.com/baguabangalos/jacuzzi" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛁</span><span><span>'+t("reservarJacuzzi")+'</span><span class="sub">'+t("agendarHorario")+'</span></span></a>' +
-        '<button class="btn-opt" data-tipo="sauna"><span class="ic">🧖</span><span><span>'+t("ligarSauna")+'</span><span class="sub">'+t("pedirLigarAgora")+'</span></span></button>' +
-        (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha_troca"><span class="ic">💧</span><span><span>'+t("trocarLenha")+'</span><span class="sub">'+t("trocarLenhaSub")+'</span></span></button>' : '') +
-        (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha"><span class="ic">🪵</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' : '') +
-        '<button class="btn-opt" id="btnMassagem"><span class="ic">💆‍♀️</span><span><span>'+t("massagem")+'</span><span class="sub">'+t("massagemSub")+'</span></span></button>' +
-        '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>'+t("faleGestao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></button>' +
+        '<button class="btn-opt" id="btnFrigobar"><span class="ic">'+icG("cup")+'</span><span><span>'+t("frigobar")+'</span><span class="sub">'+t("escolherRepor")+'</span></span></button>' +
+        '<button class="btn-opt" data-tipo="reparo"><span class="ic">'+icG("wrench")+'</span><span><span>'+t("naoFunciona")+'</span><span class="sub">'+t("reparoSub")+'</span></span></button>' +
+        '<a class="btn-opt" href="https://calendly.com/baguabangalos/jacuzzi" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">'+icG("bath")+'</span><span><span>'+t("reservarJacuzzi")+'</span><span class="sub">'+t("agendarHorario")+'</span></span></a>' +
+        '<button class="btn-opt" data-tipo="sauna"><span class="ic">'+icG("wind")+'</span><span><span>'+t("ligarSauna")+'</span><span class="sub">'+t("pedirLigarAgora")+'</span></span></button>' +
+        (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha_troca"><span class="ic">'+icG("droplet")+'</span><span><span>'+t("trocarLenha")+'</span><span class="sub">'+t("trocarLenhaSub")+'</span></span></button>' : '') +
+        (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha"><span class="ic">'+icG("flame")+'</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' : '') +
+        '<button class="btn-opt" id="btnMassagem"><span class="ic">'+icG("heart")+'</span><span><span>'+t("massagem")+'</span><span class="sub">'+t("massagemSub")+'</span></span></button>' +
+        '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">'+icG("chat")+'</span><span><span>'+t("faleGestao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></button>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
       b.onclick = function(){
@@ -520,15 +541,15 @@
       '<div class="card">' +
         '<p style="font-size:13.5px;color:var(--ink-600);line-height:1.5;margin:0 0 14px;">'+t("gestaoTexto1")+'</p>' +
         '<p style="font-size:13.5px;color:var(--ink-900);font-weight:600;line-height:1.5;margin:0 0 16px;">'+t("gestaoTexto2")+'</p>' +
-        '<a class="btn-opt" id="btnIrRecepcao" href="'+linkRecepcao+'" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">🛎️</span><span><span>'+t("falarRecepcao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></a>' +
-        '<a class="btn-opt" id="btnIrGestao" href="'+linkGestao+'" target="_blank" rel="noopener" style="margin-bottom:0;text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">💬</span><span><span>'+t("continuarGestao")+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>' +
+        '<a class="btn-opt" id="btnIrRecepcao" href="'+linkRecepcao+'" target="_blank" rel="noopener" style="text-decoration:none;"><span class="ic">'+icG("bell")+'</span><span><span>'+t("falarRecepcao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></a>' +
+        '<a class="btn-opt" id="btnIrGestao" href="'+linkGestao+'" target="_blank" rel="noopener" style="margin-bottom:0;text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">'+icG("chat")+'</span><span><span>'+t("continuarGestao")+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>' +
       '</div>';
   }
 
   function renderLenhaConfirm(){
     content.innerHTML =
       '<div class="card">' +
-        '<p style="margin:0 0 6px;font-size:16px;font-weight:800;">🪵 '+t("cargaLenha")+': '+moeda(PRECO_LENHA)+'</p>' +
+        '<p style="margin:0 0 6px;font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px;">'+icG("flame",20)+'<span>'+t("cargaLenha")+': '+moeda(PRECO_LENHA)+'</span></p>' +
         '<p style="margin:0 0 14px;font-size:13px;color:var(--ink-600);">'+t("valorNaConta")+'</p>' +
         '<button class="btn-primary" id="lnOk">'+t("confirmarLenha")+'</button>' +
         '<button class="btn-ghost" id="lnVoltar">'+t("voltar")+'</button>' +
@@ -823,7 +844,7 @@
       var el = document.getElementById("pedido_" + p.id);
       if(!el) return;
       el.innerHTML =
-        '<span style="font-size:20px;">'+info.icone+'</span>' +
+        '<span style="font-size:20px;">'+icG(info.icone,22)+'</span>' +
         '<span style="flex:1;"><span style="display:block;font-weight:600;font-size:14.5px;">'+escapeHtml(t(p.labelKey))+'</span>' +
         '<span style="font-size:12.5px;color:'+info.cor+';font-weight:600;">'+info.texto+'</span></span>';
     }
