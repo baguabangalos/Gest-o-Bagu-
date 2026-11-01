@@ -498,6 +498,7 @@
   <button class="nav-btn" data-view="abastecimento"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M7 8h10l-1 12H8L7 8z"/><path d="M7 8l-1-3h12l-1 3"/></svg></span>Abastecer</button>
   <button class="nav-btn active" data-view="items"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M3 8l9-4 9 4-9 4-9-4z"/><path d="M3 8v9l9 4 9-4V8"/><path d="M12 12v9"/></svg></span>Estoque</button>
   <button class="nav-btn" data-view="count"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Contagem</button>
+  <button class="nav-btn" data-view="history"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span>Saídas</button>
 </footer>
 
 <!-- Sheet: add/edit item -->
@@ -2736,6 +2737,7 @@
     document.getElementById("itemsView").style.display = (appSection==="estoque" && activeView==="items") ? "block":"none";
     document.getElementById("countView").style.display = (appSection==="estoque" && activeView==="count") ? "block":"none";
     document.getElementById("abastecimentoView").style.display = (appSection==="estoque" && activeView==="abastecimento") ? "block":"none";
+    document.getElementById("historyView").style.display = (appSection==="estoque" && activeView==="history") ? "block":"none";
     document.getElementById("procedimentosView").style.display = appSection==="procedimentos" ? "block":"none";
     document.getElementById("manutencoesView").style.display = appSection==="manutencoes" ? "block":"none";
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
@@ -2791,6 +2793,7 @@
       if(activeView==="items") renderItems();
       if(activeView==="count") renderCount();
       if(activeView==="abastecimento") renderAbastecimento();
+      if(activeView==="history") renderHistory();
     }
     if(appSection === "procedimentos") renderProcedimentos();
     if(appSection === "manutencoes") renderManutencoes();
@@ -3112,77 +3115,8 @@
 
   function renderHistory(){
     var main = document.getElementById("historyView");
-    main.innerHTML =
-      '<div class="seg-toggle">' +
-        '<button data-sub="moves" class="'+(historySubView==="moves"?"active":"")+'">Movimentações</button>' +
-        '<button data-sub="saidasdia" class="'+(historySubView==="saidasdia"?"active":"")+'">Saídas do dia</button>' +
-        '<button data-sub="consumo" class="'+(historySubView==="consumo"?"active":"")+'">Consumo</button>' +
-        '<button data-sub="contagens" class="'+(historySubView==="contagens"?"active":"")+'">Contagens</button>' +
-      '</div>' +
-      '<div id="historySubContent"></div>';
-    main.querySelectorAll("[data-sub]").forEach(function(b){
-      b.onclick = function(){ historySubView = b.getAttribute("data-sub"); renderHistory(); };
-    });
-    var sub = document.getElementById("historySubContent");
-    if(historySubView === "moves") renderMovesInto(sub);
-    else if(historySubView === "saidasdia") renderSaidasDiaInto(sub);
-    else if(historySubView === "consumo") renderConsumoInto(sub);
-    else renderContagensInto(sub);
-  }
-
-  // Saídas de um dia, agrupadas por destino — pra conferir se tudo que foi
-  // liberado (ex.: Welcome drink) foi lançado.
-  var saidasDia = {dia:null, dest:"todos"};
-  function renderSaidasDiaInto(container){
-    var hoje = new Date(); hoje.setHours(0,0,0,0);
-    if(saidasDia.dia === null) saidasDia.dia = hoje.getTime();
-    var ini = saidasDia.dia, fim = ini + 86400000;
-    var okCats = estoqueCategoriasPermitidas();
-    var dia = state.estoque.movements.filter(function(m){
-      if(m.type !== "saida" || m.date < ini || m.date >= fim) return false;
-      var it = state.estoque.items.find(function(i){ return i.id === m.itemId; });
-      return !it || okCats.indexOf(it.category) > -1;
-    }).sort(function(a,b){ return b.date - a.date; });
-    var porDest = {};
-    dia.forEach(function(m){ var d = m.destino || "Sem destino"; (porDest[d] = porDest[d] || []).push(m); });
-    var dests = Object.keys(porDest).sort(function(a,b){
-      if(a === "Welcome drink") return -1; if(b === "Welcome drink") return 1;
-      return a.localeCompare(b, "pt-BR");
-    });
-    var sel = (saidasDia.dest !== "todos" && porDest[saidasDia.dest]) ? saidasDia.dest : "todos";
-    var h = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;">' +
-      '<button type="button" class="btn btn-out" id="sdPrev" style="padding:8px 14px;">◀</button>' +
-      '<div style="text-align:center;"><p style="margin:0;font-weight:800;font-size:15px;">'+fmtDateOnly(ini)+(ini===hoje.getTime()?' <span style="font-weight:600;color:var(--ink-600);font-size:12px;">(hoje)</span>':'')+'</p>' +
-      '<p class="item-meta" style="margin:0;">'+dia.length+' saída(s) lançada(s)</p></div>' +
-      '<button type="button" class="btn btn-out" id="sdNext" style="padding:8px 14px;"'+(ini>=hoje.getTime()?' disabled':'')+'>▶</button></div>';
-    if(!dia.length){
-      container.innerHTML = h + '<div class="empty">Nenhuma saída lançada neste dia.</div>';
-    } else {
-      h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">' +
-        ['todos'].concat(dests).map(function(d){
-          var n = d === "todos" ? dia.length : porDest[d].length;
-          return '<button type="button" data-sd="'+escapeHtml(d)+'" style="padding:7px 12px;border-radius:18px;font-family:inherit;font-size:12.5px;font-weight:700;border:1px solid var(--line);cursor:pointer;'+(d===sel?'background:var(--ink-900);color:#fff;':'background:var(--sand-50);color:var(--ink-900);')+'">'+(d==="todos"?"Todos":escapeHtml(d))+' · '+n+'</button>';
-        }).join("") + '</div>';
-      (sel === "todos" ? dests : [sel]).forEach(function(d){
-        var lista = porDest[d], tot = {};
-        lista.forEach(function(m){
-          var it = state.estoque.items.find(function(i){ return i.id === m.itemId; });
-          var nome = it ? it.name : "(item removido)";
-          tot[nome] = (tot[nome]||0) + m.qty;
-        });
-        h += '<div class="section-title">'+escapeHtml(d)+'</div>' +
-          '<div class="card" style="margin-bottom:8px;"><p class="item-meta" style="margin:0 0 4px;font-weight:800;">Total por item</p>' +
-          Object.keys(tot).sort(function(a,b){ return a.localeCompare(b,"pt-BR"); }).map(function(n){
-            return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line);font-size:13.5px;"><span>'+escapeHtml(n)+'</span><b>'+fmtQty(tot[n])+'</b></div>';
-          }).join("") + '</div>' +
-          '<div class="card">' + lista.map(moveRowHtml).join("") + '</div>';
-      });
-      container.innerHTML = h;
-    }
-    container.querySelectorAll("[data-sd]").forEach(function(b){ b.onclick = function(){ saidasDia.dest = b.getAttribute("data-sd"); renderHistory(); }; });
-    var p = container.querySelector("#sdPrev"); if(p) p.onclick = function(){ var d = new Date(saidasDia.dia); d.setDate(d.getDate()-1); saidasDia.dia = d.getTime(); saidasDia.dest = "todos"; renderHistory(); };
-    var n = container.querySelector("#sdNext"); if(n) n.onclick = function(){ var d = new Date(saidasDia.dia); d.setDate(d.getDate()+1); saidasDia.dia = d.getTime(); saidasDia.dest = "todos"; renderHistory(); };
-    wireMoveEditDelete(container);
+    main.innerHTML = '<div id="historySubContent"></div>';
+    renderSaidasDiaInto(document.getElementById("historySubContent"));
   }
 
   // Monta o HTML de uma única linha de movimentação — usado tanto no
