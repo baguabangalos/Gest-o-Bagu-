@@ -9683,7 +9683,7 @@
         var cor = x.d > 0 ? "var(--red-600)" : (x.d < 0 ? "var(--amber-600)" : "var(--ink-600)");
         var difTxt = x.d > 0 ? ('faltou cobrar '+x.d+'<br>'+confReal(x.d*x.i.preco)) : (x.d < 0 ? ('cobrado a mais '+(-x.d)) : 'ok');
         h += '<tr style="'+(x.d > 0 ? 'background:#fdf1ef;' : '')+'">' +
-          '<td style="'+td+'"><b>'+escapeHtml(confAcomNome(x.l.r))+'</b><br><span style="font-size:11px;color:var(--ink-600);">'+fmtDateOnly(parseDataLocal(x.l.r.checkin).getTime()).slice(0,5)+' a '+fmtDateOnly(parseDataLocal(x.l.r.checkout).getTime()).slice(0,5)+(function(){ var k = String(x.l.r.hospedin_id); if(x.aReceber>0 && !jaMostrou[k]){ jaMostrou[k] = true; return '<br><span style="color:var(--red-600);font-weight:700;">reserva com saldo a pagar de '+confReal(x.aReceber)+' (total da conta, não só o consumo)</span>'; } return ''; })()+'</span></td>' +
+          '<td style="'+td+'"><b>'+escapeHtml(confAcomNome(x.l.r))+'</b><br><span style="font-size:11px;color:var(--ink-600);">'+fmtDateOnly(parseDataLocal(x.l.r.checkin).getTime()).slice(0,5)+' a '+fmtDateOnly(parseDataLocal(x.l.r.checkout).getTime()).slice(0,5)+'<br>Reserva '+escapeHtml(String(x.l.r.searchable_code||x.l.r.hospedin_id))+(function(){ var k = String(x.l.r.hospedin_id); if(x.aReceber>0 && !jaMostrou[k]){ jaMostrou[k] = true; return '<br><span style="color:var(--red-600);font-weight:700;">reserva com saldo a pagar de '+confReal(x.aReceber)+' (total da conta, não só o consumo)</span>'; } return ''; })()+'</span></td>' +
           '<td style="'+td+'">'+escapeHtml(x.i.nome)+'</td>' +
           '<td style="'+td+'text-align:center;">'+x.i.app+'</td>' +
           '<td style="'+td+'text-align:center;">'+x.i.hosp+'</td>' +
