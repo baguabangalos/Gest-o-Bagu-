@@ -2132,6 +2132,16 @@
     n = Math.round(n*100)/100;
     return (n % 1 === 0) ? String(n) : String(n);
   }
+  // Campo "hora da solicitação": data+hora local <-> ISO
+  function dtLocalVal(ms){
+    var d = new Date(ms || Date.now());
+    var p = function(n){ return String(n).padStart(2,"0"); };
+    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes());
+  }
+  function dtLocalIso(v){
+    var d = v ? new Date(v) : null;
+    return (d && !isNaN(d.getTime())) ? d.toISOString() : new Date().toISOString();
+  }
   function fmtDate(ts){
     var d = new Date(ts);
     var dd = String(d.getDate()).padStart(2,"0");
@@ -9837,6 +9847,8 @@
           '</div>' +
           '<label>Outro problema (opcional)</label>' +
           '<textarea id="problemaCustomTexto" rows="3" placeholder="Descreva outro problema, se não estiver na lista acima" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);resize:vertical;"></textarea>' +
+          '<label>Hora da solicitação</label>' +
+          '<input type="datetime-local" id="problemaHora" value="'+dtLocalVal()+'" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="problemaCancel">Cancelar</button>' +
             '<button type="button" class="btn-primary" id="problemaSalvar">'+ic("check")+' Reportar pra recepção</button>' +
@@ -9868,7 +9880,8 @@
       var btn = document.getElementById("problemaSalvar"); btn.disabled = true;
       try{
         var payload = {id:uid(), title:titulo, local:acomodacaoNome(s.acomodacaoId), description:(escolhidos.length && custom ? custom : (escolhidos.length ? null : custom)),
-          status:"pendente", origem:"limpeza", prioridade:"media", criado_por:(currentUser?currentUser.id:null)};
+          status:"pendente", origem:"limpeza", prioridade:"media", criado_por:(currentUser?currentUser.id:null),
+          created_at:dtLocalIso(document.getElementById("problemaHora").value)};
         var m = await dbInsert("manutencoes", payload, mapManutencaoFromRow);
         state.manutencoes.push(m);
         overlay.remove();
@@ -11415,7 +11428,7 @@
             '<p class="item-name" style="margin:0 0 3px;">'+ic("warning")+' '+escapeHtml(m.title)+
             ' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local||"")+'</span></p>' +
             (m.description ? '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+escapeHtml(m.description)+'</p>' : '') +
-            '<p class="item-meta">'+pInfo.label+(m.criadoPorNome ? ' · reportado por '+escapeHtml(m.criadoPorNome) : '')+'</p>' +
+            '<p class="item-meta">'+pInfo.label+(m.criadoPorNome ? ' · reportado por '+escapeHtml(m.criadoPorNome) : '')+' · solicitado em '+fmtDate(m.createdAt)+'</p>' +
             (podeEditar("recepcao") ? '<div class="item-actions"><button class="btn btn-in" data-act="resolverProblemaLimpeza" data-id="'+m.id+'">'+ic("check")+' Resolvido</button><button class="btn btn-out" data-act="editarProblemaLimpeza" data-id="'+m.id+'">'+ic("pencil")+' Editar</button></div>' : '') +
           '</div>';
         });
@@ -11689,6 +11702,8 @@
           '<input type="text" id="epLocal" style="'+estilo+'" value="'+escapeHtml(m.local||"")+'">' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">Descrição</label>' +
           '<textarea id="epDesc" rows="4" style="'+estilo+'resize:vertical;">'+escapeHtml(m.description||"")+'</textarea>' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Hora da solicitação</label>' +
+          '<input type="datetime-local" id="epHora" style="'+estilo+'" value="'+dtLocalVal(m.createdAt)+'">' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">Prioridade</label>' +
           '<select id="epPrio" style="'+estilo+'">' +
             ['alta','media','baixa'].map(function(k){ return '<option value="'+k+'"'+((m.prioridade||"media")===k?' selected':'')+'>'+({alta:"Alta",media:"Média",baixa:"Baixa"})[k]+'</option>'; }).join("") +
@@ -11704,7 +11719,7 @@
           if(!titulo){ showToast("Informe o título"); return; }
           var sb2 = document.getElementById("epSalvar"); sb2.disabled = true;
           try{
-            var upd = await dbUpdate("manutencoes", id, {title:titulo, local:document.getElementById("epLocal").value.trim()||null, description:document.getElementById("epDesc").value.trim()||null, prioridade:document.getElementById("epPrio").value}, mapManutencaoFromRow);
+            var upd = await dbUpdate("manutencoes", id, {title:titulo, local:document.getElementById("epLocal").value.trim()||null, description:document.getElementById("epDesc").value.trim()||null, prioridade:document.getElementById("epPrio").value, created_at:dtLocalIso(document.getElementById("epHora").value)}, mapManutencaoFromRow);
             var ix = state.manutencoes.findIndex(function(x){ return x.id===id; });
             if(ix>-1) state.manutencoes[ix] = upd;
             ov.remove(); showToast("Problema atualizado"); renderApp();
@@ -12570,6 +12585,7 @@
         '<select id="peSetor" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Quem vai fazer? (setor)…</option><option value="limpeza">Limpeza — aparece no serviço de limpeza</option><option value="recepcao">Recepção — aparece na revisão</option></select>' +
         '<textarea id="peDesc" rows="2" placeholder="O que precisa ser feito? (ex.: está sem almofada)" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;"></textarea>' +
         '<label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:8px;">Para a entrada do dia (opcional)<input type="date" id="peData" style="display:block;margin-top:3px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
+        '<label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:8px;">Hora da solicitação<input type="datetime-local" id="peHora" value="'+dtLocalVal()+'" style="display:block;margin-top:3px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
         '<button type="button" id="peAdd" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Adicionar pendência</button></div>';
     }
     var abertas = pendenciasEntradaAbertas(setorFiltro).sort(function(a,b){ return String(a.data_entrada||"9999").localeCompare(String(b.data_entrada||"9999")) || String(a.criado_em).localeCompare(String(b.criado_em)); });
@@ -12603,7 +12619,7 @@
       if(!desc){ showToast("Descreva o que precisa ser feito"); return; }
       add.disabled = true;
       try{
-        var payload = {id:uid(), acomodacao_id:ac, descricao:desc, status:"pendente", setor:setor};
+        var payload = {id:uid(), acomodacao_id:ac, descricao:desc, status:"pendente", setor:setor, criado_em:dtLocalIso(root.querySelector("#peHora").value)};
         if(data) payload.data_entrada = data;
         var nova = await dbInsert("pendencias_entrada", payload, function(r){ return r; });
         pendenciasEntrada.lista.unshift(nova);
@@ -12638,6 +12654,8 @@
           '<textarea id="epeDesc" rows="3" style="'+estilo+'resize:vertical;">'+escapeHtml(p.descricao||"")+'</textarea>' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">Para a entrada do dia (opcional)</label>' +
           '<input type="date" id="epeData" style="'+estilo+'" value="'+escapeHtml(p.data_entrada?String(p.data_entrada).slice(0,10):"")+'">' +
+          '<label class="item-meta" style="display:block;margin-bottom:3px;">Hora da solicitação</label>' +
+          '<input type="datetime-local" id="epeHora" style="'+estilo+'" value="'+dtLocalVal(new Date(p.criado_em).getTime())+'">' +
           '<div class="sheet-actions"><button type="button" class="btn-secondary" id="epeCancel">Cancelar</button><button type="button" class="btn-primary" id="epeSalvar">'+ic("check")+' Salvar</button></div>' +
         '</div></div>';
         document.body.insertAdjacentHTML("beforeend", html);
@@ -12649,7 +12667,7 @@
           if(!desc){ showToast("Descreva o que precisa ser feito"); return; }
           var btnS = document.getElementById("epeSalvar"); btnS.disabled = true;
           try{
-            var upd = await dbUpdate("pendencias_entrada", id, {acomodacao_id:document.getElementById("epeAcom").value, setor:document.getElementById("epeSetor").value||null, descricao:desc, data_entrada:document.getElementById("epeData").value||null}, function(r){ return r; });
+            var upd = await dbUpdate("pendencias_entrada", id, {acomodacao_id:document.getElementById("epeAcom").value, setor:document.getElementById("epeSetor").value||null, descricao:desc, data_entrada:document.getElementById("epeData").value||null, criado_em:dtLocalIso(document.getElementById("epeHora").value)}, function(r){ return r; });
             var i = pendenciasEntrada.lista.findIndex(function(x){ return x.id === id; });
             if(i > -1) pendenciasEntrada.lista[i] = upd;
             ov.remove(); showToast("Pendência atualizada"); rerender();
