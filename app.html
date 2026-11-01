@@ -13148,7 +13148,7 @@
   //  • Perda  = saída com destino "Vencidos" ou "Danificados" (qty × custo)
   //  • Cortesia/consumo interno = demais saídas (qty × custo), menos "Recepção" (ainda não descontado)
   // O custo usado é o valor pago ATUAL do item (estimativa, não guarda histórico de preço).
-  var finMes = null, finMov = {lista:[], carregado:false, erro:false, carregando:false};
+  var finSub = "resultado", finMes = null, finMov = {lista:[], carregado:false, erro:false, carregando:false};
   function finMesKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
   function finMesNome(key){ var p = key.split("-"); var n = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"]; return n[+p[1]-1]+" de "+p[0]; }
   function finMesDeslocar(key, delta){ var p = key.split("-"); return finMesKey(new Date(+p[0], +p[1]-1+delta, 1)); }
@@ -13264,10 +13264,6 @@
     var pp = Object.keys(r.perdasItem).sort(function(a,b){ return r.perdasItem[b].custo - r.perdasItem[a].custo; });
     html += '<div class="section-title">Perdas por item</div>';
     html += pp.length ? '<div class="card">' + pp.map(function(n){ var v = r.perdasItem[n]; return linha(escapeHtml(n)+' <span style="color:var(--ink-600);">× '+fmtQty(v.qty)+' ('+Object.keys(v.motivo).map(function(k){ return k.toLowerCase(); }).join(", ")+')</span>', "− "+restMoney(v.custo), false, "var(--red-600)"); }).join("") + '</div>' : '<div class="empty">Nenhuma perda registrada neste mês.</div>';
-    if(podeEditar("estoque")){
-      html += '<div class="section-title">Reposição, perdas e consumo (Hospedin)</div>' + renderConferenciaResumoHtml();
-      html += '<div class="section-title">Conferência por estadia (Hospedin)</div>' + renderConferenciaDetalheHtml();
-    }
     // últimos 6 meses
     html += '<div class="section-title">Últimos meses</div><div class="card">';
     for(var i=0;i<6;i++){
@@ -13275,8 +13271,19 @@
       html += linha('<span style="text-transform:capitalize;">'+finMesNome(k).split(" de ")[0]+'</span> <span style="color:var(--ink-600);">vendas '+restMoney(c.receita)+' · perdas '+restMoney(c.perdas)+' · materiais '+restMoney(c.gastos)+'</span>', restMoney(c.resultado), false, cor(c.resultado));
     }
     html += '</div><p class="item-meta" style="margin-top:10px;">Perdas: dê saída do item com destino “Vencidos” ou “Danificados”. Materiais de limpeza, enxoval etc. contam como gasto na compra (entrada no estoque), então a saída deles não é contada de novo. O custo usa o valor pago atual de cada item.</p>';
+    var podeConf = podeEditar("estoque");
+    if(!podeConf) finSub = "resultado";
+    var nav = podeConf ? ('<div class="seg-toggle" style="margin-bottom:12px;">' +
+      '<button data-fsub="resultado" class="'+(finSub==="resultado"?"active":"")+'">Resultado</button>' +
+      '<button data-fsub="reposicao" class="'+(finSub==="reposicao"?"active":"")+'">Reposição e perdas</button>' +
+      '<button data-fsub="estadia" class="'+(finSub==="estadia"?"active":"")+'">Conferência por estadia</button></div>') : '';
+    if(finSub === "reposicao") html = nav + renderConferenciaResumoHtml();
+    else if(finSub === "estadia") html = nav + renderConferenciaDetalheHtml();
+    else html = nav + html;
     main.innerHTML = html;
-    if(podeEditar("estoque")) ligarConferenciaHospedin(main);
+    main.querySelectorAll("[data-fsub]").forEach(function(b){ b.onclick = function(){ finSub = b.getAttribute("data-fsub"); renderFinanceiro(); }; });
+    if(podeConf) ligarConferenciaHospedin(main);
+    if(finSub !== "resultado") return;
     document.getElementById("finPrev").onclick = function(){ finMes = finMesDeslocar(finMes, -1); renderFinanceiro(); };
     document.getElementById("finNext").onclick = function(){ if(finMes < hojeKey){ finMes = finMesDeslocar(finMes, 1); renderFinanceiro(); } };
   }
