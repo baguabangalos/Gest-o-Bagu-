@@ -9599,7 +9599,7 @@
     }).then(function(){ conferenciaHosp.carregando = false; renderAbastecimento(); });
   }
   function confReal(centavos){ return "R$ " + (centavos/100).toFixed(2).replace(".",","); }
-  function renderConferenciaHospedinHtml(){
+  function renderConferenciaDetalheHtml(){
     if(!podeEditar("estoque")) return '<div class="empty">Você não tem permissão para ver a conferência.</div>';
     var h = '<p class="item-meta" style="margin:0 0 10px;">Compara o que saiu do Estoque para cada acomodação durante a estadia com o consumo lançado no Hospedin. Mostra o que saiu e <b>não foi cobrado</b>.</p>';
     h += '<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">' +
@@ -9688,7 +9688,163 @@
     h += '<p class="item-meta" style="margin-top:10px;">Só entram itens de frigobar/consumo. Saída lançada sem a acomodação certa, ou com nome muito diferente do Hospedin, não aparece aqui.</p>';
     return h;
   }
+  // ---------- Resumo: reposto (pago / não pago), perda e consumo interno, por semana e por mês ----------
+  var CONF_DEST_PERDA = ["Vencidos", "Danificados"];
+  var CONF_DEST_INTERNO = ["Funcionário", "Guilherme", "Marcella", "Governança", "Prestadores de serviço", "Welcome drink"];
+  conferenciaHosp.modo = "resumo"; conferenciaHosp.per = "semana"; conferenciaHosp.off = 0;
+  conferenciaHosp.cache = {}; conferenciaHosp.resCarregando = false; conferenciaHosp.resErro = null;
+
+  function confPeriodo(){
+    var base = new Date(); base.setHours(0,0,0,0);
+    var ini, fim, rotulo;
+    if(conferenciaHosp.per === "mes"){
+      ini = new Date(base.getFullYear(), base.getMonth() + conferenciaHosp.off, 1);
+      fim = new Date(ini.getFullYear(), ini.getMonth() + 1, 0, 23, 59, 59, 999);
+      rotulo = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"][ini.getMonth()] + " de " + ini.getFullYear();
+    } else {
+      var dow = (base.getDay() + 6) % 7; // segunda = 0
+      ini = new Date(base.getFullYear(), base.getMonth(), base.getDate() - dow + 7*conferenciaHosp.off);
+      fim = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + 6, 23, 59, 59, 999);
+      rotulo = fmtDateOnly(ini.getTime()).slice(0,5) + " a " + fmtDateOnly(fim.getTime()).slice(0,5);
+    }
+    return {ini:ini.getTime(), fim:fim.getTime(), rotulo:rotulo};
+  }
+  function confPrecoDe(nomeHosp){
+    var c = Object.keys(HOSP_CONSUMO).filter(function(k){ return HOSP_CONSUMO[k][0] === nomeHosp; })[0];
+    return c ? HOSP_CONSUMO[c][1] : 0;
+  }
+  // Monta o resumo; devolve {precisa:[ids ainda sem dado do Hospedin], tot, itens, semEstadia, naoCobraveis}
+  function confResumoCalcular(per){
+    var DIA = 86400000;
+    var rows = (state.estoque.hospedinOcupacao||[]).filter(function(r){ return hospedinLinhaValida(r) && r.hospedin_id && parseDataLocal(r.checkin) && parseDataLocal(r.checkout); });
+    var porAc = {};
+    rows.forEach(function(r){ var k = normalizarBusca(r.acomodacao); (porAc[k] = porAc[k] || []).push(r); });
+    Object.keys(porAc).forEach(function(k){
+      porAc[k] = porAc[k].map(function(r){
+        var ci = parseDataLocal(r.checkin).getTime(), co = parseDataLocal(r.checkout).getTime(), ini = ci;
+        porAc[k].forEach(function(o){ if(o !== r && parseDataLocal(o.checkout).getTime() === ci) ini = ci + DIA; });
+        return {r:r, ini:ini, fim:co + DIA - 1};
+      });
+    });
+    var itemInfo = {};
+    state.estoque.items.forEach(function(it){ itemInfo[it.id] = {nome:it.name, hosp:confNomeHospedinDoItem(it.name), preco:it.precoVenda}; });
+    var acomNomes = {}; state.acomodacoes.forEach(function(a){ acomNomes[normalizarBusca(a.nome)] = true; });
+    var perdaN = CONF_DEST_PERDA.map(normalizarBusca), internoN = CONF_DEST_INTERNO.map(normalizarBusca);
+    var tot = {pago:{q:0,v:0}, naoPago:{q:0,v:0}, perda:{q:0,v:0}, interno:{q:0,v:0}};
+    var itens = {}, semEstadia = 0, naoCobraveis = 0, precisa = {}, grupos = {};
+    function linhaItem(nome){ return itens[nome] = itens[nome] || {nome:nome, pago:0, naoPago:0, perda:0, interno:0}; }
+    state.estoque.movements.forEach(function(m){
+      if(m.type !== "saida" || !m.destino) return;
+      var info = itemInfo[m.itemId]; if(!info) return;
+      var d = normalizarBusca(m.destino);
+      if(perdaN.indexOf(d) > -1 || internoN.indexOf(d) > -1){
+        if(m.date < per.ini || m.date > per.fim) return;
+        var g = perdaN.indexOf(d) > -1 ? "perda" : "interno";
+        var pr = info.hosp ? confPrecoDe(info.hosp) : Math.round((info.preco||0)*100);
+        tot[g].q += m.qty; tot[g].v += m.qty * pr; linhaItem(info.nome)[g] += m.qty;
+        return;
+      }
+      if(!acomNomes[d]) return; // Recepção, venda avulsa etc.: fora deste resumo
+      if(!info.hosp){ if(m.date >= per.ini && m.date <= per.fim) naoCobraveis += m.qty; return; }
+      var est = (porAc[d]||[]).filter(function(e){ return m.date >= e.ini && m.date <= e.fim; })[0];
+      if(!est){ if(m.date >= per.ini && m.date <= per.fim) semEstadia += m.qty; return; }
+      var gk = est.r.hospedin_id + "|" + info.hosp;
+      (grupos[gk] = grupos[gk] || {est:est, nome:info.hosp, itemNome:info.nome, movs:[]}).movs.push(m);
+    });
+    Object.keys(grupos).forEach(function(gk){
+      var g = grupos[gk];
+      if(!g.movs.some(function(m){ return m.date >= per.ini && m.date <= per.fim; })) return;
+      var id = String(g.est.r.hospedin_id), dado = conferenciaHosp.cache[id];
+      if(!dado){ precisa[id] = true; return; }
+      if(dado.erro){ semEstadia += g.movs.reduce(function(s,m){ return s + ((m.date >= per.ini && m.date <= per.fim) ? m.qty : 0); }, 0); return; }
+      var cobrado = 0;
+      (dado.vendas||[]).forEach(function(v){ var inf = HOSP_CONSUMO[v.item]; if(inf && inf[0] === g.nome) cobrado += v.qtd; });
+      var preco = confPrecoDe(g.nome);
+      g.movs.sort(function(a,b){ return a.date - b.date; });
+      var acum = 0;
+      g.movs.forEach(function(m){
+        var pagoQ = Math.max(0, Math.min(m.qty, cobrado - acum)); acum += m.qty;
+        if(m.date < per.ini || m.date > per.fim) return;
+        var naoQ = m.qty - pagoQ;
+        tot.pago.q += pagoQ; tot.pago.v += pagoQ * preco; tot.naoPago.q += naoQ; tot.naoPago.v += naoQ * preco;
+        var li = linhaItem(g.itemNome); li.pago += pagoQ; li.naoPago += naoQ;
+      });
+    });
+    return {precisa:Object.keys(precisa), tot:tot, itens:itens, semEstadia:semEstadia, naoCobraveis:naoCobraveis};
+  }
+  function confResumoCarregar(ids){
+    conferenciaHosp.resCarregando = true; conferenciaHosp.resErro = null;
+    var lotes = []; for(var i = 0; i < ids.length; i += 60) lotes.push(ids.slice(i, i + 60));
+    var p = Promise.resolve();
+    lotes.forEach(function(lote){
+      p = p.then(function(){
+        return sb.functions.invoke("consumo-hospedin", {body:{ids:lote.map(Number)}}).then(function(res){
+          if(res.error) throw res.error;
+          if(!res.data || !res.data.ok) throw new Error((res.data && res.data.erro) || "falha");
+          var vistos = {};
+          (res.data.reservas||[]).forEach(function(r){ vistos[String(r.id)] = true; conferenciaHosp.cache[String(r.id)] = r.erro ? {erro:true} : r; });
+          lote.forEach(function(id){ if(!vistos[String(id)]) conferenciaHosp.cache[String(id)] = {erro:true}; });
+        });
+      });
+    });
+    p.catch(function(err){ console.error(err); conferenciaHosp.resErro = "Não consegui consultar o Hospedin agora. Toque em Atualizar para tentar de novo."; })
+     .then(function(){ conferenciaHosp.resCarregando = false; renderAbastecimento(); });
+  }
+  function renderConferenciaResumoHtml(){
+    var per = confPeriodo();
+    var h = '<div class="seg-toggle" style="margin-bottom:10px;"><button data-cper="semana" class="'+(conferenciaHosp.per==="semana"?"active":"")+'">Semana</button><button data-cper="mes" class="'+(conferenciaHosp.per==="mes"?"active":"")+'">Mês</button></div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;">' +
+      '<button type="button" id="confAnt" style="background:none;border:1px solid var(--line);border-radius:9px;padding:8px 14px;font-size:16px;">‹</button>' +
+      '<b style="font-size:14.5px;">'+escapeHtml(per.rotulo)+(conferenciaHosp.off===0?' <span style="font-weight:600;color:var(--ink-600);font-size:12px;">(atual)</span>':'')+'</b>' +
+      '<button type="button" id="confProx" style="background:none;border:1px solid var(--line);border-radius:9px;padding:8px 14px;font-size:16px;"'+(conferenciaHosp.off>=0?' disabled':'')+'>›</button></div>';
+    var r = confResumoCalcular(per);
+    if(r.precisa.length && !conferenciaHosp.resCarregando && !conferenciaHosp.resErro){
+      conferenciaHosp.resCarregando = true;
+      setTimeout(function(){ confResumoCarregar(r.precisa); }, 0);
+    }
+    if(conferenciaHosp.resCarregando) return h + '<div class="empty">Consultando o Hospedin… pode levar alguns segundos.</div>';
+    if(conferenciaHosp.resErro){
+      return h + '<div class="empty">'+escapeHtml(conferenciaHosp.resErro)+'</div><button type="button" id="confAtualizar" style="display:block;width:100%;margin-top:8px;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;">Atualizar</button>';
+    }
+    var t = r.tot;
+    function card(titulo, q, v, cor, nota){
+      return '<div class="card" style="margin:0;border-left:4px solid '+cor+';padding:12px;"><p class="item-meta" style="margin:0 0 2px;font-weight:700;">'+titulo+'</p>' +
+        '<p style="margin:0;font-size:22px;font-weight:800;">'+q+' <span style="font-size:12px;font-weight:600;color:var(--ink-600);">un.</span></p>' +
+        '<p class="item-meta" style="margin:2px 0 0;">'+confReal(v)+(nota?' · '+nota:'')+'</p></div>';
+    }
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">' +
+      card('Reposto e pago', t.pago.q, t.pago.v, 'var(--teal-700)', 'cobrado no Hospedin') +
+      card('Reposto e não pago', t.naoPago.q, t.naoPago.v, 'var(--red-600)', 'sem cobrança') +
+      card('Perda', t.perda.q, t.perda.v, 'var(--amber-600)', 'vencidos e danificados') +
+      card('Consumo interno', t.interno.q, t.interno.v, 'var(--ink-400)', 'equipe e cortesias') + '</div>';
+    var lista = Object.keys(r.itens).map(function(k){ return r.itens[k]; }).sort(function(a,b){ return a.nome.localeCompare(b.nome, "pt-BR"); });
+    if(!lista.length) h += '<div class="empty">Nenhuma saída neste período.</div>';
+    else {
+      var th = 'padding:7px 5px;font-size:11px;color:var(--ink-600);border-bottom:2px solid var(--line);text-align:center;white-space:nowrap;';
+      var td = 'padding:8px 5px;border-bottom:1px solid var(--line);font-size:13px;text-align:center;';
+      h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="'+th+'text-align:left;">Item</th><th style="'+th+'">Pago</th><th style="'+th+'">Não pago</th><th style="'+th+'">Perda</th><th style="'+th+'">Interno</th></tr></thead><tbody>' +
+        lista.map(function(i){
+          function c(n, cor){ return '<td style="'+td+(n?('color:'+cor+';font-weight:700;'):'color:var(--ink-400);')+'">'+(n||'·')+'</td>'; }
+          return '<tr><td style="'+td+'text-align:left;">'+escapeHtml(i.nome)+'</td>'+c(i.pago,'var(--teal-700)')+c(i.naoPago,'var(--red-600)')+c(i.perda,'var(--amber-600)')+c(i.interno,'var(--ink-600)')+'</tr>';
+        }).join("") + '</tbody></table></div>';
+    }
+    var notas = [];
+    if(r.semEstadia) notas.push(r.semEstadia + ' un. enviadas a acomodações sem estadia encontrada no Hospedin (não entram em "pago" nem "não pago")');
+    if(r.naoCobraveis) notas.push(r.naoCobraveis + ' un. de itens das acomodações que o Hospedin não cobra (ex.: sabonete)');
+    h += '<p class="item-meta" style="margin-top:10px;">"Pago" = lançado na conta do hóspede no Hospedin. "Perda" = saídas para Vencidos e Danificados. "Consumo interno" = Funcionário, Guilherme, Marcella, Governança, Prestadores de serviço e Welcome drink. Recepção, venda avulsa e empréstimo ao restaurante não entram.'+(notas.length?('<br>'+notas.join('<br>')):'')+'</p>';
+    return h;
+  }
+  function renderConferenciaHospedinHtml(){
+    if(!podeEditar("estoque")) return '<div class="empty">Você não tem permissão para ver a conferência.</div>';
+    var h = '<div class="seg-toggle" style="margin-bottom:12px;"><button data-cmodo="resumo" class="'+(conferenciaHosp.modo==="resumo"?"active":"")+'">Resumo</button><button data-cmodo="detalhe" class="'+(conferenciaHosp.modo==="detalhe"?"active":"")+'">Detalhe por estadia</button></div>';
+    return h + (conferenciaHosp.modo === "detalhe" ? renderConferenciaDetalheHtml() : renderConferenciaResumoHtml());
+  }
   function ligarConferenciaHospedin(main){
+    main.querySelectorAll("[data-cmodo]").forEach(function(b){ b.onclick = function(){ conferenciaHosp.modo = b.getAttribute("data-cmodo"); renderAbastecimento(); }; });
+    main.querySelectorAll("[data-cper]").forEach(function(b){ b.onclick = function(){ conferenciaHosp.per = b.getAttribute("data-cper"); conferenciaHosp.off = 0; renderAbastecimento(); }; });
+    var ant = main.querySelector("#confAnt"); if(ant) ant.onclick = function(){ conferenciaHosp.off--; renderAbastecimento(); };
+    var prox = main.querySelector("#confProx"); if(prox) prox.onclick = function(){ if(conferenciaHosp.off < 0){ conferenciaHosp.off++; renderAbastecimento(); } };
+    var atu = main.querySelector("#confAtualizar"); if(atu) atu.onclick = function(){ Object.keys(conferenciaHosp.cache).forEach(function(k){ if(conferenciaHosp.cache[k].erro) delete conferenciaHosp.cache[k]; }); conferenciaHosp.resErro = null; renderAbastecimento(); };
     var b = main.querySelector("#confBuscar"); if(b) b.onclick = confBuscar;
     var s = main.querySelector("#confDias"); if(s) s.onchange = function(){ conferenciaHosp.dias = Number(s.value)||7; };
     var c = main.querySelector("#confSoDif"); if(c) c.onchange = function(){ conferenciaHosp.soDif = c.checked; renderAbastecimento(); };
