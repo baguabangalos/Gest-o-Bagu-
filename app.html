@@ -9875,13 +9875,10 @@
       '<button data-asub="pendentes" class="'+(abastecimentoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-asub="feitos" class="'+(abastecimentoSubView==="feitos"?"active":"")+'">Abastecidos hoje</button>' +
       '<button data-asub="padrao" class="'+(abastecimentoSubView==="padrao"?"active":"")+'">Itens por acomodação</button>' +
-      (podeEditar("estoque") ? '<button data-asub="conferencia" class="'+(abastecimentoSubView==="conferencia"?"active":"")+'">Conferência Hospedin</button>' : '') +
     '</div>';
     var list = abastecimentoSubView === "feitos" ? feitos : pend;
     if(abastecimentoSubView === "padrao"){
       html += renderItensPorAcomodacaoHtml();
-    } else if(abastecimentoSubView === "conferencia"){
-      html += renderConferenciaHospedinHtml();
     } else if(list.length === 0){
       html += '<div class="empty">'+(abastecimentoSubView==="pendentes" ? "Nenhum pedido de frigobar em aberto." : "Nenhum abastecimento feito hoje ainda.")+'</div>';
     } else {
@@ -9895,7 +9892,6 @@
     });
     wireSolicitacaoActions(main);
     if(abastecimentoSubView === "padrao") ligarItensPorAcomodacao(main);
-    if(abastecimentoSubView === "conferencia") ligarConferenciaHospedin(main);
     document.getElementById("importarExtratoBtn").onclick = function(){
       document.getElementById("importarExtratoInput").click();
     };
@@ -13270,6 +13266,7 @@
     html += pp.length ? '<div class="card">' + pp.map(function(n){ var v = r.perdasItem[n]; return linha(escapeHtml(n)+' <span style="color:var(--ink-600);">× '+fmtQty(v.qty)+' ('+Object.keys(v.motivo).map(function(k){ return k.toLowerCase(); }).join(", ")+')</span>', "− "+restMoney(v.custo), false, "var(--red-600)"); }).join("") + '</div>' : '<div class="empty">Nenhuma perda registrada neste mês.</div>';
     if(podeEditar("estoque")){
       html += '<div class="section-title">Reposição, perdas e consumo (Hospedin)</div>' + renderConferenciaResumoHtml();
+      html += '<div class="section-title">Conferência por estadia (Hospedin)</div>' + renderConferenciaDetalheHtml();
     }
     // últimos 6 meses
     html += '<div class="section-title">Últimos meses</div><div class="card">';
