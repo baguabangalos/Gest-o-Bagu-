@@ -272,7 +272,7 @@
     wind:'<path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 13h15a3 3 0 1 1-3 3"/><path d="M3 18h9a2.5 2.5 0 1 0-2.5-2.5"/>',
     droplet:'<path d="M12 3c2.5 3 4 5.5 4 8a4 4 0 1 1-8 0c0-2.5 1.5-5 4-8z"/>',
     flame:'<path d="M12 3c2 3-1 4-1 7a3 3 0 1 0 6 0c0-1-.5-2-1-2 .3 3-2 3-2 1 0-2 1-3-2-6z"/>',
-    heart:'<path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>',
+    leaf:'<path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15z"/><path d="M5 19c3-5 6-8 10-10"/>',
     chat:'<path d="M4 5h16v11H9l-5 4z"/>',
     bell:'<path d="M6 10a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M9.5 20a2.5 2.5 0 0 0 5 0"/>'
   };
@@ -483,7 +483,7 @@
         '<p style="font-size:13.5px;color:var(--ink-600);line-height:1.5;margin:0 0 10px;">'+t("massagemTexto1")+'</p>' +
         '<p style="font-size:13.5px;color:var(--ink-900);font-weight:600;line-height:1.5;margin:0 0 16px;">'+t("massagemTexto2")+'</p>' +
         massagistas.map(function(m){
-          return '<a class="btn-opt" href="'+linkMassagista(m)+'" target="_blank" rel="noopener" style="text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">'+icG("heart")+'</span><span><span>'+t("falarCom")+escapeHtml(m.nome)+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>';
+          return '<a class="btn-opt" href="'+linkMassagista(m)+'" target="_blank" rel="noopener" style="text-decoration:none;background:#e9f9ef;border-color:#25D366;"><span class="ic">'+icG("leaf")+'</span><span><span>'+t("falarCom")+escapeHtml(m.nome)+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>';
         }).join("") +
         '<button class="btn-ghost" id="massVoltar">'+t("voltar")+'</button>' +
       '</div>';
@@ -517,7 +517,7 @@
         '<button class="btn-opt" data-tipo="sauna"><span class="ic">'+icG("wind")+'</span><span><span>'+t("ligarSauna")+'</span><span class="sub">'+t("pedirLigarAgora")+'</span></span></button>' +
         (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha_troca"><span class="ic">'+icG("droplet")+'</span><span><span>'+t("trocarLenha")+'</span><span class="sub">'+t("trocarLenhaSub")+'</span></span></button>' : '') +
         (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha"><span class="ic">'+icG("flame")+'</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' : '') +
-        '<button class="btn-opt" id="btnMassagem"><span class="ic">'+icG("heart")+'</span><span><span>'+t("massagem")+'</span><span class="sub">'+t("massagemSub")+'</span></span></button>' +
+        '<button class="btn-opt" id="btnMassagem"><span class="ic">'+icG("leaf")+'</span><span><span>'+t("massagem")+'</span><span class="sub">'+t("massagemSub")+'</span></span></button>' +
         '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">'+icG("chat")+'</span><span><span>'+t("faleGestao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></button>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
