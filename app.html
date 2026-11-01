@@ -9531,6 +9531,153 @@
   }
 
   var abastecimentoSubView = "pendentes";
+  // ---------- Conferência: saídas do Estoque x consumo lançado no Hospedin ----------
+  // Código do item no Hospedin -> [nome, preço em centavos]. Só o que sai do frigobar/estoque.
+  var HOSP_CONSUMO = {
+    308551:["Água com gás",800], 259:["Água com gás",800], 130:["Água com gás",800],
+    307367:["Água sem gás",800], 276:["Água sem gás",800], 117:["Água sem gás",800],
+    800449:["Água saborizada limão",800], 800451:["Água saborizada maçã",800], 800450:["Água saborizada maracujá",800],
+    317925:["Coca Cola",800], 333005:["Coca Cola Zero",800],
+    333006:["Guaraná / Fanta guaraná",800], 375797:["Guaraná / Fanta guaraná zero",800],
+    375793:["Suco Kapo",600], 375788:["Chá Mate Leão",700], 375787:["Chá Mate Leão Pêssego / Ice Tea",700],
+    305625:["Schweppes",800], 375790:["Schweppes Mixed Vodka",1200],
+    305615:["Corona",1600], 305614:["Heineken",1600], 504011:["Stella Puro Gold",1600],
+    380988:["Powerade",1000], 305626:["Energético Red Bull / Monster",2200], 375800:["Energético Red Bull / Monster zero",2200],
+    357325:["Toddynho",700], 305616:["Nescau",700],
+    305619:["Snickers",1000], 305618:["Kit Kat",1000], 377398:["Marshmallow",1800],
+    305622:["Amendoim",1200], 305623:["Castanha de Caju",2200], 445476:["Castanha de Caju caramelizada",900], 445475:["Mix Nuts 50g",1200],
+    305620:["Barra de Cereal Nuts Nutry",500], 498866:["Barukas 50g",1400], 305624:["Gergeliko",1200], 305621:["Pringles original",3000], 504109:["Hersheys 60% cacau",1800],
+    800484:["Cápsula de café decaf",600], 415181:["Cápsula de café filtrado",600], 800483:["Cápsula de cappuccino classic",600], 800482:["Cápsula de expresso pleno",600]
+  };
+  var conferenciaHosp = {dias:7, carregando:false, erro:null, resultado:null, geradoEm:null};
+
+  function confTokens(s){
+    return normalizarBusca(s).replace(/[^a-z0-9 ]+/g," ").split(/\s+/).filter(function(t){ return t; });
+  }
+  // Descobre a qual item do Hospedin um item do estoque corresponde (pelo nome).
+  function confNomeHospedinDoItem(nomeApp){
+    var tk = confTokens(nomeApp); if(!tk.length) return null;
+    var melhor = null, extraMin = 99, vistos = {};
+    Object.keys(HOSP_CONSUMO).forEach(function(cod){
+      var nome = HOSP_CONSUMO[cod][0]; if(vistos[nome]) return; vistos[nome] = true;
+      var th = confTokens(nome);
+      var todos = tk.every(function(t){ return th.indexOf(t) > -1; });
+      if(!todos) return;
+      var extra = th.length - tk.length;
+      if(extra < extraMin){ extraMin = extra; melhor = nome; }
+    });
+    if(melhor) return melhor;
+    // fallback: o nome do Hospedin está inteiro dentro do nome do item (ex.: "Suco Kapo Uva" -> "Suco Kapo")
+    var maior = 0; vistos = {};
+    Object.keys(HOSP_CONSUMO).forEach(function(cod){
+      var nome = HOSP_CONSUMO[cod][0]; if(vistos[nome]) return; vistos[nome] = true;
+      var th = confTokens(nome);
+      if(th.every(function(t){ return tk.indexOf(t) > -1; }) && th.length > maior){ maior = th.length; melhor = nome; }
+    });
+    return melhor;
+  }
+  function confBuscar(){
+    var hoje = new Date(); hoje.setHours(23,59,59,999);
+    var ini = new Date(); ini.setHours(0,0,0,0); ini.setDate(ini.getDate() - conferenciaHosp.dias);
+    var rows = (state.estoque.hospedinOcupacao||[]).filter(function(r){
+      if(!hospedinLinhaValida(r) || !r.hospedin_id) return false;
+      var co = parseDataLocal(r.checkout); if(!co) return false;
+      return co.getTime() >= ini.getTime() && co.getTime() <= hoje.getTime();
+    });
+    conferenciaHosp.carregando = true; conferenciaHosp.erro = null; renderAbastecimento();
+    var ids = rows.map(function(r){ return Number(r.hospedin_id); }).slice(0,80);
+    if(!ids.length){ conferenciaHosp.carregando = false; conferenciaHosp.resultado = {rows:rows, porId:{}}; conferenciaHosp.geradoEm = Date.now(); renderAbastecimento(); return; }
+    sb.functions.invoke("consumo-hospedin", {body:{ids:ids}}).then(function(res){
+      if(res.error) throw res.error;
+      if(!res.data || !res.data.ok) throw new Error((res.data && res.data.erro) || "falha");
+      var porId = {};
+      (res.data.reservas||[]).forEach(function(r){ porId[String(r.id)] = r; });
+      conferenciaHosp.resultado = {rows:rows, porId:porId};
+      conferenciaHosp.geradoEm = Date.now();
+    }).catch(function(err){
+      console.error(err); conferenciaHosp.erro = "Não consegui consultar o Hospedin agora. Tente de novo em instantes.";
+    }).then(function(){ conferenciaHosp.carregando = false; renderAbastecimento(); });
+  }
+  function confReal(centavos){ return "R$ " + (centavos/100).toFixed(2).replace(".",","); }
+  function renderConferenciaHospedinHtml(){
+    if(!podeEditar("estoque")) return '<div class="empty">Você não tem permissão para ver a conferência.</div>';
+    var h = '<p class="item-meta" style="margin:0 0 10px;">Compara o que saiu do Estoque para cada acomodação durante a estadia com o consumo lançado no Hospedin. Mostra o que saiu e <b>não foi cobrado</b>.</p>';
+    h += '<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">' +
+      '<select id="confDias" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+      [3,7,15,30].map(function(n){ return '<option value="'+n+'"'+(conferenciaHosp.dias===n?' selected':'')+'>Saídas dos últimos '+n+' dias</option>'; }).join("") + '</select>' +
+      '<button type="button" id="confBuscar" style="padding:0 16px;background:var(--teal-700);color:#fff;border:none;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:700;height:42px;">Conferir</button></div>';
+    if(conferenciaHosp.carregando) return h + '<div class="empty">Consultando o Hospedin… pode levar alguns segundos.</div>';
+    if(conferenciaHosp.erro) return h + '<div class="empty">'+escapeHtml(conferenciaHosp.erro)+'</div>';
+    var R = conferenciaHosp.resultado;
+    if(!R) return h + '<div class="empty">Toque em Conferir para comparar.</div>';
+    if(!R.rows.length) return h + '<div class="empty">Nenhuma estadia com saída nesse período.</div>';
+
+    // saídas do estoque, já traduzidas para o nome do item no Hospedin
+    var nomeDoItem = {};
+    state.estoque.items.forEach(function(it){ nomeDoItem[it.id] = confNomeHospedinDoItem(it.name); });
+    var saidas = state.estoque.movements.filter(function(m){ return m.type === "saida" && m.destino && nomeDoItem[m.itemId]; });
+    var DIA = 86400000;
+    var linhas = [], semDados = 0, totalNaoCobrado = 0, qtdNaoCobrado = 0;
+    R.rows.slice().sort(function(a,b){ return String(b.checkout).localeCompare(String(a.checkout)); }).forEach(function(r){
+      var dado = R.porId[String(r.hospedin_id)];
+      if(!dado || dado.erro){ semDados++; return; }
+      var ci = parseDataLocal(r.checkin).getTime(), co = parseDataLocal(r.checkout).getTime();
+      // se outra estadia na mesma acomodação começa no dia em que esta termina, a saída desse dia é desta (quem saiu)
+      var ini = ci;
+      (state.estoque.hospedinOcupacao||[]).forEach(function(o){
+        if(o !== r && hospedinLinhaValida(o) && normalizarBusca(o.acomodacao) === normalizarBusca(r.acomodacao)){
+          var oco = parseDataLocal(o.checkout); if(oco && oco.getTime() === ci) ini = ci + DIA;
+        }
+      });
+      var fim = co + DIA - 1;
+      var nomeAc = normalizarBusca(r.acomodacao);
+      var app = {}, hosp = {}, preco = {};
+      saidas.forEach(function(m){
+        if(normalizarBusca(m.destino) !== nomeAc || m.date < ini || m.date > fim) return;
+        var n = nomeDoItem[m.itemId]; app[n] = (app[n]||0) + m.qty;
+      });
+      (dado.vendas||[]).forEach(function(v){
+        var info = HOSP_CONSUMO[v.item]; if(!info) return;
+        hosp[info[0]] = (hosp[info[0]]||0) + v.qtd; preco[info[0]] = v.centavos || info[1];
+      });
+      var nomes = {}; Object.keys(app).concat(Object.keys(hosp)).forEach(function(n){ nomes[n] = true; });
+      var itens = Object.keys(nomes).sort().map(function(n){
+        var a = app[n]||0, b = hosp[n]||0;
+        var p = preco[n] || (function(){ var c = Object.keys(HOSP_CONSUMO).filter(function(k){ return HOSP_CONSUMO[k][0] === n; })[0]; return c ? HOSP_CONSUMO[c][1] : 0; })();
+        return {nome:n, app:a, hosp:b, preco:p};
+      });
+      var nao = itens.filter(function(i){ return i.app > i.hosp; });
+      nao.forEach(function(i){ totalNaoCobrado += (i.app - i.hosp) * i.preco; qtdNaoCobrado += (i.app - i.hosp); });
+      linhas.push({r:r, dado:dado, itens:itens});
+    });
+    var cobrar = linhas.filter(function(l){ return l.itens.some(function(i){ return i.app > i.hosp; }); });
+    h += '<div class="card" style="margin-bottom:12px;"><p class="item-name" style="margin:0 0 3px;">'+(qtdNaoCobrado ? (qtdNaoCobrado+' item(ns) saíram e não foram cobrados · '+confReal(totalNaoCobrado)) : 'Nada fora do lugar neste período')+'</p>' +
+      '<p class="item-meta">'+linhas.length+' estadia(s) conferida(s)'+(semDados?(' · '+semDados+' sem dados do Hospedin'):'')+'</p></div>';
+    var ordem = cobrar.concat(linhas.filter(function(l){ return cobrar.indexOf(l) === -1; }));
+    ordem.forEach(function(l){
+      var temNao = cobrar.indexOf(l) > -1;
+      var aReceber = Number(l.dado.aReceber)||0;
+      h += '<div class="card" style="margin-bottom:8px;border-left:4px solid '+(temNao?'var(--red-600)':'var(--teal-700)')+';">' +
+        '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(l.r.acomodacao)+' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">'+fmtDateOnly(parseDataLocal(l.r.checkin).getTime())+' → '+fmtDateOnly(parseDataLocal(l.r.checkout).getTime())+'</span></p>' +
+        '<p class="item-meta" style="margin:0 0 6px;">'+escapeHtml(l.r.hospede||"")+(aReceber>0 ? ' · <b style="color:var(--red-600);">falta pagar '+confReal(aReceber)+' na conta</b>' : ' · conta quitada')+'</p>';
+      if(!l.itens.length) h += '<p class="item-meta">Sem saída no Estoque e sem consumo no Hospedin.</p>';
+      l.itens.forEach(function(i){
+        var d = i.app - i.hosp, txt, cor;
+        if(d > 0){ txt = 'saiu '+i.app+' · cobrado '+i.hosp+' → <b>faltou cobrar '+d+' ('+confReal(d*i.preco)+')</b>'; cor = "var(--red-600)"; }
+        else if(d < 0){ txt = 'saiu '+i.app+' · cobrado '+i.hosp+' → cobrado a mais no Hospedin (sem saída no app: '+(-d)+')'; cor = "var(--amber-600)"; }
+        else { txt = 'saiu '+i.app+' · cobrado '+i.hosp+' ✓'; cor = "var(--ink-600)"; }
+        h += '<p style="margin:2px 0;font-size:13.5px;color:'+cor+';">'+escapeHtml(i.nome)+': '+txt+'</p>';
+      });
+      h += '</div>';
+    });
+    h += '<p class="item-meta" style="margin-top:10px;">Só entram itens de frigobar/consumo. Saída lançada sem destino na acomodação certa, ou com nome muito diferente do Hospedin, não aparece aqui.</p>';
+    return h;
+  }
+  function ligarConferenciaHospedin(main){
+    var b = main.querySelector("#confBuscar"); if(b) b.onclick = confBuscar;
+    var s = main.querySelector("#confDias"); if(s) s.onchange = function(){ conferenciaHosp.dias = Number(s.value)||7; };
+  }
+
   function renderAbastecimento(){
     var main = document.getElementById("abastecimentoView");
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
@@ -9547,10 +9694,13 @@
       '<button data-asub="pendentes" class="'+(abastecimentoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-asub="feitos" class="'+(abastecimentoSubView==="feitos"?"active":"")+'">Abastecidos hoje</button>' +
       '<button data-asub="padrao" class="'+(abastecimentoSubView==="padrao"?"active":"")+'">Itens por acomodação</button>' +
+      (podeEditar("estoque") ? '<button data-asub="conferencia" class="'+(abastecimentoSubView==="conferencia"?"active":"")+'">Conferência Hospedin</button>' : '') +
     '</div>';
     var list = abastecimentoSubView === "feitos" ? feitos : pend;
     if(abastecimentoSubView === "padrao"){
       html += renderItensPorAcomodacaoHtml();
+    } else if(abastecimentoSubView === "conferencia"){
+      html += renderConferenciaHospedinHtml();
     } else if(list.length === 0){
       html += '<div class="empty">'+(abastecimentoSubView==="pendentes" ? "Nenhum pedido de frigobar em aberto." : "Nenhum abastecimento feito hoje ainda.")+'</div>';
     } else {
@@ -9564,6 +9714,7 @@
     });
     wireSolicitacaoActions(main);
     if(abastecimentoSubView === "padrao") ligarItensPorAcomodacao(main);
+    if(abastecimentoSubView === "conferencia") ligarConferenciaHospedin(main);
     document.getElementById("importarExtratoBtn").onclick = function(){
       document.getElementById("importarExtratoInput").click();
     };
