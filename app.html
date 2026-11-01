@@ -9549,7 +9549,7 @@
     305620:["Barra de Cereal Nuts Nutry",500], 498866:["Barukas 50g",1400], 305624:["Gergeliko",1200], 305621:["Pringles original",3000], 504109:["Hersheys 60% cacau",1800],
     800484:["Cápsula de café decaf",600], 415181:["Cápsula de café filtrado",600], 800483:["Cápsula de cappuccino classic",600], 800482:["Cápsula de expresso pleno",600]
   };
-  var conferenciaHosp = {dias:7, carregando:false, erro:null, resultado:null, geradoEm:null};
+  var conferenciaHosp = {soDif:true, dias:7, carregando:false, erro:null, resultado:null, geradoEm:null};
 
   function confTokens(s){
     return normalizarBusca(s).replace(/[^a-z0-9 ]+/g," ").split(/\s+/).filter(function(t){ return t; });
@@ -9653,29 +9653,44 @@
     var cobrar = linhas.filter(function(l){ return l.itens.some(function(i){ return i.app > i.hosp; }); });
     h += '<div class="card" style="margin-bottom:12px;"><p class="item-name" style="margin:0 0 3px;">'+(qtdNaoCobrado ? (qtdNaoCobrado+' item(ns) saíram e não foram cobrados · '+confReal(totalNaoCobrado)) : 'Nada fora do lugar neste período')+'</p>' +
       '<p class="item-meta">'+linhas.length+' estadia(s) conferida(s)'+(semDados?(' · '+semDados+' sem dados do Hospedin'):'')+'</p></div>';
-    var ordem = cobrar.concat(linhas.filter(function(l){ return cobrar.indexOf(l) === -1; }));
-    ordem.forEach(function(l){
-      var temNao = cobrar.indexOf(l) > -1;
+    h += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-600);margin:0 0 10px;"><input type="checkbox" id="confSoDif"'+(conferenciaHosp.soDif?' checked':'')+'> Mostrar só as diferenças</label>';
+    // uma linha por (estadia, item); diferenças primeiro
+    var tab = [];
+    linhas.forEach(function(l){
       var aReceber = Number(l.dado.aReceber)||0;
-      h += '<div class="card" style="margin-bottom:8px;border-left:4px solid '+(temNao?'var(--red-600)':'var(--teal-700)')+';">' +
-        '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(l.r.acomodacao)+' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">'+fmtDateOnly(parseDataLocal(l.r.checkin).getTime())+' → '+fmtDateOnly(parseDataLocal(l.r.checkout).getTime())+'</span></p>' +
-        '<p class="item-meta" style="margin:0 0 6px;">'+escapeHtml(l.r.hospede||"")+(aReceber>0 ? ' · <b style="color:var(--red-600);">falta pagar '+confReal(aReceber)+' na conta</b>' : ' · conta quitada')+'</p>';
-      if(!l.itens.length) h += '<p class="item-meta">Sem saída no Estoque e sem consumo no Hospedin.</p>';
-      l.itens.forEach(function(i){
-        var d = i.app - i.hosp, txt, cor;
-        if(d > 0){ txt = 'saiu '+i.app+' · cobrado '+i.hosp+' → <b>faltou cobrar '+d+' ('+confReal(d*i.preco)+')</b>'; cor = "var(--red-600)"; }
-        else if(d < 0){ txt = 'saiu '+i.app+' · cobrado '+i.hosp+' → cobrado a mais no Hospedin (sem saída no app: '+(-d)+')'; cor = "var(--amber-600)"; }
-        else { txt = 'saiu '+i.app+' · cobrado '+i.hosp+' ✓'; cor = "var(--ink-600)"; }
-        h += '<p style="margin:2px 0;font-size:13.5px;color:'+cor+';">'+escapeHtml(i.nome)+': '+txt+'</p>';
-      });
-      h += '</div>';
+      l.itens.forEach(function(i){ tab.push({l:l, i:i, d:i.app - i.hosp, aReceber:aReceber}); });
     });
-    h += '<p class="item-meta" style="margin-top:10px;">Só entram itens de frigobar/consumo. Saída lançada sem destino na acomodação certa, ou com nome muito diferente do Hospedin, não aparece aqui.</p>';
+    var mostrar = conferenciaHosp.soDif ? tab.filter(function(x){ return x.d !== 0; }) : tab;
+    mostrar.sort(function(x,y){
+      var px = x.d > 0 ? 0 : (x.d < 0 ? 1 : 2), py = y.d > 0 ? 0 : (y.d < 0 ? 1 : 2);
+      return px - py || String(y.l.r.checkout).localeCompare(String(x.l.r.checkout)) || String(x.l.r.acomodacao).localeCompare(String(y.l.r.acomodacao), "pt-BR");
+    });
+    if(!mostrar.length){
+      h += '<div class="empty">'+(conferenciaHosp.soDif ? 'Nenhuma diferença encontrada.' : 'Nenhum consumo neste período.')+'</div>';
+    } else {
+      var th = 'text-align:left;padding:7px 6px;font-size:11px;color:var(--ink-600);border-bottom:2px solid var(--line);white-space:nowrap;';
+      var td = 'padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top;font-size:13px;';
+      h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">' +
+        '<thead><tr><th style="'+th+'">Acomodação</th><th style="'+th+'">Item</th><th style="'+th+'text-align:center;">Saiu</th><th style="'+th+'text-align:center;">Cobrado</th><th style="'+th+'text-align:right;">Diferença</th></tr></thead><tbody>';
+      mostrar.forEach(function(x){
+        var cor = x.d > 0 ? "var(--red-600)" : (x.d < 0 ? "var(--amber-600)" : "var(--ink-600)");
+        var difTxt = x.d > 0 ? ('faltou cobrar '+x.d+'<br>'+confReal(x.d*x.i.preco)) : (x.d < 0 ? ('cobrado a mais '+(-x.d)) : 'ok');
+        h += '<tr style="'+(x.d > 0 ? 'background:#fdf1ef;' : '')+'">' +
+          '<td style="'+td+'"><b>'+escapeHtml(x.l.r.acomodacao)+'</b><br><span style="font-size:11px;color:var(--ink-600);">'+fmtDateOnly(parseDataLocal(x.l.r.checkin).getTime()).slice(0,5)+' a '+fmtDateOnly(parseDataLocal(x.l.r.checkout).getTime()).slice(0,5)+(x.aReceber>0 ? '<br><span style="color:var(--red-600);font-weight:700;">conta em aberto '+confReal(x.aReceber)+'</span>' : '')+'</span></td>' +
+          '<td style="'+td+'">'+escapeHtml(x.i.nome)+'</td>' +
+          '<td style="'+td+'text-align:center;">'+x.i.app+'</td>' +
+          '<td style="'+td+'text-align:center;">'+x.i.hosp+'</td>' +
+          '<td style="'+td+'text-align:right;color:'+cor+';font-weight:'+(x.d !== 0 ? 700 : 400)+';">'+difTxt+'</td></tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+    h += '<p class="item-meta" style="margin-top:10px;">Só entram itens de frigobar/consumo. Saída lançada sem a acomodação certa, ou com nome muito diferente do Hospedin, não aparece aqui.</p>';
     return h;
   }
   function ligarConferenciaHospedin(main){
     var b = main.querySelector("#confBuscar"); if(b) b.onclick = confBuscar;
     var s = main.querySelector("#confDias"); if(s) s.onchange = function(){ conferenciaHosp.dias = Number(s.value)||7; };
+    var c = main.querySelector("#confSoDif"); if(c) c.onchange = function(){ conferenciaHosp.soDif = c.checked; renderAbastecimento(); };
   }
 
   function renderAbastecimento(){
