@@ -9696,7 +9696,8 @@
   }
   // ---------- Resumo: reposto (pago / não pago), perda e consumo interno, por semana e por mês ----------
   var CONF_DEST_PERDA = ["Vencidos", "Danificados"];
-  var CONF_DEST_INTERNO = ["Funcionário", "Guilherme", "Marcella", "Governança", "Prestadores de serviço", "Welcome drink"];
+  var CONF_DEST_INTERNO = ["Funcionário", "Guilherme", "Marcella", "Governança", "Prestadores de serviço"];
+  var CONF_DEST_WELCOME = ["Welcome drink"];
   conferenciaHosp.modo = "resumo"; conferenciaHosp.per = "semana"; conferenciaHosp.off = 0;
   conferenciaHosp.cache = {}; conferenciaHosp.resCarregando = false; conferenciaHosp.resErro = null;
 
@@ -9735,17 +9736,17 @@
     var itemInfo = {};
     state.estoque.items.forEach(function(it){ itemInfo[it.id] = {nome:it.name, hosp:confNomeHospedinDoItem(it.name), preco:it.precoVenda}; });
     var acomNomes = {}; state.acomodacoes.forEach(function(a){ acomNomes[normalizarBusca(a.nome)] = true; });
-    var perdaN = CONF_DEST_PERDA.map(normalizarBusca), internoN = CONF_DEST_INTERNO.map(normalizarBusca);
-    var tot = {pago:{q:0,v:0}, naoPago:{q:0,v:0}, perda:{q:0,v:0}, interno:{q:0,v:0}};
+    var perdaN = CONF_DEST_PERDA.map(normalizarBusca), internoN = CONF_DEST_INTERNO.map(normalizarBusca), welcomeN = CONF_DEST_WELCOME.map(normalizarBusca);
+    var tot = {pago:{q:0,v:0}, naoPago:{q:0,v:0}, perda:{q:0,v:0}, interno:{q:0,v:0}, welcome:{q:0,v:0}};
     var itens = {}, semEstadia = 0, naoCobraveis = 0, precisa = {}, grupos = {};
-    function linhaItem(nome){ return itens[nome] = itens[nome] || {nome:nome, pago:0, naoPago:0, perda:0, interno:0}; }
+    function linhaItem(nome){ return itens[nome] = itens[nome] || {nome:nome, pago:0, naoPago:0, perda:0, interno:0, welcome:0}; }
     state.estoque.movements.forEach(function(m){
       if(m.type !== "saida" || !m.destino) return;
       var info = itemInfo[m.itemId]; if(!info) return;
       var d = normalizarBusca(m.destino);
-      if(perdaN.indexOf(d) > -1 || internoN.indexOf(d) > -1){
+      if(perdaN.indexOf(d) > -1 || internoN.indexOf(d) > -1 || welcomeN.indexOf(d) > -1){
         if(m.date < per.ini || m.date > per.fim) return;
-        var g = perdaN.indexOf(d) > -1 ? "perda" : "interno";
+        var g = perdaN.indexOf(d) > -1 ? "perda" : (welcomeN.indexOf(d) > -1 ? "welcome" : "interno");
         var pr = info.hosp ? confPrecoDe(info.hosp) : Math.round((info.preco||0)*100);
         tot[g].q += m.qty; tot[g].v += m.qty * pr; linhaItem(info.nome)[g] += m.qty;
         return;
@@ -9822,22 +9823,23 @@
       card('Reposto e pago', t.pago.q, t.pago.v, 'var(--teal-700)', 'cobrado no Hospedin') +
       card('Reposto e não pago', t.naoPago.q, t.naoPago.v, 'var(--red-600)', 'sem cobrança') +
       card('Perda', t.perda.q, t.perda.v, 'var(--amber-600)', 'vencidos e danificados') +
-      card('Consumo interno', t.interno.q, t.interno.v, 'var(--ink-400)', 'equipe e cortesias') + '</div>';
+      card('Consumo interno', t.interno.q, t.interno.v, 'var(--ink-400)', 'equipe') +
+      card('Welcome drink', t.welcome.q, t.welcome.v, 'var(--teal-700)', 'cortesia de boas-vindas') + '</div>';
     var lista = Object.keys(r.itens).map(function(k){ return r.itens[k]; }).sort(function(a,b){ return a.nome.localeCompare(b.nome, "pt-BR"); });
     if(!lista.length) h += '<div class="empty">Nenhuma saída neste período.</div>';
     else {
       var th = 'padding:7px 5px;font-size:11px;color:var(--ink-600);border-bottom:2px solid var(--line);text-align:center;white-space:nowrap;';
       var td = 'padding:8px 5px;border-bottom:1px solid var(--line);font-size:13px;text-align:center;';
-      h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="'+th+'text-align:left;">Item</th><th style="'+th+'">Pago</th><th style="'+th+'">Não pago</th><th style="'+th+'">Perda</th><th style="'+th+'">Interno</th></tr></thead><tbody>' +
+      h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="'+th+'text-align:left;">Item</th><th style="'+th+'">Pago</th><th style="'+th+'">Não pago</th><th style="'+th+'">Perda</th><th style="'+th+'">Interno</th><th style="'+th+'">Welcome</th></tr></thead><tbody>' +
         lista.map(function(i){
           function c(n, cor){ return '<td style="'+td+(n?('color:'+cor+';font-weight:700;'):'color:var(--ink-400);')+'">'+(n||'·')+'</td>'; }
-          return '<tr><td style="'+td+'text-align:left;">'+escapeHtml(i.nome)+'</td>'+c(i.pago,'var(--teal-700)')+c(i.naoPago,'var(--red-600)')+c(i.perda,'var(--amber-600)')+c(i.interno,'var(--ink-600)')+'</tr>';
+          return '<tr><td style="'+td+'text-align:left;">'+escapeHtml(i.nome)+'</td>'+c(i.pago,'var(--teal-700)')+c(i.naoPago,'var(--red-600)')+c(i.perda,'var(--amber-600)')+c(i.interno,'var(--ink-600)')+c(i.welcome,'var(--ink-600)')+'</tr>';
         }).join("") + '</tbody></table></div>';
     }
     var notas = [];
     if(r.semEstadia) notas.push(r.semEstadia + ' un. enviadas a acomodações sem estadia encontrada no Hospedin (não entram em "pago" nem "não pago")');
     if(r.naoCobraveis) notas.push(r.naoCobraveis + ' un. de itens das acomodações que o Hospedin não cobra (ex.: sabonete)');
-    h += '<p class="item-meta" style="margin-top:10px;">"Pago" = lançado na conta do hóspede no Hospedin. "Perda" = saídas para Vencidos e Danificados. "Consumo interno" = Funcionário, Guilherme, Marcella, Governança, Prestadores de serviço e Welcome drink. Recepção, venda avulsa e empréstimo ao restaurante não entram.'+(notas.length?('<br>'+notas.join('<br>')):'')+'</p>';
+    h += '<p class="item-meta" style="margin-top:10px;">"Pago" = lançado na conta do hóspede no Hospedin. "Perda" = saídas para Vencidos e Danificados. "Consumo interno" = Funcionário, Guilherme, Marcella, Governança, Prestadores de serviço. "Welcome drink" aparece separado. Recepção, venda avulsa e empréstimo ao restaurante não entram.'+(notas.length?('<br>'+notas.join('<br>')):'')+'</p>';
     return h;
   }
   function renderConferenciaHospedinHtml(){
