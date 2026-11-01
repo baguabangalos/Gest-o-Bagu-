@@ -3115,6 +3115,7 @@
     main.innerHTML =
       '<div class="seg-toggle">' +
         '<button data-sub="moves" class="'+(historySubView==="moves"?"active":"")+'">Movimentações</button>' +
+        '<button data-sub="saidasdia" class="'+(historySubView==="saidasdia"?"active":"")+'">Saídas do dia</button>' +
         '<button data-sub="consumo" class="'+(historySubView==="consumo"?"active":"")+'">Consumo</button>' +
         '<button data-sub="contagens" class="'+(historySubView==="contagens"?"active":"")+'">Contagens</button>' +
       '</div>' +
@@ -3124,8 +3125,64 @@
     });
     var sub = document.getElementById("historySubContent");
     if(historySubView === "moves") renderMovesInto(sub);
+    else if(historySubView === "saidasdia") renderSaidasDiaInto(sub);
     else if(historySubView === "consumo") renderConsumoInto(sub);
     else renderContagensInto(sub);
+  }
+
+  // Saídas de um dia, agrupadas por destino — pra conferir se tudo que foi
+  // liberado (ex.: Welcome drink) foi lançado.
+  var saidasDia = {dia:null, dest:"todos"};
+  function renderSaidasDiaInto(container){
+    var hoje = new Date(); hoje.setHours(0,0,0,0);
+    if(saidasDia.dia === null) saidasDia.dia = hoje.getTime();
+    var ini = saidasDia.dia, fim = ini + 86400000;
+    var okCats = estoqueCategoriasPermitidas();
+    var dia = state.estoque.movements.filter(function(m){
+      if(m.type !== "saida" || m.date < ini || m.date >= fim) return false;
+      var it = state.estoque.items.find(function(i){ return i.id === m.itemId; });
+      return !it || okCats.indexOf(it.category) > -1;
+    }).sort(function(a,b){ return b.date - a.date; });
+    var porDest = {};
+    dia.forEach(function(m){ var d = m.destino || "Sem destino"; (porDest[d] = porDest[d] || []).push(m); });
+    var dests = Object.keys(porDest).sort(function(a,b){
+      if(a === "Welcome drink") return -1; if(b === "Welcome drink") return 1;
+      return a.localeCompare(b, "pt-BR");
+    });
+    var sel = (saidasDia.dest !== "todos" && porDest[saidasDia.dest]) ? saidasDia.dest : "todos";
+    var h = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;">' +
+      '<button type="button" class="btn btn-out" id="sdPrev" style="padding:8px 14px;">◀</button>' +
+      '<div style="text-align:center;"><p style="margin:0;font-weight:800;font-size:15px;">'+fmtDateOnly(ini)+(ini===hoje.getTime()?' <span style="font-weight:600;color:var(--ink-600);font-size:12px;">(hoje)</span>':'')+'</p>' +
+      '<p class="item-meta" style="margin:0;">'+dia.length+' saída(s) lançada(s)</p></div>' +
+      '<button type="button" class="btn btn-out" id="sdNext" style="padding:8px 14px;"'+(ini>=hoje.getTime()?' disabled':'')+'>▶</button></div>';
+    if(!dia.length){
+      container.innerHTML = h + '<div class="empty">Nenhuma saída lançada neste dia.</div>';
+    } else {
+      h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">' +
+        ['todos'].concat(dests).map(function(d){
+          var n = d === "todos" ? dia.length : porDest[d].length;
+          return '<button type="button" data-sd="'+escapeHtml(d)+'" style="padding:7px 12px;border-radius:18px;font-family:inherit;font-size:12.5px;font-weight:700;border:1px solid var(--line);cursor:pointer;'+(d===sel?'background:var(--ink-900);color:#fff;':'background:var(--sand-50);color:var(--ink-900);')+'">'+(d==="todos"?"Todos":escapeHtml(d))+' · '+n+'</button>';
+        }).join("") + '</div>';
+      (sel === "todos" ? dests : [sel]).forEach(function(d){
+        var lista = porDest[d], tot = {};
+        lista.forEach(function(m){
+          var it = state.estoque.items.find(function(i){ return i.id === m.itemId; });
+          var nome = it ? it.name : "(item removido)";
+          tot[nome] = (tot[nome]||0) + m.qty;
+        });
+        h += '<div class="section-title">'+escapeHtml(d)+'</div>' +
+          '<div class="card" style="margin-bottom:8px;"><p class="item-meta" style="margin:0 0 4px;font-weight:800;">Total por item</p>' +
+          Object.keys(tot).sort(function(a,b){ return a.localeCompare(b,"pt-BR"); }).map(function(n){
+            return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line);font-size:13.5px;"><span>'+escapeHtml(n)+'</span><b>'+fmtQty(tot[n])+'</b></div>';
+          }).join("") + '</div>' +
+          '<div class="card">' + lista.map(moveRowHtml).join("") + '</div>';
+      });
+      container.innerHTML = h;
+    }
+    container.querySelectorAll("[data-sd]").forEach(function(b){ b.onclick = function(){ saidasDia.dest = b.getAttribute("data-sd"); renderHistory(); }; });
+    var p = container.querySelector("#sdPrev"); if(p) p.onclick = function(){ var d = new Date(saidasDia.dia); d.setDate(d.getDate()-1); saidasDia.dia = d.getTime(); saidasDia.dest = "todos"; renderHistory(); };
+    var n = container.querySelector("#sdNext"); if(n) n.onclick = function(){ var d = new Date(saidasDia.dia); d.setDate(d.getDate()+1); saidasDia.dia = d.getTime(); saidasDia.dest = "todos"; renderHistory(); };
+    wireMoveEditDelete(container);
   }
 
   // Monta o HTML de uma única linha de movimentação — usado tanto no
