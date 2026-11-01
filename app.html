@@ -9698,7 +9698,7 @@
   var CONF_DEST_PERDA = ["Vencidos", "Danificados"];
   var CONF_DEST_INTERNO = ["Funcionário", "Guilherme", "Marcella", "Governança", "Prestadores de serviço"];
   var CONF_DEST_WELCOME = ["Welcome drink"];
-  conferenciaHosp.modo = "resumo"; conferenciaHosp.per = "semana"; conferenciaHosp.off = 0;
+  conferenciaHosp.modo = "detalhe"; conferenciaHosp.per = "semana"; conferenciaHosp.off = 0;
   conferenciaHosp.cache = {}; conferenciaHosp.resCarregando = false; conferenciaHosp.resErro = null;
 
   function confPeriodo(){
@@ -9795,7 +9795,7 @@
       });
     });
     p.catch(function(err){ console.error(err); conferenciaHosp.resErro = "Não consegui consultar o Hospedin agora. Toque em Atualizar para tentar de novo."; })
-     .then(function(){ conferenciaHosp.resCarregando = false; renderAbastecimento(); });
+     .then(function(){ conferenciaHosp.resCarregando = false; confRefazer(); });
   }
   function renderConferenciaResumoHtml(){
     var per = confPeriodo();
@@ -9842,20 +9842,21 @@
     h += '<p class="item-meta" style="margin-top:10px;">"Pago" = lançado na conta do hóspede no Hospedin. "Perda" = saídas para Vencidos e Danificados. "Consumo interno" = Funcionário, Guilherme, Marcella, Governança, Prestadores de serviço. "Welcome drink" aparece separado. Recepção, venda avulsa e empréstimo ao restaurante não entram.'+(notas.length?('<br>'+notas.join('<br>')):'')+'</p>';
     return h;
   }
+  function confRefazer(){ if(appSection==="financeiro") renderFinanceiro(); else renderAbastecimento(); }
   function renderConferenciaHospedinHtml(){
     if(!podeEditar("estoque")) return '<div class="empty">Você não tem permissão para ver a conferência.</div>';
-    var h = '<div class="seg-toggle" style="margin-bottom:12px;"><button data-cmodo="resumo" class="'+(conferenciaHosp.modo==="resumo"?"active":"")+'">Resumo</button><button data-cmodo="detalhe" class="'+(conferenciaHosp.modo==="detalhe"?"active":"")+'">Detalhe por estadia</button></div>';
-    return h + (conferenciaHosp.modo === "detalhe" ? renderConferenciaDetalheHtml() : renderConferenciaResumoHtml());
+    var h = '';
+    return h + renderConferenciaDetalheHtml();
   }
   function ligarConferenciaHospedin(main){
-    main.querySelectorAll("[data-cmodo]").forEach(function(b){ b.onclick = function(){ conferenciaHosp.modo = b.getAttribute("data-cmodo"); renderAbastecimento(); }; });
-    main.querySelectorAll("[data-cper]").forEach(function(b){ b.onclick = function(){ conferenciaHosp.per = b.getAttribute("data-cper"); conferenciaHosp.off = 0; renderAbastecimento(); }; });
-    var ant = main.querySelector("#confAnt"); if(ant) ant.onclick = function(){ conferenciaHosp.off--; renderAbastecimento(); };
-    var prox = main.querySelector("#confProx"); if(prox) prox.onclick = function(){ if(conferenciaHosp.off < 0){ conferenciaHosp.off++; renderAbastecimento(); } };
-    var atu = main.querySelector("#confAtualizar"); if(atu) atu.onclick = function(){ Object.keys(conferenciaHosp.cache).forEach(function(k){ if(conferenciaHosp.cache[k].erro) delete conferenciaHosp.cache[k]; }); conferenciaHosp.resErro = null; renderAbastecimento(); };
+    main.querySelectorAll("[data-cmodo]").forEach(function(b){ b.onclick = function(){ conferenciaHosp.modo = b.getAttribute("data-cmodo"); confRefazer(); }; });
+    main.querySelectorAll("[data-cper]").forEach(function(b){ b.onclick = function(){ conferenciaHosp.per = b.getAttribute("data-cper"); conferenciaHosp.off = 0; confRefazer(); }; });
+    var ant = main.querySelector("#confAnt"); if(ant) ant.onclick = function(){ conferenciaHosp.off--; confRefazer(); };
+    var prox = main.querySelector("#confProx"); if(prox) prox.onclick = function(){ if(conferenciaHosp.off < 0){ conferenciaHosp.off++; confRefazer(); } };
+    var atu = main.querySelector("#confAtualizar"); if(atu) atu.onclick = function(){ Object.keys(conferenciaHosp.cache).forEach(function(k){ if(conferenciaHosp.cache[k].erro) delete conferenciaHosp.cache[k]; }); conferenciaHosp.resErro = null; confRefazer(); };
     var b = main.querySelector("#confBuscar"); if(b) b.onclick = confBuscar;
     var s = main.querySelector("#confDias"); if(s) s.onchange = function(){ conferenciaHosp.dias = Number(s.value)||7; };
-    var c = main.querySelector("#confSoDif"); if(c) c.onchange = function(){ conferenciaHosp.soDif = c.checked; renderAbastecimento(); };
+    var c = main.querySelector("#confSoDif"); if(c) c.onchange = function(){ conferenciaHosp.soDif = c.checked; confRefazer(); };
   }
 
   function renderAbastecimento(){
@@ -13267,6 +13268,9 @@
     var pp = Object.keys(r.perdasItem).sort(function(a,b){ return r.perdasItem[b].custo - r.perdasItem[a].custo; });
     html += '<div class="section-title">Perdas por item</div>';
     html += pp.length ? '<div class="card">' + pp.map(function(n){ var v = r.perdasItem[n]; return linha(escapeHtml(n)+' <span style="color:var(--ink-600);">× '+fmtQty(v.qty)+' ('+Object.keys(v.motivo).map(function(k){ return k.toLowerCase(); }).join(", ")+')</span>', "− "+restMoney(v.custo), false, "var(--red-600)"); }).join("") + '</div>' : '<div class="empty">Nenhuma perda registrada neste mês.</div>';
+    if(podeEditar("estoque")){
+      html += '<div class="section-title">Reposição, perdas e consumo (Hospedin)</div>' + renderConferenciaResumoHtml();
+    }
     // últimos 6 meses
     html += '<div class="section-title">Últimos meses</div><div class="card">';
     for(var i=0;i<6;i++){
@@ -13275,6 +13279,7 @@
     }
     html += '</div><p class="item-meta" style="margin-top:10px;">Perdas: dê saída do item com destino “Vencidos” ou “Danificados”. Materiais de limpeza, enxoval etc. contam como gasto na compra (entrada no estoque), então a saída deles não é contada de novo. O custo usa o valor pago atual de cada item.</p>';
     main.innerHTML = html;
+    if(podeEditar("estoque")) ligarConferenciaHospedin(main);
     document.getElementById("finPrev").onclick = function(){ finMes = finMesDeslocar(finMes, -1); renderFinanceiro(); };
     document.getElementById("finNext").onclick = function(){ if(finMes < hojeKey){ finMes = finMesDeslocar(finMes, 1); renderFinanceiro(); } };
   }
