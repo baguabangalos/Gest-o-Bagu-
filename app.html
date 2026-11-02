@@ -7614,8 +7614,10 @@
   function feriadoPorId(id){ return (state.feriados||[]).find(function(f){ return f.id===id; }) || null; }
   function nomePessoaPorId(id){ var p = (state.staffProfiles||[]).find(function(x){ return x.id===id; }); return p ? p.nome : "?"; }
   function fmtDiaMes(dataStr){ return dataStr ? (dataStr.slice(8,10)+"/"+dataStr.slice(5,7)+"/"+dataStr.slice(0,4)) : ""; }
+  // A equipe da Limpeza não tem folga compensatória de feriado.
+  function feriadoUserOk(id){ var p = (state.staffProfiles||[]).find(function(x){ return x.id===id; }); return !(p && p.equipe === "limpeza"); }
   function feriadoPendentes(){
-    return (state.feriadoTrabalhados||[]).filter(function(r){ return !r.descartado && !r.folgaData && feriadoPorId(r.feriadoId); });
+    return (state.feriadoTrabalhados||[]).filter(function(r){ return !r.descartado && !r.folgaData && feriadoPorId(r.feriadoId) && feriadoUserOk(r.userId); });
   }
   function feriadosAtrasadosN(){
     var hoje = localDateStr(new Date());
@@ -7624,7 +7626,7 @@
   // Quem "apareceu" no app naquele dia, pelo que fez (não depende da escala).
   function feriadoEvidencias(dataStr){
     var porNome = {}, idsValidos = {};
-    (state.staffProfiles||[]).forEach(function(p){ if(p.ativo!==false && p.equipe){ porNome[normalizarBusca(p.nome).trim()] = p.id; idsValidos[p.id] = true; } });
+    (state.staffProfiles||[]).forEach(function(p){ if(p.ativo!==false && p.equipe && p.equipe!=="limpeza"){ porNome[normalizarBusca(p.nome).trim()] = p.id; idsValidos[p.id] = true; } });
     var ev = {};
     function add(uidP, chave){
       if(!uidP) return;
@@ -7706,11 +7708,11 @@
   function renderEquipeFeriados(body, podeEd){
     var hoje = localDateStr(new Date());
     var feriados = (state.feriados||[]).slice();
-    var regs = (state.feriadoTrabalhados||[]).filter(function(r){ return !r.descartado && feriadoPorId(r.feriadoId); });
+    var regs = (state.feriadoTrabalhados||[]).filter(function(r){ return !r.descartado && feriadoPorId(r.feriadoId) && feriadoUserOk(r.userId); });
     var pend = regs.filter(function(r){ return !r.folgaData; }).sort(function(a,b){ return feriadoPorId(a.feriadoId).data < feriadoPorId(b.feriadoId).data ? -1 : 1; });
     var feitas = regs.filter(function(r){ return !!r.folgaData; }).sort(function(a,b){ return a.folgaData < b.folgaData ? 1 : -1; }).slice(0, 30);
     var atrasadas = pend.filter(function(r){ return diasEntre(feriadoPorId(r.feriadoId).data, hoje) > FERIADO_PRAZO_DIAS; });
-    var pessoas = (state.staffProfiles||[]).filter(function(p){ return p.ativo!==false && p.equipe; });
+    var pessoas = (state.staffProfiles||[]).filter(function(p){ return p.ativo!==false && p.equipe && p.equipe!=="limpeza"; });
     var inputEstilo = 'padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);';
     var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Quem trabalha num feriado ganha uma folga compensatória. O app confere sozinho, no dia seguinte ao feriado, quem fez alguma coisa no sistema (checklist, solicitações) e já guarda o crédito — sem depender da escala. Se alguém trabalhou e não apareceu, adicione manualmente. A folga pode ser marcada em qualquer data, inclusive <strong>antes</strong> do feriado (adiantada) ou trocando a folga da semana.</p>';
 
