@@ -2439,6 +2439,17 @@
     }
     if(ouveManutencao){
       realtimeChannel.on("postgres_changes", {event:"INSERT", schema:"public", table:"manutencoes"}, function(payload){
+        if(payload.new.origem === "limpeza" && payload.new.title === LOUCA_TITULO){
+          // Aviso da limpeza: louça para recolher — toca o alerta na recepção (menos pra quem avisou)
+          var ml = mapManutencaoFromRow(payload.new);
+          if(!state.manutencoes.some(function(x){ return x.id===ml.id; })) state.manutencoes.unshift(ml);
+          if(podeVer("recepcao") && !(currentUser && payload.new.criado_por === currentUser.id)){
+            playNotifySound();
+            mostrarAlertaPedido("Louça para recolher — " + (ml.local||""));
+          }
+          if(!(appSection==="estoque" && activeView==="count")) renderApp();
+          return;
+        }
         if(payload.new.origem !== "hospede") return;
         var m = mapManutencaoFromRow(payload.new);
         if(!state.manutencoes.some(function(x){ return x.id===m.id; })) state.manutencoes.unshift(m);
