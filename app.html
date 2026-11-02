@@ -1581,7 +1581,7 @@
   // Permissões detalhadas por aba e ações especiais (mesmo modelo do estoque):
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
-    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", restricoes:"restaurante_restricoes"}},
+    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", restricoes:"restaurante_restricoes", louca:"restaurante_louca"}},
     recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
@@ -2380,7 +2380,7 @@
   function setupRealtimeNotifications(){
     if(realtimeChannel) return; // já configurado nesta sessão
     var ouveSolicitacoes = podeVer("limpeza") || podeVer("recepcao");
-    var ouveManutencao = podeVer("manutencao") || podeVer("recepcao");
+    var ouveManutencao = podeVer("manutencao") || podeVer("recepcao") || podeVer("restaurante");
     if(!ouveSolicitacoes && !ouveManutencao) return;
 
     realtimeChannel = sb.channel("pedidos-hospedes");
@@ -2438,12 +2438,19 @@
       });
     }
     if(ouveManutencao){
+      realtimeChannel.on("postgres_changes", {event:"UPDATE", schema:"public", table:"manutencoes"}, function(payload){
+        if(payload.new.origem !== "limpeza" || payload.new.title !== LOUCA_TITULO) return;
+        var mu = mapManutencaoFromRow(payload.new);
+        var iu = state.manutencoes.findIndex(function(x){ return x.id===mu.id; });
+        if(iu > -1) state.manutencoes[iu] = mu; else state.manutencoes.unshift(mu);
+        if(!(appSection==="estoque" && activeView==="count")) renderApp();
+      });
       realtimeChannel.on("postgres_changes", {event:"INSERT", schema:"public", table:"manutencoes"}, function(payload){
         if(payload.new.origem === "limpeza" && payload.new.title === LOUCA_TITULO){
           // Aviso da limpeza: louça para recolher — toca o alerta na recepção (menos pra quem avisou)
           var ml = mapManutencaoFromRow(payload.new);
           if(!state.manutencoes.some(function(x){ return x.id===ml.id; })) state.manutencoes.unshift(ml);
-          if(podeVer("recepcao") && !(currentUser && payload.new.criado_por === currentUser.id)){
+          if((podeVer("recepcao") || podeVer("restaurante")) && !(currentUser && payload.new.criado_por === currentUser.id)){
             playNotifySound();
             mostrarAlertaPedido("Louça para recolher — " + (ml.local||""));
           }
@@ -2663,7 +2670,7 @@
 
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
-    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições"},
+    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições", louca:"Serviço do dia"},
     recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
@@ -10797,6 +10804,40 @@
   function restFecharSheet(){ var ov = document.getElementById("restOverlay"); if(ov) ov.remove(); }
   var REST_INPUT = 'width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:var(--sand-50);box-sizing:border-box;';
 
+  // ---------- Serviço do dia (restaurante): louça avisada pela limpeza ----------
+  function loucaPendentes(){
+    return state.manutencoes.filter(function(m){ return m.origem === "limpeza" && m.status !== "concluida" && ehLouca(m); })
+      .sort(function(a,b){ return (a.createdAt||0)-(b.createdAt||0); });
+  }
+  function loucaRestauranteHtml(){
+    var lista = loucaPendentes();
+    var h = '<p class="item-meta" style="margin:0 0 10px;">A limpeza avisa aqui quando deixa louça do lado de fora de uma acomodação. Toque em “Recolhida” depois de pegar.</p>';
+    if(!lista.length) return h + '<div class="empty">Nenhuma louça para recolher agora.</div>';
+    h += '<div class="card">';
+    lista.forEach(function(m, i){
+      h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+        '<p class="item-name" style="margin:0 0 3px;">'+ic("cup")+' '+escapeHtml(m.local||"")+'</p>' +
+        (m.description ? '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+escapeHtml(m.description)+'</p>' : '') +
+        '<p class="item-meta">'+(m.criadoPorNome ? 'avisado por '+escapeHtml(m.criadoPorNome)+' · ' : '')+'às '+fmtDate(m.createdAt)+'</p>' +
+        (podeEditarAba("restaurante","louca") ? '<div class="item-actions"><button class="btn btn-in" data-act="loucaRecolhida" data-id="'+m.id+'">'+ic("check")+' Recolhida</button></div>' : '') +
+      '</div>';
+    });
+    return h + '</div>';
+  }
+  function ligarLoucaRestaurante(main){
+    main.querySelectorAll('[data-act="loucaRecolhida"]').forEach(function(btn){
+      btn.onclick = async function(){
+        var id = btn.getAttribute("data-id"); btn.disabled = true;
+        try{
+          var m = await dbUpdate("manutencoes", id, {status:"concluida", resolved_at:new Date().toISOString()}, mapManutencaoFromRow);
+          var idx = state.manutencoes.findIndex(function(x){ return x.id===id; });
+          if(idx>-1) state.manutencoes[idx] = m;
+          showToast("Louça recolhida"); renderApp();
+        }catch(err){ console.error(err); showToast("Erro ao atualizar"); btn.disabled = false; }
+      };
+    });
+  }
+
   function renderRestaurante(){
     var main = document.getElementById("restauranteView");
     restLigarTempoReal();
@@ -10821,6 +10862,7 @@
       '<button data-rsub="cardapio" class="'+(restSub==="cardapio"?"active":"")+'">Cardápio</button>' +
       '<button data-rsub="relatorio" class="'+(restSub==="relatorio"?"active":"")+'">Relatório</button>' +
       '<button data-rsub="restricoes" class="'+(restSub==="restricoes"?"active":"")+'">Restrições'+(restricoesPendentesN()?(' · '+restricoesPendentesN()):'')+'</button>' +
+      '<button data-rsub="louca" class="'+(restSub==="louca"?"active":"")+'">Serviço do dia'+(loucaPendentes().length?(' · '+loucaPendentes().length):'')+'</button>' +
     '</div>';
 
     if(restSub === "abertas"){
@@ -10846,6 +10888,8 @@
         html += '<p style="margin:8px 0;font-size:16px;font-weight:800;">Total a cobrar: '+restMoney(soma)+'</p>' +
           (podeEditarAba("restaurante","contas") && podeAcao("restaurante","restaurante_acao_cobrar") ? '<button class="btn btn-in restCobrar" data-ids="'+lista.map(function(c){ return c.id; }).join(",")+'">'+ic("check")+' Marcar como cobrado</button>' : '') + '</div>';
       });
+    } else if(restSub === "louca"){
+      html += loucaRestauranteHtml();
     } else if(restSub === "restricoes"){
       html += restricoesHtml();
     } else if(restSub === "relatorio"){
@@ -10884,6 +10928,7 @@
       restSub = b.getAttribute("data-rsub"); renderRestaurante();
       if(restSub === "restricoes") carregarPreCheckins().then(function(){ if(restSub === "restricoes" && appSection === "restaurante" && !restComandaId) renderRestaurante(); });
     }; });
+    if(restSub === "louca") ligarLoucaRestaurante(main);
     if(restSub === "relatorio") restRelatorioLigar(main);
     if(restSub === "restricoes") ligarCopiarMsgRestricao(main);
     main.querySelectorAll(".rest-card").forEach(function(c){
@@ -12774,6 +12819,7 @@
     {key:"restaurante_cardapio", label:"Restaurante — só Cardápio (itens e preços)", sub:true},
     {key:"restaurante_relatorio", label:"Restaurante — só Relatório (ocupação e contas)", sub:true},
     {key:"restaurante_restricoes", label:"Restaurante — só Restrições alimentares", sub:true},
+    {key:"restaurante_louca", label:"Restaurante — só Serviço do dia (louça para recolher)", sub:true},
     {key:"restaurante_acao_240", label:"Restaurante — lançar itens na mesa 240 (cortesia)", acao:true},
     {key:"restaurante_acao_fechar", label:"Restaurante — fechar conta", acao:true},
     {key:"restaurante_acao_lancar_conta", label:"Restaurante — lançar na conta da acomodação", acao:true},
