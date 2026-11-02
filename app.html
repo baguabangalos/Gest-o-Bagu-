@@ -10805,6 +10805,41 @@
   var REST_INPUT = 'width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:var(--sand-50);box-sizing:border-box;';
 
   // ---------- Serviço do dia (restaurante): louça avisada pela limpeza ----------
+  // Editar / excluir um aviso de louça (usado na Recepção e no Restaurante)
+  function loucaPodeEditar(){ return appSection==="restaurante" ? podeEditarAba("restaurante","louca") : podeEditar("recepcao"); }
+  function loucaPodeExcluir(){ return appSection==="restaurante" ? podeExcluirAba("restaurante","louca") : podeExcluir("recepcao"); }
+  function loucaBotoesExtra(m){
+    return (loucaPodeEditar() ? '<button class="btn btn-out" data-act="loucaEditar" data-id="'+m.id+'" title="Editar">'+ic("pencil")+'</button>' : '') +
+      (loucaPodeExcluir() ? '<button class="btn-edit" data-act="loucaExcluir" data-id="'+m.id+'" title="Excluir">'+ic("trash")+'</button>' : '');
+  }
+  function ligarLoucaEditarExcluir(main){
+    main.querySelectorAll('[data-act="loucaEditar"]').forEach(function(btn){
+      btn.onclick = async function(){
+        var id = btn.getAttribute("data-id"), m = state.manutencoes.filter(function(x){ return x.id===id; })[0]; if(!m) return;
+        var obs = prompt("Observação da louça (ex.: 2 pratos na varanda):", m.description||""); if(obs === null) return;
+        var hora = prompt("Hora do aviso (AAAA-MM-DD HH:MM):", dtLocalVal(m.createdAt).replace("T"," ")); if(hora === null) return;
+        var hv = hora.trim().replace(" ","T");
+        var payload = {description:(obs.trim()||null)}; if(/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(hv)) payload.created_at = dtLocalIso(hv);
+        try{
+          var u = await dbUpdate("manutencoes", id, payload, mapManutencaoFromRow);
+          var i = state.manutencoes.findIndex(function(x){ return x.id===id; }); if(i>-1) state.manutencoes[i] = u;
+          showToast("Aviso atualizado"); renderApp();
+        }catch(err){ console.error(err); showToast("Erro ao salvar"); }
+      };
+    });
+    main.querySelectorAll('[data-act="loucaExcluir"]').forEach(function(btn){
+      btn.onclick = async function(){
+        if(!confirm("Excluir esse aviso de louça?")) return;
+        var id = btn.getAttribute("data-id");
+        try{
+          await dbDelete("manutencoes", id);
+          state.manutencoes = state.manutencoes.filter(function(x){ return x.id!==id; });
+          showToast("Aviso excluído"); renderApp();
+        }catch(err){ console.error(err); showToast("Erro ao excluir"); }
+      };
+    });
+  }
+
   function loucaPendentes(){
     return state.manutencoes.filter(function(m){ return m.origem === "limpeza" && m.status !== "concluida" && ehLouca(m); })
       .sort(function(a,b){ return (a.createdAt||0)-(b.createdAt||0); });
@@ -10819,12 +10854,13 @@
         '<p class="item-name" style="margin:0 0 3px;">'+ic("cup")+' '+escapeHtml(m.local||"")+'</p>' +
         (m.description ? '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+escapeHtml(m.description)+'</p>' : '') +
         '<p class="item-meta">'+(m.criadoPorNome ? 'avisado por '+escapeHtml(m.criadoPorNome)+' · ' : '')+'às '+fmtDate(m.createdAt)+'</p>' +
-        (podeEditarAba("restaurante","louca") ? '<div class="item-actions"><button class="btn btn-in" data-act="loucaRecolhida" data-id="'+m.id+'">'+ic("check")+' Recolhida</button></div>' : '') +
+        (podeEditarAba("restaurante","louca") ? '<div class="item-actions"><button class="btn btn-in" data-act="loucaRecolhida" data-id="'+m.id+'">'+ic("check")+' Recolhida</button>'+loucaBotoesExtra(m)+'</div>' : (loucaBotoesExtra(m) ? '<div class="item-actions">'+loucaBotoesExtra(m)+'</div>' : '')) +
       '</div>';
     });
     return h + '</div>';
   }
   function ligarLoucaRestaurante(main){
+    ligarLoucaEditarExcluir(main);
     main.querySelectorAll('[data-act="loucaRecolhida"]').forEach(function(btn){
       btn.onclick = async function(){
         var id = btn.getAttribute("data-id"); btn.disabled = true;
@@ -11850,7 +11886,7 @@
             '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.local||"")+'</p>' +
             (m.description ? '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+escapeHtml(m.description)+'</p>' : '') +
             '<p class="item-meta">'+(m.criadoPorNome ? 'avisado por '+escapeHtml(m.criadoPorNome)+' · ' : '')+'às '+fmtDate(m.createdAt)+'</p>' +
-            (podeEditar("recepcao") ? '<div class="item-actions"><button class="btn btn-in" data-act="resolverProblemaLimpeza" data-id="'+m.id+'">'+ic("check")+' Recolhida</button></div>' : '') +
+            (podeEditar("recepcao") ? '<div class="item-actions"><button class="btn btn-in" data-act="resolverProblemaLimpeza" data-id="'+m.id+'">'+ic("check")+' Recolhida</button>'+loucaBotoesExtra(m)+'</div>' : (loucaBotoesExtra(m) ? '<div class="item-actions">'+loucaBotoesExtra(m)+'</div>' : '')) +
           '</div>';
         });
         html += '</div>';
@@ -12165,6 +12201,7 @@
       };
     });
 
+    ligarLoucaEditarExcluir(main);
     main.querySelectorAll('[data-act="resolverProblemaLimpeza"]').forEach(function(btn){
       btn.onclick = async function(){
         var id = btn.getAttribute("data-id");
@@ -13440,7 +13477,7 @@
           (admin ? ('<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;"><select class="sugStatus" data-id="'+escapeHtml(x.id)+'" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;">' +
             SUG_STATUS.map(function(p){ return '<option value="'+p[0]+'"'+(p[0]===st?' selected':'')+'>'+p[1]+'</option>'; }).join("") + '</select>' +
             '<button type="button" class="sugResp" data-id="'+escapeHtml(x.id)+'" style="padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sand-100);font-family:inherit;font-size:13px;font-weight:700;">Responder</button></div>') : '') +
-          ((meu || admin) ? '<button type="button" class="sugDel" data-id="'+escapeHtml(x.id)+'" style="margin-top:8px;background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12.5px;font-weight:700;padding:0;">Excluir</button>' : '') +
+          ((meu || admin) ? '<div style="display:flex;gap:14px;margin-top:8px;"><button type="button" class="sugEdit" data-id="'+escapeHtml(x.id)+'" style="background:none;border:none;color:var(--teal-700);font-family:inherit;font-size:12.5px;font-weight:700;padding:0;">Editar</button><button type="button" class="sugDel" data-id="'+escapeHtml(x.id)+'" style="background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12.5px;font-weight:700;padding:0;">Excluir</button></div>' : '') +
           '</div>';
       });
     }
@@ -13478,6 +13515,19 @@
           var i = sugestoes.lista.findIndex(function(y){ return y.id === id; }); if(i > -1) sugestoes.lista[i] = res.data;
           renderSugestoes();
         }catch(err){ console.error(err); showToast("Não consegui salvar a resposta"); }
+      };
+    });
+    main.querySelectorAll(".sugEdit").forEach(function(btn){
+      btn.onclick = async function(){
+        var id = btn.getAttribute("data-id"), x = sugestoes.lista.filter(function(y){ return y.id === id; })[0]; if(!x) return;
+        var t = prompt("Editar sugestão:", x.texto); if(t === null) return; t = t.trim();
+        if(t.length < 5){ showToast("Escreva a sugestão"); return; }
+        try{
+          var res = await sb.from("sugestoes").update({texto:t}).eq("id", id).select().single();
+          if(res.error) throw res.error;
+          var i = sugestoes.lista.findIndex(function(y){ return y.id === id; }); if(i > -1) sugestoes.lista[i] = res.data;
+          showToast("Sugestão atualizada"); renderSugestoes();
+        }catch(err){ console.error(err); showToast("Não consegui editar"); }
       };
     });
     main.querySelectorAll(".sugDel").forEach(function(btn){
