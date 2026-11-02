@@ -7676,7 +7676,7 @@
     try{
       var hoje = localDateStr(new Date());
       var limite = addDiasStr(hoje, -60);
-      var lista = (state.feriados||[]).filter(function(f){ return f.direitoFolga && f.data < hoje && f.data >= limite && (forcar || !f.apuradoEm); });
+      var lista = (state.feriados||[]).filter(function(f){ return f.direitoFolga && (forcar ? f.data <= hoje : f.data < hoje) && f.data >= limite && (forcar || !f.apuradoEm); });
       for(var i=0; i<lista.length; i++){
         var f = lista[i];
         var ev = feriadoEvidencias(f.data);
@@ -7693,7 +7693,8 @@
             if(!(err && err.code === "23505")) console.error("feriado_trabalhados", err);
           }
         }
-        if(!f.apuradoEm){
+        // feriado de hoje ainda pode ter mais gente trabalhando: só marca como apurado depois que o dia passa
+        if(!f.apuradoEm && f.data < hoje){
           try{
             var upd = await dbUpdate("feriados", f.id, {apurado_em:new Date().toISOString()}, mapFeriadoFromRow);
             var ix = state.feriados.findIndex(function(x){ return x.id===f.id; });
@@ -7714,7 +7715,7 @@
     var atrasadas = pend.filter(function(r){ return diasEntre(feriadoPorId(r.feriadoId).data, hoje) > FERIADO_PRAZO_DIAS; });
     var pessoas = (state.staffProfiles||[]).filter(function(p){ return p.ativo!==false && p.equipe && p.equipe!=="limpeza"; });
     var inputEstilo = 'padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);';
-    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Quem trabalha num feriado ganha uma folga compensatória. O app confere sozinho, no dia seguinte ao feriado, quem fez alguma coisa no sistema (checklist, solicitações) e já guarda o crédito — sem depender da escala. Se alguém trabalhou e não apareceu, adicione manualmente. A folga pode ser marcada em qualquer data, inclusive <strong>antes</strong> do feriado (adiantada) ou trocando a folga da semana.</p>';
+    var html = '<p style="color:var(--ink-600);font-size:12px;margin:0 0 14px;">Quem trabalha num feriado ganha uma folga compensatória. O app confere sozinho, no dia seguinte ao feriado (ou na hora, em <strong>Conferir agora</strong>, inclusive no próprio dia), quem fez alguma coisa no sistema (checklist, solicitações) e já guarda o crédito — sem depender da escala. Se alguém trabalhou e não apareceu, adicione manualmente. A folga pode ser marcada em qualquer data, inclusive <strong>antes</strong> do feriado (adiantada) ou trocando a folga da semana.</p>';
 
     if(atrasadas.length > 0){
       html += '<div class="card" style="border-left:4px solid var(--red-600);margin-bottom:14px;">' +
