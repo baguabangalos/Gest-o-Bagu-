@@ -5701,6 +5701,8 @@
   // finalizar uma acomodação — aparecem como opções rápidas no sheet de
   // "Problema na acomodação" (além do campo de texto livre pra qualquer
   // outro problema que não esteja nessa lista).
+  var LOUCA_TITULO = "Louça para recolher";
+  function ehLouca(m){ return m && m.title === LOUCA_TITULO; }
   var PROBLEMAS_RECORRENTES = [
     "Trocar taça", "Repor taça e copo", "TV não conecta", "Trancar o cofre",
     "Repor controle remoto", "Chuveiro/água quente com problema", "Ar-condicionado com problema"
@@ -8687,7 +8689,7 @@
       html += '<div class="item-actions">'+obsHtml+histHtml+lixoHtml+'</div>';
     }
     if((s.tipo === "lavagem" || s.tipo === "limpeza") && podeEditar("limpeza")){
-      html += '<div class="item-actions" style="margin-top:4px;"><button class="btn btn-out" data-act="reportarProblema" data-id="'+s.id+'">'+ic("warning")+' Problema na acomodação</button></div>';
+      html += '<div class="item-actions" style="margin-top:4px;"><button class="btn btn-out" data-act="reportarProblema" data-id="'+s.id+'">'+ic("warning")+' Problema na acomodação</button><button class="btn btn-out" data-act="avisarLouca" data-id="'+s.id+'">'+ic("cup")+' Louça para recolher</button></div>';
     }
     return html;
   }
@@ -8746,6 +8748,8 @@
             abrirObservacaoSolicitacaoSheet(s);
           } else if(act === "reportarProblema"){
             abrirProblemaAcomodacaoSheet(s);
+          } else if(act === "avisarLouca"){
+            abrirLoucaSheet(s);
           } else if(act === "iniciar"){
             if(s.tipo === "lavagem" || s.tipo === "limpeza"){
               if(podeSemQr()){ if(confirm("Iniciar a limpeza de "+acomodacaoNome(s.acomodacaoId)+" sem ler o QR Code?")) efetivarIniciarSolicitacao(id); } else abrirQrConfirmSheet(s.acomodacaoId, function(){ efetivarIniciarSolicitacao(id); });
@@ -10221,6 +10225,37 @@
         console.error(err); showToast("Erro ao reportar problema");
         btn.disabled = false;
       }
+    };
+  }
+
+  // Botão próprio da limpeza: avisa a recepção que há louça do lado de fora
+  // da acomodação para recolher (aparece em Recepção > Limpeza).
+  function abrirLoucaSheet(s){
+    var html =
+      '<div class="sheet-overlay open" id="loucaOverlay"><div class="sheet">' +
+        '<h2>'+ic("cup")+' Louça para recolher</h2>' +
+        '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">'+escapeHtml(acomodacaoNome(s.acomodacaoId))+' — avisa a recepção que tem louça do lado de fora pra recolher.</p>' +
+        '<label>Observação (opcional)</label>' +
+        '<textarea id="loucaObs" rows="2" placeholder="Ex.: 2 pratos e 1 jarra na varanda" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);resize:vertical;box-sizing:border-box;"></textarea>' +
+        '<label>Hora do aviso</label>' +
+        '<input type="datetime-local" id="loucaHora" value="'+dtLocalVal()+'" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+        '<div class="sheet-actions"><button type="button" class="btn-secondary" id="loucaCancel">Cancelar</button>' +
+        '<button type="button" class="btn-primary" id="loucaSalvar">'+ic("check")+' Avisar a recepção</button></div>' +
+      '</div></div>';
+    document.body.insertAdjacentHTML("beforeend", html);
+    var ov = document.getElementById("loucaOverlay");
+    document.getElementById("loucaCancel").onclick = function(){ ov.remove(); };
+    ov.addEventListener("click", function(e){ if(e.target === ov) ov.remove(); });
+    document.getElementById("loucaSalvar").onclick = async function(){
+      var btn = this; btn.disabled = true;
+      var obs = document.getElementById("loucaObs").value.trim();
+      try{
+        var m = await dbInsert("manutencoes", {id:uid(), title:LOUCA_TITULO, local:acomodacaoNome(s.acomodacaoId), description:(obs||null),
+          status:"pendente", origem:"limpeza", prioridade:"media", criado_por:(currentUser?currentUser.id:null),
+          created_at:dtLocalIso(document.getElementById("loucaHora").value)}, mapManutencaoFromRow);
+        state.manutencoes.push(m);
+        ov.remove(); showToast("Recepção avisada: louça para recolher"); renderApp();
+      }catch(err){ console.error(err); showToast("Erro ao avisar"); btn.disabled = false; }
     };
   }
 
@@ -11733,8 +11768,10 @@
     if(recepcaoSubView === "limpeza"){
       var bloqueadasRecepcao = state.solicitacoes.filter(function(s){ return s.status === "bloqueada"; })
         .sort(function(a,b){ return a.criadoEm-b.criadoEm; });
-      var problemasRecepcao = state.manutencoes.filter(function(m){ return m.origem === "limpeza" && m.status !== "concluida"; })
+      var problemasRecepcao = state.manutencoes.filter(function(m){ return m.origem === "limpeza" && m.status !== "concluida" && !ehLouca(m); })
         .sort(function(a,b){ return (b.createdAt||0)-(a.createdAt||0); });
+      var loucaRecepcao = state.manutencoes.filter(function(m){ return m.origem === "limpeza" && m.status !== "concluida" && ehLouca(m); })
+        .sort(function(a,b){ return (a.createdAt||0)-(b.createdAt||0); });
       var prontas = computeAcomodacoesProntasParaEntrada();
       var aguardando = computeAguardandoAbastecimento();
       var aguardandoRevisao = computeAguardandoRevisao();
@@ -11745,6 +11782,20 @@
         html += '<div class="card">';
         bloqueadasRecepcao.forEach(function(s, i){
           html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' + renderSolicitacaoCard(s) + '</div>';
+        });
+        html += '</div>';
+      }
+
+      if(loucaRecepcao.length > 0){
+        html += '<div class="section-title" style="margin-top:18px;color:var(--amber-600);">'+ic("cup")+' Louça para recolher ('+loucaRecepcao.length+')</div>';
+        html += '<div class="card">';
+        loucaRecepcao.forEach(function(m, i){
+          html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+            '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.local||"")+'</p>' +
+            (m.description ? '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);">'+escapeHtml(m.description)+'</p>' : '') +
+            '<p class="item-meta">'+(m.criadoPorNome ? 'avisado por '+escapeHtml(m.criadoPorNome)+' · ' : '')+'às '+fmtDate(m.createdAt)+'</p>' +
+            (podeEditar("recepcao") ? '<div class="item-actions"><button class="btn btn-in" data-act="resolverProblemaLimpeza" data-id="'+m.id+'">'+ic("check")+' Recolhida</button></div>' : '') +
+          '</div>';
         });
         html += '</div>';
       }
