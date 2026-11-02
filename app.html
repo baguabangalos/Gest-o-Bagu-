@@ -484,6 +484,7 @@
 <main id="personalizarView" style="display:none;"></main>
 <main id="tarefasDiaView" style="display:none;"></main>
 <main id="financeiroView" style="display:none;"></main>
+<main id="sugestoesView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
 <main id="recepcaoView" style="display:none;"></main>
@@ -2528,6 +2529,10 @@
         h1.textContent = "Lucro e perdas";
         sub.textContent = "Resultado mensal do estoque";
         alertPill.style.display = "none";
+      } else if(appSection === "sugestoes"){
+        h1.textContent = "Sugestões";
+        sub.textContent = "Ideias para melhorar o aplicativo";
+        alertPill.style.display = "none";
       } else if(appSection === "tarefasdia"){
         h1.textContent = "Tarefas do dia";
         sub.textContent = "Atividades específicas por pessoa";
@@ -2658,9 +2663,9 @@
   var HOME_PADRAO = [
     ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
     ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],
-    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["financeiro","Lucro e perdas"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
+    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["financeiro","Lucro e perdas"],["sugestoes","Sugestões"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
   ];
-  var HOME_FIXOS = ["admin","personalizar","configuracoes"];
+  var HOME_FIXOS = ["admin","personalizar","configuracoes","sugestoes"];
   var appConfig = {};
   var LISTAS_PADRAO = null;
   function cfgGet(k, def){ var v = appConfig[k]; return (v && typeof v === "object") ? v : def; }
@@ -2723,7 +2728,7 @@
     if(sec==="escala") return "escala_trabalho";
     if(sec==="tarefasdia") return "tarefas_dia";
     if(sec==="financeiro") return "financeiro_estoque";
-    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar") return null;
+    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar" || sec==="sugestoes") return null;
     return "procedimentos";
   }
 
@@ -2731,7 +2736,7 @@
     if(scanAcomodacaoId){ renderScanLimpeza(); return; }
     if((appSection === "admin" || appSection === "personalizar") && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
     else if(appSection === "supervisao" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
-    else if(appSection !== "home" && appSection !== "admin" && appSection !== "personalizar" && appSection !== "supervisao" && appSection !== "configuracoes" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
+    else if(appSection !== "home" && appSection !== "admin" && appSection !== "personalizar" && appSection !== "supervisao" && appSection !== "configuracoes" && appSection !== "sugestoes" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
     renderHeader();
     document.getElementById("homeView").style.display = appSection==="home" ? "block":"none";
     document.getElementById("itemsView").style.display = (appSection==="estoque" && activeView==="items") ? "block":"none";
@@ -2743,6 +2748,7 @@
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
     document.getElementById("personalizarView").style.display = appSection==="personalizar" ? "block":"none";
     document.getElementById("tarefasDiaView").style.display = appSection==="tarefasdia" ? "block":"none";
+    document.getElementById("sugestoesView").style.display = appSection==="sugestoes" ? "block":"none";
     document.getElementById("financeiroView").style.display = appSection==="financeiro" ? "block":"none";
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
@@ -2803,6 +2809,7 @@
     if(appSection === "admin") renderAdmin();
     if(appSection === "personalizar") renderPersonalizar();
     if(appSection === "tarefasdia") renderTarefasDia();
+    if(appSection === "sugestoes") renderSugestoes();
     if(appSection === "financeiro") renderFinanceiro();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
@@ -2881,6 +2888,7 @@
     if(currentUser && currentUser.role === "admin") cards.push({section:"supervisao", titulo:"Supervisão", icon:ic("search"), sub:"painel geral e histórico"});
     if(currentUser && currentUser.role === "admin") cards.push({section:"admin", titulo:"Administração", icon:ic("key"), sub:(adminPendentesN>0 ? (adminPendentesN+(adminPendentesN===1?" conta aguardando aprovação":" contas aguardando aprovação")) : "gerenciar quem acessa o quê")});
     if(currentUser && currentUser.role === "admin") cards.push({section:"personalizar", titulo:"Personalizar", icon:ic("pencil"), sub:"abas, cards e listas do app"});
+    cards.push({section:"sugestoes", titulo:"Sugestões", icon:ic("pencil"), sub:"ideias para melhorar o app"});
     cards.push({section:"configuracoes", titulo:"Configurações", icon:ic("logout"), sub:"minha conta e sair"});
     cards = aplicarConfigHome(cards);
 
@@ -13277,6 +13285,102 @@
     if(finSub !== "resultado") return;
     document.getElementById("finPrev").onclick = function(){ finMes = finMesDeslocar(finMes, -1); renderFinanceiro(); };
     document.getElementById("finNext").onclick = function(){ if(finMes < hojeKey){ finMes = finMesDeslocar(finMes, 1); renderFinanceiro(); } };
+  }
+
+
+  // ================= Sugestões para o aplicativo =================
+  var sugestoes = {lista:[], carregado:false, carregando:false, erro:false};
+  var SUG_STATUS = [["nova","Nova"],["analise","Em análise"],["feita","Feita"],["descartada","Descartada"]];
+  var SUG_COR = {nova:"var(--ink-600)", analise:"var(--amber-600)", feita:"var(--teal-700)", descartada:"var(--red-600)"};
+  async function carregarSugestoes(){
+    sugestoes.carregando = true;
+    try{
+      var res = await sb.from("sugestoes").select("*").order("criado_em", {ascending:false}).limit(300);
+      if(res.error) throw res.error;
+      sugestoes.lista = res.data || []; sugestoes.erro = false;
+    }catch(err){ console.error("sugestoes:", err); sugestoes.erro = true; }
+    sugestoes.carregado = true; sugestoes.carregando = false;
+  }
+  function renderSugestoes(){
+    var main = document.getElementById("sugestoesView");
+    if(!sugestoes.carregado){
+      main.innerHTML = '<div class="empty">Carregando…</div>';
+      if(!sugestoes.carregando) carregarSugestoes().then(function(){ if(appSection === "sugestoes") renderSugestoes(); });
+      return;
+    }
+    var admin = !!currentUser && currentUser.role === "admin";
+    var h = '<div class="card"><p class="item-name" style="margin:0 0 6px;">Tem uma ideia para melhorar o aplicativo?</p>' +
+      '<textarea id="sugTexto" rows="4" maxlength="1500" placeholder="Escreva aqui o que poderia mudar, o que está difícil de usar ou o que está faltando…" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14.5px;background:#fff;resize:vertical;"></textarea>' +
+      '<button type="button" id="sugEnviar" style="display:block;width:100%;margin-top:8px;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;">Enviar sugestão</button></div>';
+    if(sugestoes.erro){
+      h += '<div class="empty">Não consegui carregar as sugestões.<br><button class="btn btn-in" id="sugRetry" style="margin-top:10px;">Tentar de novo</button></div>';
+    } else if(!sugestoes.lista.length){
+      h += '<div class="empty">Nenhuma sugestão ainda. Seja a primeira pessoa a mandar!</div>';
+    } else {
+      h += '<div class="section-title">Sugestões enviadas ('+sugestoes.lista.length+')</div>';
+      sugestoes.lista.forEach(function(x){
+        var st = x.status || "nova", rot = (SUG_STATUS.filter(function(p){ return p[0] === st; })[0]||[0,st])[1];
+        var meu = !!currentUser && x.criado_por === currentUser.id;
+        h += '<div class="card" style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">' +
+          '<p style="margin:0;font-size:14.5px;white-space:pre-wrap;flex:1;">'+escapeHtml(x.texto)+'</p>' +
+          '<span style="font-size:11px;font-weight:800;color:'+(SUG_COR[st]||"var(--ink-600)")+';white-space:nowrap;">'+escapeHtml(rot.toUpperCase())+'</span></div>' +
+          '<p class="item-meta" style="margin:6px 0 0;">'+escapeHtml(x.criado_por_nome||"Alguém da equipe")+' · '+fmtDate(new Date(x.criado_em).getTime())+'</p>' +
+          (x.resposta ? '<p style="margin:8px 0 0;padding:8px 10px;background:var(--teal-100);border-radius:8px;font-size:13.5px;"><b>Resposta:</b> '+escapeHtml(x.resposta)+'</p>' : '') +
+          (admin ? ('<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;"><select class="sugStatus" data-id="'+escapeHtml(x.id)+'" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;">' +
+            SUG_STATUS.map(function(p){ return '<option value="'+p[0]+'"'+(p[0]===st?' selected':'')+'>'+p[1]+'</option>'; }).join("") + '</select>' +
+            '<button type="button" class="sugResp" data-id="'+escapeHtml(x.id)+'" style="padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sand-100);font-family:inherit;font-size:13px;font-weight:700;">Responder</button></div>') : '') +
+          ((meu || admin) ? '<button type="button" class="sugDel" data-id="'+escapeHtml(x.id)+'" style="margin-top:8px;background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12.5px;font-weight:700;padding:0;">Excluir</button>' : '') +
+          '</div>';
+      });
+    }
+    main.innerHTML = h;
+    var retry = document.getElementById("sugRetry"); if(retry) retry.onclick = function(){ sugestoes.carregado = false; renderSugestoes(); };
+    document.getElementById("sugEnviar").onclick = async function(){
+      var b = this, t = document.getElementById("sugTexto").value.trim();
+      if(t.length < 5){ showToast("Escreva a sugestão primeiro"); return; }
+      b.disabled = true;
+      try{
+        var res = await sb.from("sugestoes").insert({id:uid(), texto:t, criado_por:currentUser.id, criado_por_nome:currentUser.nome}).select().single();
+        if(res.error) throw res.error;
+        sugestoes.lista.unshift(res.data);
+        showToast("Sugestão enviada, obrigada!"); renderSugestoes();
+      }catch(err){ console.error(err); showToast("Não consegui enviar. Tente de novo."); b.disabled = false; }
+    };
+    main.querySelectorAll(".sugStatus").forEach(function(sel){
+      sel.onchange = async function(){
+        try{
+          var res = await sb.from("sugestoes").update({status:sel.value}).eq("id", sel.getAttribute("data-id")).select().single();
+          if(res.error) throw res.error;
+          var i = sugestoes.lista.findIndex(function(x){ return x.id === res.data.id; }); if(i > -1) sugestoes.lista[i] = res.data;
+          renderSugestoes();
+        }catch(err){ console.error(err); showToast("Não consegui atualizar"); }
+      };
+    });
+    main.querySelectorAll(".sugResp").forEach(function(btn){
+      btn.onclick = async function(){
+        var id = btn.getAttribute("data-id"), x = sugestoes.lista.filter(function(y){ return y.id === id; })[0];
+        var t = prompt("Resposta para essa sugestão:", (x && x.resposta) || "");
+        if(t === null) return;
+        try{
+          var res = await sb.from("sugestoes").update({resposta:t.trim()||null}).eq("id", id).select().single();
+          if(res.error) throw res.error;
+          var i = sugestoes.lista.findIndex(function(y){ return y.id === id; }); if(i > -1) sugestoes.lista[i] = res.data;
+          renderSugestoes();
+        }catch(err){ console.error(err); showToast("Não consegui salvar a resposta"); }
+      };
+    });
+    main.querySelectorAll(".sugDel").forEach(function(btn){
+      btn.onclick = async function(){
+        if(!confirm("Excluir essa sugestão?")) return;
+        var id = btn.getAttribute("data-id");
+        try{
+          var res = await sb.from("sugestoes").delete().eq("id", id);
+          if(res.error) throw res.error;
+          sugestoes.lista = sugestoes.lista.filter(function(y){ return y.id !== id; });
+          renderSugestoes();
+        }catch(err){ console.error(err); showToast("Não consegui excluir"); }
+      };
+    });
   }
 
   function renderPersonalizar(){
