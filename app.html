@@ -487,6 +487,7 @@
 <main id="tarefasDiaView" style="display:none;"></main>
 <main id="financeiroView" style="display:none;"></main>
 <main id="sugestoesView" style="display:none;"></main>
+<main id="usoSbView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
 <main id="recepcaoView" style="display:none;"></main>
@@ -2560,6 +2561,10 @@
         h1.textContent = "Lucro e perdas";
         sub.textContent = "Resultado mensal do estoque";
         alertPill.style.display = "none";
+      } else if(appSection === "usosb"){
+        h1.textContent = "Uso do sistema";
+        sub.textContent = "Limites do plano gratuito";
+        alertPill.style.display = "none";
       } else if(appSection === "sugestoes"){
         h1.textContent = "Sugestões";
         sub.textContent = "Ideias para melhorar o aplicativo";
@@ -2694,9 +2699,9 @@
   var HOME_PADRAO = [
     ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
     ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],
-    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["financeiro","Lucro e perdas"],["sugestoes","Sugestões"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
+    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["financeiro","Lucro e perdas"],["sugestoes","Sugestões"],["usosb","Uso do sistema"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
   ];
-  var HOME_FIXOS = ["admin","personalizar","configuracoes","sugestoes"];
+  var HOME_FIXOS = ["admin","personalizar","configuracoes","sugestoes","usosb"];
   var appConfig = {};
   var LISTAS_PADRAO = null;
   function cfgGet(k, def){ var v = appConfig[k]; return (v && typeof v === "object") ? v : def; }
@@ -2759,15 +2764,15 @@
     if(sec==="escala") return "escala_trabalho";
     if(sec==="tarefasdia") return "tarefas_dia";
     if(sec==="financeiro") return "financeiro_estoque";
-    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar" || sec==="sugestoes") return null;
+    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar" || sec==="sugestoes" || sec==="usosb") return null;
     return "procedimentos";
   }
 
   function renderApp(){
     if(scanAcomodacaoId){ renderScanLimpeza(); return; }
     if((appSection === "admin" || appSection === "personalizar") && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
-    else if(appSection === "supervisao" && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
-    else if(appSection !== "home" && appSection !== "admin" && appSection !== "personalizar" && appSection !== "supervisao" && appSection !== "configuracoes" && appSection !== "sugestoes" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
+    else if((appSection === "supervisao" || appSection === "usosb") && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
+    else if(appSection !== "home" && appSection !== "admin" && appSection !== "personalizar" && appSection !== "supervisao" && appSection !== "configuracoes" && appSection !== "sugestoes" && appSection !== "usosb" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
     renderHeader();
     document.getElementById("homeView").style.display = appSection==="home" ? "block":"none";
     document.getElementById("itemsView").style.display = (appSection==="estoque" && activeView==="items") ? "block":"none";
@@ -2780,6 +2785,7 @@
     document.getElementById("personalizarView").style.display = appSection==="personalizar" ? "block":"none";
     document.getElementById("tarefasDiaView").style.display = appSection==="tarefasdia" ? "block":"none";
     document.getElementById("sugestoesView").style.display = appSection==="sugestoes" ? "block":"none";
+    document.getElementById("usoSbView").style.display = appSection==="usosb" ? "block":"none";
     document.getElementById("financeiroView").style.display = appSection==="financeiro" ? "block":"none";
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
     document.getElementById("limpezaView").style.display = appSection==="limpeza" ? "block":"none";
@@ -2841,6 +2847,7 @@
     if(appSection === "personalizar") renderPersonalizar();
     if(appSection === "tarefasdia") renderTarefasDia();
     if(appSection === "sugestoes") renderSugestoes();
+    if(appSection === "usosb") renderUsoSb();
     if(appSection === "financeiro") renderFinanceiro();
     if(appSection === "hospedes") renderHospedes();
     if(appSection === "limpeza") renderLimpeza();
@@ -2919,6 +2926,11 @@
     if(currentUser && currentUser.role === "admin") cards.push({section:"supervisao", titulo:"Supervisão", icon:ic("search"), sub:"painel geral e histórico"});
     if(currentUser && currentUser.role === "admin") cards.push({section:"admin", titulo:"Administração", icon:ic("key"), sub:(adminPendentesN>0 ? (adminPendentesN+(adminPendentesN===1?" conta aguardando aprovação":" contas aguardando aprovação")) : "gerenciar quem acessa o quê")});
     if(currentUser && currentUser.role === "admin") cards.push({section:"personalizar", titulo:"Personalizar", icon:ic("pencil"), sub:"abas, cards e listas do app"});
+    if(currentUser && currentUser.role === "admin"){
+      if(!usoSb.tentado){ usoSb.tentado = true; carregarUsoSb().then(function(){ if(usoSbAlertas().length) mostrarAlertaPedido("Uso do sistema perto do limite: "+usoSbAlertas().map(function(a){return a.nome+" "+a.pct+"%";}).join(", "), function(){ appSection="usosb"; renderApp(); }, "Uso do sistema"); if(appSection==="home") renderApp(); }); }
+      var usoAl = usoSbAlertas();
+      cards.push({section:"usosb", titulo:"Uso do sistema", icon:ic("search"), sub:(usoAl.length ? "perto do limite: "+usoAl.map(function(a){return a.nome;}).join(", ") : "banco, arquivos e usuários"), subVermelho:usoAl.length>0});
+    }
     cards.push({section:"sugestoes", titulo:"Sugestões", icon:ic("pencil"), sub:"ideias para melhorar o app"});
     cards.push({section:"configuracoes", titulo:"Configurações", icon:ic("logout"), sub:"minha conta e sair"});
     cards = aplicarConfigHome(cards);
@@ -13447,6 +13459,60 @@
     document.getElementById("finNext").onclick = function(){ if(finMes < hojeKey){ finMes = finMesDeslocar(finMes, 1); renderFinanceiro(); } };
   }
 
+
+
+  // ================= Uso do sistema (limites do plano gratuito) =================
+  var usoSb = {dados:null, erro:null, carregando:false, tentado:false};
+  var USO_LIMITES = [
+    {k:"db_bytes", nome:"Banco de dados", limite:524288000, fmt:"bytes"},
+    {k:"storage_bytes", nome:"Arquivos", limite:1073741824, fmt:"bytes"},
+    {k:"mau", nome:"Usuários ativos", limite:50000, fmt:"n"}
+  ];
+  function usoFmt(v, fmt){
+    if(fmt === "n") return String(v);
+    if(v >= 1073741824) return (v/1073741824).toFixed(2).replace(".",",")+" GB";
+    return (v/1048576).toFixed(1).replace(".",",")+" MB";
+  }
+  function usoSbAlertas(){
+    if(!usoSb.dados) return [];
+    return USO_LIMITES.map(function(l){ return {nome:l.nome, pct:Math.round(100*(Number(usoSb.dados[l.k])||0)/l.limite)}; }).filter(function(a){ return a.pct >= 80; });
+  }
+  async function carregarUsoSb(){
+    usoSb.carregando = true;
+    try{
+      var res = await sb.rpc("uso_supabase");
+      if(res.error) throw res.error;
+      usoSb.dados = res.data; usoSb.erro = null;
+    }catch(err){ console.error("uso_supabase:", err); usoSb.erro = true; }
+    usoSb.carregando = false;
+  }
+  function renderUsoSb(){
+    var main = document.getElementById("usoSbView");
+    if(!usoSb.dados && !usoSb.erro){
+      main.innerHTML = '<div class="empty">Carregando…</div>';
+      if(!usoSb.carregando) carregarUsoSb().then(function(){ if(appSection === "usosb") renderUsoSb(); });
+      return;
+    }
+    if(usoSb.erro){
+      main.innerHTML = '<div class="empty">Não consegui carregar o uso agora.<br><button type="button" id="usoRetry" class="btn-secondary" style="margin-top:10px;">Tentar de novo</button></div>';
+      document.getElementById("usoRetry").onclick = function(){ usoSb.erro = null; usoSb.dados = null; renderUsoSb(); };
+      return;
+    }
+    var d = usoSb.dados, h = '<div class="card"><p class="item-name" style="margin:0 0 4px;">Plano gratuito do Supabase</p><p style="margin:0;font-size:13px;color:var(--ink-500);">Ciclo atual desde '+fmtDate(String(d.ciclo_inicio).slice(0,10))+'. Aviso vermelho a partir de 80% do limite.</p></div>';
+    USO_LIMITES.forEach(function(l){
+      var v = Number(d[l.k])||0, pct = Math.min(100, 100*v/l.limite), cor = pct >= 90 ? "#c0392b" : (pct >= 80 ? "#d68910" : "var(--teal-700)");
+      h += '<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;"><span class="item-name">'+l.nome+(l.k==="mau"?" (aprox.)":"")+'</span><b style="color:'+cor+';">'+pct.toFixed(pct<10?1:0).replace(".",",")+'%</b></div>' +
+        '<div style="height:10px;background:var(--sand-100,#eee);border-radius:6px;overflow:hidden;margin:8px 0 6px;"><div style="height:100%;width:'+Math.max(pct,1)+'%;background:'+cor+';"></div></div>' +
+        '<span style="font-size:13px;color:var(--ink-500);">'+usoFmt(v,l.fmt)+' de '+usoFmt(l.limite,l.fmt)+'</span></div>';
+    });
+    h += '<div class="section-title">Maiores tabelas</div><div class="card">';
+    (d.tabelas||[]).forEach(function(t){ h += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13.5px;"><span>'+t.nome+'</span><span>'+usoFmt(Number(t.bytes),"bytes")+'</span></div>'; });
+    h += '</div><div class="card"><p style="margin:0 0 8px;font-size:13px;color:var(--ink-500);">Transferência de dados (limite 5 GB), chamadas de funções e mensagens em tempo real não dá para medir aqui dentro. Veja no painel do Supabase, em Usage.</p>' +
+      '<a href="https://supabase.com/dashboard/project/pxfyhttjngsjqupyihso/settings/billing/usage" target="_blank" rel="noopener" style="display:block;text-align:center;background:var(--teal-700);color:#fff;border-radius:10px;padding:12px;font-weight:700;text-decoration:none;">Abrir painel de uso</a>' +
+      '<button type="button" id="usoAtualizar" style="display:block;width:100%;margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:14px;">Atualizar</button></div>';
+    main.innerHTML = h;
+    document.getElementById("usoAtualizar").onclick = function(){ usoSb.dados = null; usoSb.erro = null; renderUsoSb(); };
+  }
 
   // ================= Sugestões para o aplicativo =================
   var sugestoes = {lista:[], carregado:false, carregando:false, erro:false};
