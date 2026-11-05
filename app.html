@@ -741,8 +741,8 @@
     <form id="supplierForm">
       <label>Nome do fornecedor</label>
       <input type="text" id="s_name" required placeholder="Ex: Distribuidora ABC">
-      <label>Telefone / WhatsApp (opcional)</label>
-      <input type="text" id="s_phone" placeholder="Ex: (11) 99999-9999">
+      <label>WhatsApp do fornecedor (com DDD)</label>
+      <input type="tel" id="s_phone" placeholder="Ex: (62) 99999-9999">
       <label>Dias de pedido</label>
       <div class="day-chip-row" id="s_days"></div>
       <label>Observações (opcional)</label>
@@ -4101,7 +4101,42 @@
       '</div>';
     });
     html += '</div>';
+    var gruposZap = {};
+    suggestions.rows.forEach(function(r){
+      if(r.suggestedPurchase > 0 && r.item.supplierId){ (gruposZap[r.item.supplierId] = gruposZap[r.item.supplierId] || []).push(r); }
+    });
+    var idsZap = Object.keys(gruposZap);
+    if(idsZap.length){
+      html += '<div class="section-title">Pedir ao fornecedor</div><div class="card">';
+      idsZap.forEach(function(sid, i){
+        var sup = supplierById(sid); if(!sup) return;
+        var tel = zapNumero(sup.phone);
+        html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'"><p style="margin:0 0 6px;font-size:14px;font-weight:700;">'+escapeHtml(sup.name)+' <span style="font-weight:400;color:var(--ink-500);font-size:13px;">('+gruposZap[sid].length+(gruposZap[sid].length===1?' item':' itens')+')</span></p>' +
+          (tel
+            ? '<button type="button" class="pedirZapBtn" data-sid="'+sid+'" style="display:block;width:100%;background:#25d366;color:#fff;border:none;border-radius:10px;padding:11px;font-family:inherit;font-size:14px;font-weight:700;">Enviar pedido no WhatsApp</button>'
+            : '<button type="button" class="semZapBtn" data-sid="'+sid+'" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:13.5px;">Cadastrar WhatsApp deste fornecedor</button>') + '</div>';
+      });
+      html += '</div>';
+    }
     el.innerHTML = html;
+    el.querySelectorAll(".pedirZapBtn").forEach(function(btn){
+      btn.onclick = function(){
+        var sid = btn.getAttribute("data-sid"), sup = supplierById(sid), rows = gruposZap[sid] || [];
+        if(!sup) return;
+        var txt = "Olá! Gostaria de fazer o seguinte pedido (Bagua Bangalôs):\n\n" + rows.map(function(r){ return "• "+r.item.name+": "+fmtQty(r.suggestedPurchase)+" "+r.item.unit; }).join("\n") + "\n\nObrigada!";
+        window.open("https://wa.me/"+zapNumero(sup.phone)+"?text="+encodeURIComponent(txt), "_blank");
+      };
+    });
+    el.querySelectorAll(".semZapBtn").forEach(function(btn){
+      btn.onclick = function(){ var sup = supplierById(btn.getAttribute("data-sid")); if(sup) openSupplierForm(sup); };
+    });
+  }
+  // Número para o wa.me: só dígitos, com 55 na frente quando faltar.
+  function zapNumero(tel){
+    var d = String(tel||"").replace(/\D/g,"");
+    if(d.length < 10) return "";
+    if(d.length <= 11) d = "55"+d;
+    return d;
   }
 
   // ---------- Count (contagem) view ----------
