@@ -7574,7 +7574,8 @@
       html += '<button type="button" id="escalaSemanaHoje" style="display:block;margin:0 auto 12px;background:none;border:none;color:var(--teal-700);font-family:inherit;font-size:12.5px;font-weight:700;">← voltar pra semana atual</button>';
     }
 
-    if(funcionarios.length > 0){
+    var gradeFunc = funcionarios.concat((state.staffProfiles||[]).filter(function(p){ return p.ativo !== false && p.equipe==="guarda"; }));
+    if(gradeFunc.length > 0){
       html += '<div class="card" style="overflow-x:auto;padding:10px;">';
       html += '<table style="width:100%;border-collapse:collapse;min-width:680px;">';
       html += '<tr><th style="text-align:left;padding:6px 8px;font-size:12px;color:var(--ink-600);">Funcionário</th>';
@@ -7584,9 +7585,9 @@
         html += '<th style="padding:6px 4px;font-size:11px;color:'+(hoje?"var(--teal-700)":"var(--ink-600)")+';text-align:center;white-space:nowrap;">'+DIAS_SEMANA_LABELS[dow]+'<br>'+d.slice(8,10)+'/'+d.slice(5,7)+'</th>';
       });
       html += '</tr>';
-      funcionarios.forEach(function(f){
+      gradeFunc.forEach(function(f){
         html += '<tr>';
-        html += '<td style="padding:6px 8px;font-size:13px;font-weight:700;border-top:1px solid var(--line);white-space:nowrap;">'+escapeHtml(f.nome)+'</td>';
+        html += '<td style="padding:6px 8px;font-size:13px;font-weight:700;border-top:1px solid var(--line);white-space:nowrap;">'+escapeHtml(f.nome)+(f.equipe==="guarda"?' <span style="font-size:10.5px;font-weight:600;color:var(--ink-600);">guarda</span>':'')+'</td>';
         datas.forEach(function(d){
           var ef = escalaEfetiva(f.id, d);
           var cor = ESCALA_TIPO_COR[ef.tipo] || "var(--ink-400)";
@@ -7601,7 +7602,7 @@
         html += '</tr>';
       });
       html += '</table></div>';
-      html += '<p class="item-meta" style="margin-top:8px;">• dia com exceção (folga extra, falta, atestado) ou domingo fixo de folga do mês — esta grade é só pra conferir, as edições ficam nas abas Horários e Folga.</p>';
+      html += '<p class="item-meta" style="margin-top:8px;">• dia com exceção (folga extra, falta, atestado) ou domingo fixo de folga do mês — esta grade é só pra conferir, as edições ficam nas abas Horários, Folga e Guarda (escala 12×36 dos guardas).</p>';
     }
 
     body.innerHTML = html;
