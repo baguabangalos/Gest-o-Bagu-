@@ -1591,7 +1591,7 @@
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
     restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", restricoes:"restaurante_restricoes", louca:"restaurante_louca"}},
-    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada"}},
+    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada", chuvas:"recepcao_chuvas"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
     limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada", qr:"limpeza_qr"}},
@@ -2695,7 +2695,7 @@
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
     restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições", louca:"Serviço do dia"},
-    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada"},
+    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada", chuvas:"Guarda-chuvas"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
     limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada", qr:"QR Code"},
@@ -11999,6 +11999,220 @@
       return prob + bloq + computeAguardandoRevisao().length;
     }catch(e){ return 0; }
   }
+  // ================= Guarda-chuvas (empréstimo aos hóspedes) =================
+  var umb = {chuvas:[], emp:[], carregado:false, carregando:false, erro:false, tentado:false};
+  var umbId = function(r){ return r; };
+  async function carregarChuvas(){
+    umb.carregando = true;
+    try{
+      var r1 = await sb.from("guarda_chuvas").select("*").order("codigo");
+      var r2 = await sb.from("emprestimos_chuva").select("*").order("saiu_em", {ascending:false}).limit(1000);
+      if(r1.error) throw r1.error; if(r2.error) throw r2.error;
+      umb.chuvas = (r1.data||[]).sort(function(a,b){ return String(a.codigo).localeCompare(String(b.codigo), "pt-BR", {numeric:true}); });
+      umb.emp = r2.data || []; umb.erro = false;
+    }catch(err){ console.error("guarda-chuvas:", err); umb.erro = true; }
+    umb.carregado = true; umb.carregando = false;
+  }
+  function umbFmt(v){
+    var d = new Date(v), p = function(n){ return String(n).padStart(2,"0"); };
+    return p(d.getDate())+"/"+p(d.getMonth()+1)+" "+p(d.getHours())+":"+p(d.getMinutes());
+  }
+  function umbHa(v){
+    var h = Math.floor((Date.now()-new Date(v).getTime())/3600000);
+    if(h < 1) return "há menos de 1 h";
+    if(h < 24) return "há "+h+" h";
+    var d = Math.floor(h/24); return "há "+d+(d===1?" dia":" dias");
+  }
+  function umbEmprestados(){ return umb.emp.filter(function(e){ return !e.devolvido_em; }); }
+  function umbDisponiveis(){
+    var ocup = {}; umbEmprestados().forEach(function(e){ if(e.chuva_id) ocup[e.chuva_id] = 1; });
+    return umb.chuvas.filter(function(c){ return c.ativo !== false && !ocup[c.id]; });
+  }
+  function umbBtn(cls, id, txt, extra){
+    return '<button type="button" class="'+cls+'" data-id="'+id+'" style="'+(extra||'background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);')+'border-radius:8px;padding:8px 12px;font-family:inherit;font-size:12.5px;font-weight:700;">'+txt+'</button>';
+  }
+  function renderChuvasHtml(){
+    if(!umb.carregado){
+      if(!umb.carregando) carregarChuvas().then(function(){ if(appSection==="recepcao" && recepcaoSubView==="chuvas") renderRecepcao(); });
+      return '<div class="empty">Carregando…</div>';
+    }
+    if(umb.erro) return '<div class="empty">Não consegui carregar os guarda-chuvas agora.<br><button type="button" id="umbRetry" class="btn-secondary" style="margin-top:10px;">Tentar de novo</button></div>';
+    var pe = podeEditarAba("recepcao","chuvas"), px = podeExcluirAba("recepcao","chuvas");
+    var fora = umbEmprestados(), disp = umbDisponiveis();
+    var h = '<div class="card"><div style="display:flex;gap:14px;text-align:center;">' +
+      '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--teal-700);">'+disp.length+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">disponíveis</p></div>' +
+      '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;color:'+(fora.length?'var(--red-600)':'var(--ink-900)')+';">'+fora.length+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">emprestados</p></div>' +
+      '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;">'+umb.chuvas.length+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">cadastrados</p></div></div></div>';
+    if(pe) h += '<button type="button" id="umbEmprestar" class="btn-primary" style="width:100%;margin-bottom:14px;"'+(disp.length?'':' disabled')+'>'+ic("plus")+' Emprestar guarda-chuva</button>';
+    h += '<div class="section-title" style="margin-top:0;">Emprestados agora</div>';
+    if(!fora.length) h += '<div class="empty">Nenhum guarda-chuva emprestado.</div>';
+    else {
+      h += '<div class="card">';
+      fora.forEach(function(e, i){
+        var velho = (Date.now()-new Date(e.saiu_em).getTime()) > 86400000;
+        h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+          '<p style="margin:0;font-size:15px;font-weight:800;">'+escapeHtml(e.codigo)+' <span style="font-weight:600;font-size:13.5px;">→ '+escapeHtml(e.destino||"—")+'</span></p>' +
+          (e.hospede ? '<p class="item-meta" style="margin:2px 0 0;">Hóspede: '+escapeHtml(e.hospede)+'</p>' : '') +
+          (e.observacao ? '<p class="item-meta" style="margin:2px 0 0;">'+escapeHtml(e.observacao)+'</p>' : '') +
+          '<p style="margin:3px 0 8px;font-size:12.5px;font-weight:700;color:'+(velho?'var(--red-600)':'var(--ink-600)')+';">Saiu '+umbFmt(e.saiu_em)+' ('+umbHa(e.saiu_em)+')'+(e.saiu_por_nome?' · '+escapeHtml(e.saiu_por_nome):'')+'</p>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+            (pe ? umbBtn("umbDevolver", e.id, ic("check")+' Devolvido', 'background:var(--teal-700);color:#fff;border:none;') + umbBtn("umbEditEmp", e.id, "Editar") : '') +
+            (px ? umbBtn("umbDelEmp", e.id, "Excluir", 'background:none;color:var(--red-600);border:1px solid var(--line);') : '') +
+          '</div></div>';
+      });
+      h += '</div>';
+    }
+    var hist = umb.emp.filter(function(e){ return !!e.devolvido_em; }).slice(0, 30);
+    h += '<div class="section-title">Devolvidos (últimos 30)</div>';
+    if(!hist.length) h += '<div class="empty">Nenhuma devolução registrada ainda.</div>';
+    else {
+      h += '<div class="card">';
+      hist.forEach(function(e, i){
+        h += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:9px;margin-top:9px;':'')+'">' +
+          '<p style="margin:0;font-size:14px;font-weight:700;">'+escapeHtml(e.codigo)+' <span style="font-weight:600;font-size:13px;">→ '+escapeHtml(e.destino||"—")+'</span></p>' +
+          '<p class="item-meta" style="margin:2px 0 6px;">Saiu '+umbFmt(e.saiu_em)+' · voltou '+umbFmt(e.devolvido_em)+(e.hospede?' · '+escapeHtml(e.hospede):'')+'</p>' +
+          ((pe||px) ? '<div style="display:flex;gap:8px;">'+(pe?umbBtn("umbEditEmp", e.id, "Editar"):'')+(px?umbBtn("umbDelEmp", e.id, "Excluir", 'background:none;color:var(--red-600);border:1px solid var(--line);'):'')+'</div>' : '') +
+        '</div>';
+      });
+      h += '</div>';
+    }
+    h += '<div class="section-title">Guarda-chuvas cadastrados</div>';
+    if(pe) h += '<div class="card"><label style="display:block;margin-bottom:6px;font-size:13px;">Cadastrar códigos (vários de uma vez: separe por vírgula, espaço ou linha)</label>' +
+      '<textarea id="umbNovosCodigos" rows="2" placeholder="Ex: GC01, GC02, GC03" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--sand-50);"></textarea>' +
+      '<button type="button" id="umbAddCodigos" class="btn-primary" style="width:100%;margin-top:8px;">Cadastrar</button></div>';
+    if(!umb.chuvas.length) h += '<div class="empty">Nenhum guarda-chuva cadastrado ainda.</div>';
+    else {
+      var ocup = {}; fora.forEach(function(e){ if(e.chuva_id) ocup[e.chuva_id] = e; });
+      h += '<div class="card">';
+      umb.chuvas.forEach(function(c, i){
+        var st = ocup[c.id] ? '<span style="color:var(--red-600);font-weight:700;">emprestado ('+escapeHtml(ocup[c.id].destino||"")+')</span>' : (c.ativo===false ? '<span style="color:var(--ink-600);">inativo</span>' : '<span style="color:var(--teal-700);font-weight:700;">disponível</span>');
+        h += '<div style="display:flex;align-items:center;gap:8px;'+(i>0?'border-top:1px solid var(--line);padding-top:9px;margin-top:9px;':'')+'">' +
+          '<div style="flex:1;"><p style="margin:0;font-size:14px;font-weight:700;">'+escapeHtml(c.codigo)+(c.descricao?' <span style="font-weight:400;color:var(--ink-600);font-size:12.5px;">'+escapeHtml(c.descricao)+'</span>':'')+'</p><p style="margin:2px 0 0;font-size:12.5px;">'+st+'</p></div>' +
+          (pe ? umbBtn("umbEditChuva", c.id, "Editar") : '') + (px ? umbBtn("umbDelChuva", c.id, "Excluir", 'background:none;color:var(--red-600);border:1px solid var(--line);') : '') + '</div>';
+      });
+      h += '</div>';
+    }
+    h += '<button type="button" id="umbAtualizar" style="display:block;width:100%;margin-top:6px;background:transparent;border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:14px;">Atualizar</button>';
+    return h;
+  }
+  var UMB_INPUT = 'width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--sand-50);';
+  function umbSheet(titulo, corpo, rotuloSalvar, aoSalvar){
+    var antigo = document.getElementById("umbOverlay"); if(antigo) antigo.remove();
+    document.body.insertAdjacentHTML("beforeend", '<div class="sheet-overlay open" id="umbOverlay"><div class="sheet"><h2>'+titulo+'</h2>'+corpo+
+      '<div class="sheet-actions"><button type="button" class="btn-secondary" id="umbCancel">Cancelar</button><button type="button" class="btn-primary" id="umbSalvar">'+rotuloSalvar+'</button></div></div></div>');
+    var ov = document.getElementById("umbOverlay");
+    document.getElementById("umbCancel").onclick = function(){ ov.remove(); };
+    ov.addEventListener("click", function(e){ if(e.target === ov) ov.remove(); });
+    document.getElementById("umbSalvar").onclick = async function(){
+      var btn = this; btn.disabled = true;
+      try{ var ok = await aoSalvar(ov); if(ok === false) btn.disabled = false; }
+      catch(err){ console.error(err); showToast("Erro ao salvar"); btn.disabled = false; }
+    };
+  }
+  function umbHoraValida(v){ return /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(v||""); }
+  function abrirEmprestarChuva(){
+    var disp = umbDisponiveis();
+    var acoms = (state.acomodacoes||[]).filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var corpo = '<label>Guarda-chuva (código)</label><select id="umbChuva" style="'+UMB_INPUT+'">' + disp.map(function(c){ return '<option value="'+c.id+'">'+escapeHtml(c.codigo)+(c.descricao?' — '+escapeHtml(c.descricao):'')+'</option>'; }).join("") + '</select>' +
+      '<label>Para onde vai</label><select id="umbDestino" style="'+UMB_INPUT+'"><option value="">Selecionar…</option>' + acoms.map(function(a){ return '<option value="'+escapeHtml(a.nome)+'">'+escapeHtml(a.nome)+'</option>'; }).join("") + '<option value="__outro">Outro local…</option></select>' +
+      '<input type="text" id="umbDestinoOutro" placeholder="Digite o local (ex: restaurante, passeio)" style="display:none;'+UMB_INPUT+'">' +
+      '<label>Hóspede (opcional)</label><input type="text" id="umbHospede" placeholder="Nome do hóspede" style="'+UMB_INPUT+'">' +
+      '<label>Observação (opcional)</label><input type="text" id="umbObs" style="'+UMB_INPUT+'">' +
+      '<label>Hora da saída</label><input type="datetime-local" id="umbHora" value="'+dtLocalVal()+'" style="'+UMB_INPUT+'">';
+    umbSheet(ic("plus")+' Emprestar guarda-chuva', corpo, ic("check")+' Registrar saída', async function(ov){
+      var chuvaId = document.getElementById("umbChuva").value, sel = document.getElementById("umbDestino").value;
+      var destino = sel === "__outro" ? document.getElementById("umbDestinoOutro").value.trim() : sel;
+      if(!chuvaId){ showToast("Escolha o guarda-chuva"); return false; }
+      if(!destino){ showToast("Informe para onde vai"); return false; }
+      var c = umb.chuvas.find(function(x){ return x.id === chuvaId; });
+      var hora = document.getElementById("umbHora").value;
+      var novo = await dbInsert("emprestimos_chuva", {id:uid(), chuva_id:chuvaId, codigo:c?c.codigo:"?", destino:destino,
+        hospede:(document.getElementById("umbHospede").value.trim()||null), observacao:(document.getElementById("umbObs").value.trim()||null),
+        saiu_em:(umbHoraValida(hora)?dtLocalIso(hora):new Date().toISOString()), saiu_por:(currentUser?currentUser.id:null), saiu_por_nome:(currentUser?currentUser.nome:null)}, umbId);
+      umb.emp.unshift(novo); ov.remove(); showToast("Saída registrada: "+(c?c.codigo:"")+" → "+destino); renderRecepcao();
+    });
+    document.getElementById("umbDestino").onchange = function(){ document.getElementById("umbDestinoOutro").style.display = this.value === "__outro" ? "block" : "none"; };
+  }
+  function abrirEditarEmprestimoChuva(id){
+    var e = umb.emp.find(function(x){ return x.id === id; }); if(!e) return;
+    var corpo = '<p style="margin:-6px 0 12px;font-weight:700;">'+escapeHtml(e.codigo)+'</p>' +
+      '<label>Para onde foi</label><input type="text" id="umbEDest" value="'+escapeHtml(e.destino||"")+'" style="'+UMB_INPUT+'">' +
+      '<label>Hóspede</label><input type="text" id="umbEHosp" value="'+escapeHtml(e.hospede||"")+'" style="'+UMB_INPUT+'">' +
+      '<label>Observação</label><input type="text" id="umbEObs" value="'+escapeHtml(e.observacao||"")+'" style="'+UMB_INPUT+'">' +
+      '<label>Hora da saída</label><input type="datetime-local" id="umbESaiu" value="'+dtLocalVal(new Date(e.saiu_em).getTime())+'" style="'+UMB_INPUT+'">' +
+      '<label>Hora da devolução (deixe vazio se ainda não voltou)</label><input type="datetime-local" id="umbEDev" value="'+(e.devolvido_em?dtLocalVal(new Date(e.devolvido_em).getTime()):'')+'" style="'+UMB_INPUT+'">';
+    umbSheet("Editar empréstimo", corpo, ic("check")+' Salvar', async function(ov){
+      var dest = document.getElementById("umbEDest").value.trim();
+      if(!dest){ showToast("Informe para onde foi"); return false; }
+      var saiu = document.getElementById("umbESaiu").value, dev = document.getElementById("umbEDev").value;
+      var payload = {destino:dest, hospede:(document.getElementById("umbEHosp").value.trim()||null), observacao:(document.getElementById("umbEObs").value.trim()||null)};
+      if(umbHoraValida(saiu)) payload.saiu_em = dtLocalIso(saiu);
+      if(umbHoraValida(dev)){ payload.devolvido_em = dtLocalIso(dev); if(!e.devolvido_por_nome) payload.devolvido_por_nome = currentUser ? currentUser.nome : null; }
+      else { payload.devolvido_em = null; payload.devolvido_por_nome = null; }
+      var up = await dbUpdate("emprestimos_chuva", id, payload, umbId);
+      var ix = umb.emp.findIndex(function(x){ return x.id === id; }); if(ix > -1) umb.emp[ix] = up;
+      ov.remove(); showToast("Atualizado"); renderRecepcao();
+    });
+  }
+  function abrirEditarChuva(id){
+    var c = umb.chuvas.find(function(x){ return x.id === id; }); if(!c) return;
+    var corpo = '<label>Código</label><input type="text" id="umbCCod" value="'+escapeHtml(c.codigo)+'" style="'+UMB_INPUT+'">' +
+      '<label>Descrição (opcional)</label><input type="text" id="umbCDesc" value="'+escapeHtml(c.descricao||"")+'" placeholder="Ex: preto grande" style="'+UMB_INPUT+'">' +
+      '<label class="checkbox-row"><input type="checkbox" id="umbCAtivo" '+(c.ativo!==false?'checked':'')+'><span>Em uso (desmarque se foi perdido ou descartado)</span></label>';
+    umbSheet("Editar guarda-chuva", corpo, ic("check")+' Salvar', async function(ov){
+      var cod = document.getElementById("umbCCod").value.trim();
+      if(!cod){ showToast("Informe o código"); return false; }
+      if(umb.chuvas.some(function(x){ return x.id !== id && String(x.codigo).toLowerCase() === cod.toLowerCase(); })){ showToast("Já existe um guarda-chuva com esse código"); return false; }
+      var up = await dbUpdate("guarda_chuvas", id, {codigo:cod, descricao:(document.getElementById("umbCDesc").value.trim()||null), ativo:document.getElementById("umbCAtivo").checked}, umbId);
+      var ix = umb.chuvas.findIndex(function(x){ return x.id === id; }); if(ix > -1) umb.chuvas[ix] = up;
+      umb.chuvas.sort(function(a,b){ return String(a.codigo).localeCompare(String(b.codigo), "pt-BR", {numeric:true}); });
+      ov.remove(); showToast("Atualizado"); renderRecepcao();
+    });
+  }
+  function ligarChuvas(main){
+    var q = function(s){ return main.querySelector(s); };
+    var rt = q("#umbRetry"); if(rt) rt.onclick = function(){ umb.carregado = false; umb.erro = false; renderRecepcao(); };
+    var at = q("#umbAtualizar"); if(at) at.onclick = function(){ umb.carregado = false; renderRecepcao(); };
+    var em = q("#umbEmprestar"); if(em) em.onclick = abrirEmprestarChuva;
+    var add = q("#umbAddCodigos");
+    if(add) add.onclick = async function(){
+      var cods = (q("#umbNovosCodigos").value||"").split(/[\s,;]+/).map(function(s){ return s.trim(); }).filter(Boolean);
+      var vistos = {}; cods = cods.filter(function(c){ var k = c.toLowerCase(); if(vistos[k]) return false; vistos[k] = 1; return true; });
+      var novos = cods.filter(function(c){ return !umb.chuvas.some(function(x){ return String(x.codigo).toLowerCase() === c.toLowerCase(); }); });
+      if(!cods.length){ showToast("Digite pelo menos um código"); return; }
+      if(!novos.length){ showToast("Esses códigos já estão cadastrados"); return; }
+      add.disabled = true; var ok = 0;
+      for(var i = 0; i < novos.length; i++){
+        try{ var n = await dbInsert("guarda_chuvas", {id:uid(), codigo:novos[i], ativo:true}, umbId); umb.chuvas.push(n); ok++; }
+        catch(err){ console.error(err); }
+      }
+      umb.chuvas.sort(function(a,b){ return String(a.codigo).localeCompare(String(b.codigo), "pt-BR", {numeric:true}); });
+      showToast(ok+(ok===1?" guarda-chuva cadastrado":" guarda-chuvas cadastrados")+(ok<novos.length?" ("+(novos.length-ok)+" com erro)":"")); renderRecepcao();
+    };
+    main.querySelectorAll(".umbDevolver").forEach(function(b){ b.onclick = async function(){
+      b.disabled = true;
+      try{
+        var id = b.getAttribute("data-id");
+        var up = await dbUpdate("emprestimos_chuva", id, {devolvido_em:new Date().toISOString(), devolvido_por_nome:(currentUser?currentUser.nome:null)}, umbId);
+        var ix = umb.emp.findIndex(function(x){ return x.id === id; }); if(ix > -1) umb.emp[ix] = up;
+        showToast("Devolução registrada"); renderRecepcao();
+      }catch(err){ console.error(err); showToast("Erro ao registrar devolução"); b.disabled = false; }
+    }; });
+    main.querySelectorAll(".umbEditEmp").forEach(function(b){ b.onclick = function(){ abrirEditarEmprestimoChuva(b.getAttribute("data-id")); }; });
+    main.querySelectorAll(".umbEditChuva").forEach(function(b){ b.onclick = function(){ abrirEditarChuva(b.getAttribute("data-id")); }; });
+    main.querySelectorAll(".umbDelEmp").forEach(function(b){ b.onclick = async function(){
+      var id = b.getAttribute("data-id"); if(!confirm("Excluir este registro de empréstimo?")) return;
+      try{ await dbDelete("emprestimos_chuva", id); umb.emp = umb.emp.filter(function(x){ return x.id !== id; }); renderRecepcao(); }
+      catch(err){ console.error(err); showToast("Erro ao excluir"); }
+    }; });
+    main.querySelectorAll(".umbDelChuva").forEach(function(b){ b.onclick = async function(){
+      var id = b.getAttribute("data-id"), c = umb.chuvas.find(function(x){ return x.id === id; });
+      if(!confirm("Excluir o guarda-chuva "+(c?c.codigo:"")+"? O histórico de empréstimos dele continua guardado.")) return;
+      try{ await dbDelete("guarda_chuvas", id); umb.chuvas = umb.chuvas.filter(function(x){ return x.id !== id; }); await carregarChuvas(); renderRecepcao(); }
+      catch(err){ console.error(err); showToast("Erro ao excluir"); }
+    }; });
+  }
+
   function renderRecepcao(){
     var main = document.getElementById("recepcaoView");
     var podeGerenciar = podeEditar("recepcao") || (currentUser && currentUser.role === "admin");
@@ -12009,6 +12223,7 @@
       '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">'+ic("plus")+' Avulsos</button>' +
       '<button data-rsub="chegadas" class="'+(recepcaoSubView==="chegadas"?"active":"")+'">'+ic("bed")+' Chegadas'+(preCheckinsNaoVistos().length?' ('+preCheckinsNaoVistos().length+')':'')+'</button>' +
       '<button data-rsub="entrada" class="'+(recepcaoSubView==="entrada"?"active":"")+'">'+ic("bed")+' Pendências de entrada'+(pendenciasEntradaAbertas().length?(' ('+pendenciasEntradaAbertas().length+')'):'')+'</button>' +
+      '<button data-rsub="chuvas" class="'+(recepcaoSubView==="chuvas"?"active":"")+'">'+ic("box")+' Guarda-chuvas'+(umb.carregado && !umb.erro && umbEmprestados().length?' ('+umbEmprestados().length+')':'')+'</button>' +
     '</div>';
 
     if(recepcaoSubView === "limpeza"){
@@ -12244,9 +12459,14 @@
     else if(recepcaoSubView === "entrada"){
       html += renderPendenciasEntradaHtml();
     }
+    else if(recepcaoSubView === "chuvas"){
+      html += renderChuvasHtml();
+    }
 
     main.innerHTML = html;
     if(recepcaoSubView === "entrada" || recepcaoSubView === "limpeza") ligarPendenciasEntrada(main, renderRecepcao);
+    if(recepcaoSubView === "chuvas") ligarChuvas(main);
+    if(!umb.tentado && recepcaoSubView !== "chuvas" && podeVerAba("recepcao","chuvas")){ umb.tentado = true; carregarChuvas().then(function(){ if(appSection==="recepcao") renderRecepcao(); }); }
     wireSolicitacaoActions(main);
 
     main.querySelectorAll("[data-rsub]").forEach(function(b){
@@ -12998,6 +13218,7 @@
     {key:"recepcao_solicitacoes", label:"Recepção — só Solicitações", sub:true},
     {key:"recepcao_limpeza", label:"Recepção — só Limpeza", sub:true},
     {key:"recepcao_avulsos", label:"Recepção — só Avulsos", sub:true},
+    {key:"recepcao_chuvas", label:"Recepção — só Guarda-chuvas", sub:true},
     {key:"recepcao_chegadas", label:"Recepção — só Chegadas (pré-check-in)", sub:true},
     {key:"recepcao_acao_confirmar_reparo", label:"Recepção — confirmar/pausar reparo com o hóspede", acao:true},
     {key:"servico_geral", label:"Serviço Geral (jacuzzi e manutenção predial)"},
