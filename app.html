@@ -1536,6 +1536,7 @@
       sb.from("acomodacao_itens_padrao").select("*").limit(5000)
     ]);
     results.forEach(function(r){ if(r.error) console.error(r.error); });
+    await carregarTrocasLavagem();
     // Marcações do checklist: só das execuções recentes, paginado e em ordem fixa.
     // Antes era um select sem ordem com limite que o servidor cortava em 1000 linhas —
     // com o tempo, as marcações de hoje ficavam de fora e o checklist "zerava" sozinho.
@@ -5391,6 +5392,7 @@
       var occRes = await sb.from("hospedin_ocupacao").select("*").gte("checkout", hospedinCutoffDate()).order("checkin", {ascending:false}).limit(5000);
       if(occRes.error) throw occRes.error;
       state.estoque.hospedinOcupacao = occRes.data || [];
+      await carregarTrocasLavagem();
       hospedinRecomputeFromLocal(15, 15);
       var movidasTroca = 0;
       try{ movidasTroca = await reconciliarTarefasTrocaDeQuarto(); }catch(e){ console.error(e); }
@@ -8995,6 +8997,14 @@
   // Classifica cada acomodação com movimento hoje em checkin puro, checkout puro,
   // ou virada (checkin_checkout) — usado tanto pra criar as tarefas quanto pros contadores,
   // pra nunca desalinhar os dois.
+  var trocasLavagemCache = [];
+  async function carregarTrocasLavagem(){
+    try{
+      var d = new Date(); var hoje = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+      var r = await sb.from("trocas_acomodacao").select("acomodacao_antiga,data_lavagem").eq("data_lavagem", hoje);
+      if(!r.error) trocasLavagemCache = r.data || [];
+    }catch(e){ console.error(e); }
+  }
   function classificarOcupacaoHoje(){
     var hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
     var hojeFim = new Date(hojeInicio.getTime() + 24*3600*1000);
@@ -9015,6 +9025,12 @@
         acomodacoesHoje[id] = acomodacoesHoje[id] || {}; acomodacoesHoje[id].checkout = true;
         acomodacoesHoje[id].searchableCode = r.searchable_code || null;
       }
+    });
+    (trocasLavagemCache||[]).forEach(function(t){
+      var idAntigo = codigoToId[t.acomodacao_antiga];
+      if(!idAntigo) return;
+      acomodacoesHoje[idAntigo] = acomodacoesHoje[idAntigo] || {};
+      acomodacoesHoje[idAntigo].checkout = true;
     });
     return acomodacoesHoje;
   }
