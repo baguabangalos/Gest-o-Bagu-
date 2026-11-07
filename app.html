@@ -503,6 +503,7 @@
   <button class="nav-btn active" data-view="items"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M3 8l9-4 9 4-9 4-9-4z"/><path d="M3 8v9l9 4 9-4V8"/><path d="M12 12v9"/></svg></span>Estoque</button>
   <button class="nav-btn" data-view="count"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Contagem</button>
   <button class="nav-btn" data-view="history"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span>Saídas</button>
+  <button class="nav-btn" data-view="report" id="navConsumoBtn" style="display:none;"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg></span>Consumo</button>
 </footer>
 
 <!-- Sheet: add/edit item -->
@@ -1592,7 +1593,7 @@
   // Permissões detalhadas por aba e ações especiais (mesmo modelo do estoque):
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
-    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", restricoes:"restaurante_restricoes", louca:"restaurante_louca"}},
+    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", "estoque-itens":"estoque_restaurante", "estoque-count":"estoque_restaurante", "estoque-report":"estoque_restaurante", restricoes:"restaurante_restricoes", louca:"restaurante_louca"}},
     recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada", chuvas:"recepcao_chuvas"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
@@ -2787,6 +2788,8 @@
     document.getElementById("countView").style.display = (appSection==="estoque" && activeView==="count") ? "block":"none";
     document.getElementById("abastecimentoView").style.display = (appSection==="estoque" && activeView==="abastecimento") ? "block":"none";
     document.getElementById("historyView").style.display = (appSection==="estoque" && activeView==="history") ? "block":"none";
+    document.getElementById("reportView").style.display = (appSection==="estoque" && activeView==="report") ? "block":"none";
+    var navConsumo = document.getElementById("navConsumoBtn"); if(navConsumo) navConsumo.style.display = (appSection==="estoque" && activeCategory==="Restaurante") ? "" : "none";
     document.getElementById("procedimentosView").style.display = appSection==="procedimentos" ? "block":"none";
     document.getElementById("manutencoesView").style.display = appSection==="manutencoes" ? "block":"none";
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
@@ -2845,6 +2848,11 @@
       if(activeView==="count") renderCount();
       if(activeView==="abastecimento") renderAbastecimento();
       if(activeView==="history") renderHistory();
+      if(activeView==="report"){
+        if(activeCategory !== "Restaurante"){ activeView = "items"; renderApp(); return; }
+        document.getElementById("reportView").innerHTML = '<div id="consumoRestSection"></div>';
+        renderConsumoRestaurante();
+      }
     }
     if(appSection === "procedimentos") renderProcedimentos();
     if(appSection === "manutencoes") renderManutencoes();
@@ -3044,6 +3052,12 @@
   function renderTabs(){
     var nav = document.getElementById("tabs");
     nav.innerHTML = "";
+    if(activeCategory === "Restaurante" && podeVer("restaurante")){
+      var voltar = document.createElement("button");
+      voltar.textContent = "‹ Restaurante";
+      voltar.onclick = function(){ appSection = "restaurante"; renderApp(); };
+      nav.appendChild(voltar);
+    }
     estoqueCategoriasPermitidas().forEach(function(cat){
       var count = itemsByCategory(cat).filter(isLow).length;
       var btn = document.createElement("button");
@@ -3585,9 +3599,6 @@
     };
     renderPurchaseSuggestSection();
     renderPedidosCompraSection();
-    var consumoEl = document.createElement("div"); consumoEl.id = "consumoRestSection"; consumoEl.style.marginTop = "22px";
-    main.appendChild(consumoEl);
-    renderConsumoRestaurante();
   }
 
   // ---------- Consumo do estoque do Restaurante (por produto, por semana, mais/menos usados) ----------
@@ -11137,7 +11148,8 @@
       '<button data-rsub="relatorio" class="'+(restSub==="relatorio"?"active":"")+'">Relatório</button>' +
       '<button data-rsub="restricoes" class="'+(restSub==="restricoes"?"active":"")+'">Restrições'+(restricoesPendentesN()?(' · '+restricoesPendentesN()):'')+'</button>' +
       '<button data-rsub="louca" class="'+(restSub==="louca"?"active":"")+'">Serviço do dia'+(loucaPendentes().length?(' · '+loucaPendentes().length):'')+'</button>' +
-    '</div>';
+      (estoqueCategoriasPermitidas().indexOf("Restaurante") > -1 ? '<button data-rsub="estoque-itens">Estoque</button><button data-rsub="estoque-count">Contagem</button><button data-rsub="estoque-report">Consumo</button>' : '') +
+      '</div>';
 
     if(restSub === "abertas"){
       if(podeEditarAba("restaurante","abertas")) html += '<button class="btn btn-in" id="restNova" style="width:100%;margin-bottom:12px;padding:13px;">+ Nova comanda</button>';
@@ -11199,7 +11211,11 @@
     main.innerHTML = html;
 
     main.querySelectorAll("[data-rsub]").forEach(function(b){ b.onclick = function(){
-      restSub = b.getAttribute("data-rsub"); renderRestaurante();
+      var alvo = b.getAttribute("data-rsub");
+      if(alvo.indexOf("estoque-") === 0){ // estoque do Restaurante: abre o estoque já na categoria Restaurante
+        activeCategory = "Restaurante"; activeView = alvo.slice(8); appSection = "estoque"; renderApp(); return;
+      }
+      restSub = alvo; renderRestaurante();
       if(restSub === "restricoes") carregarPreCheckins().then(function(){ if(restSub === "restricoes" && appSection === "restaurante" && !restComandaId) renderRestaurante(); });
     }; });
     if(restSub === "louca") ligarLoucaRestaurante(main);
