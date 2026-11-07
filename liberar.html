@@ -196,6 +196,12 @@
     massagemSub: {pt:"Fale direto com nossas massagistas", en:"Message our therapists directly", es:"Escriba directo a nuestras masajistas", fr:"Écrivez directement à nos masseuses"},
     massagemTexto1: {pt:"O agendamento é feito diretamente com nossas massagistas parceiras. Escolha uma delas para reservar o seu horário pelo WhatsApp.", en:"Bookings are made directly with our partner massage therapists. Choose one to reserve your time slot on WhatsApp.", es:"La reserva se hace directamente con nuestras masajistas asociadas. Elija una para reservar su horario por WhatsApp.", fr:"La réservation se fait directement auprès de nos masseuses partenaires. Choisissez l'une d'elles pour réserver votre créneau sur WhatsApp."},
     massagemTexto2: {pt:"Recomendamos agendar com antecedência para garantir a sua preferência de data e horário.", en:"We recommend booking in advance to secure your preferred date and time.", es:"Recomendamos reservar con anticipación para asegurar la fecha y el horario de su preferencia.", fr:"Nous recommandons de réserver à l'avance pour obtenir la date et l'heure de votre choix."},
+    guias: {pt:"Passeios e guias", en:"Tours & guides", es:"Paseos y guías", fr:"Excursions et guides"},
+    guiasSub: {pt:"Fale direto com guias locais", en:"Message local guides directly", es:"Escriba directo a guías locales", fr:"Écrivez directement aux guides locaux"},
+    guiasTexto1: {pt:"Os passeios são combinados diretamente com guias locais parceiros. Escolha um deles para conversar pelo WhatsApp e reservar o seu passeio.", en:"Tours are arranged directly with our partner local guides. Choose one to chat on WhatsApp and book your tour.", es:"Los paseos se coordinan directamente con guías locales aliados. Elija uno para conversar por WhatsApp y reservar su paseo.", fr:"Les excursions s'organisent directement avec nos guides locaux partenaires. Choisissez-en un pour discuter sur WhatsApp et réserver votre excursion."},
+    guiasTexto2: {pt:"Recomendamos combinar com antecedência para garantir a data e o horário.", en:"We recommend booking in advance to secure your date and time.", es:"Recomendamos coordinar con anticipación para asegurar la fecha y el horario.", fr:"Nous recommandons de réserver à l'avance pour garantir la date et l'heure."},
+    guiasBilingues: {pt:"Guias bilíngues", en:"Bilingual guides", es:"Guías bilingües", fr:"Guides bilingues"},
+    verInstagram: {pt:"Ver Instagram", en:"View Instagram", es:"Ver Instagram", fr:"Voir Instagram"},
     falarCom: {pt:"Falar com ", en:"Message ", es:"Escribir a ", fr:"Écrire à "},
     faleGestao: {pt:"Fale com a gestão", en:"Talk to management", es:"Hable con la gerencia", fr:"Parler à la direction"},
     whatsappDireto: {pt:"Atendimento direto pelo WhatsApp", en:"Direct WhatsApp support", es:"Atención directa por WhatsApp", fr:"Assistance directe via WhatsApp"},
@@ -272,6 +278,7 @@
     wind:'<path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 13h15a3 3 0 1 1-3 3"/><path d="M3 18h9a2.5 2.5 0 1 0-2.5-2.5"/>',
     droplet:'<path d="M12 3c2.5 3 4 5.5 4 8a4 4 0 1 1-8 0c0-2.5 1.5-5 4-8z"/>',
     flame:'<path d="M12 3c2 3-1 4-1 7a3 3 0 1 0 6 0c0-1-.5-2-1-2 .3 3-2 3-2 1 0-2 1-3-2-6z"/>',
+    compass:'<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
     leaf:'<path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15z"/><path d="M5 19c3-5 6-8 10-10"/>',
     chat:'<path d="M4 5h16v11H9l-5 4z"/>',
     bell:'<path d="M6 10a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M9.5 20a2.5 2.5 0 0 0 5 0"/>'
@@ -477,6 +484,42 @@
     };
     return "https://wa.me/" + m.numero + "?text=" + encodeURIComponent(msg[lang] || msg.pt);
   }
+  var guias = [
+    {nome:"Alex Gomes", numero:"5562999218238", insta:"https://www.instagram.com/alexgomes_chapada/"},
+    {nome:"Patricia", numero:"5562996558440", insta:"https://www.instagram.com/chapada_expedicoes/"},
+    {nome:"Junior", numero:"5562999285287", insta:"https://www.instagram.com/junior.guiadachapada/"},
+    {nome:"Irani", numero:"5562996768683"}
+  ];
+  var guiasBilingues = [
+    {nome:"João Stumm", numero:"5561996205555"},
+    {nome:"Henrique", numero:"5562981607389", insta:"https://www.instagram.com/henriqueguiachapada"}
+  ];
+  function linkGuia(g){
+    var msg = {
+      pt:"Olá, "+g.nome+"! 👋 Estou hospedado(a) na Pousada Baguá Bangalôs, na acomodação "+nome+", e gostaria de saber mais informações e combinar um passeio.",
+      en:"Hello, "+g.nome+"! 👋 I'm staying at Pousada Baguá Bangalôs, in "+nome+", and I'd like more information and to arrange a tour.",
+      es:"¡Hola, "+g.nome+"! 👋 Estoy alojado(a) en la Pousada Baguá Bangalôs, en "+nome+", y me gustaría más información y coordinar un paseo.",
+      fr:"Bonjour "+g.nome+" ! 👋 Je séjourne à la Pousada Baguá Bangalôs, dans "+nome+", et j'aimerais plus d'informations et organiser une excursion."
+    };
+    return "https://wa.me/" + g.numero + "?text=" + encodeURIComponent(msg[lang] || msg.pt);
+  }
+  function guiaHtml(g){
+    return '<a class="btn-opt" href="'+linkGuia(g)+'" target="_blank" rel="noopener" style="text-decoration:none;background:#e9f9ef;border-color:#25D366;margin-bottom:'+(g.insta?'4px':'10px')+';"><span class="ic">'+icG("compass")+'</span><span><span>'+t("falarCom")+escapeHtml(g.nome)+'</span><span class="sub">'+t("abrirWhatsapp")+'</span></span></a>' +
+      (g.insta ? '<a href="'+g.insta+'" target="_blank" rel="noopener" style="display:block;text-align:center;font-size:12.5px;font-weight:700;color:var(--teal-700);text-decoration:none;margin:0 0 12px;">'+t("verInstagram")+' · '+escapeHtml(g.nome)+'</a>' : '');
+  }
+  function renderGuias(){
+    content.innerHTML =
+      '<div class="card">' +
+        '<p style="font-size:13.5px;color:var(--ink-600);line-height:1.5;margin:0 0 10px;">'+t("guiasTexto1")+'</p>' +
+        '<p style="font-size:13.5px;color:var(--ink-900);font-weight:600;line-height:1.5;margin:0 0 16px;">'+t("guiasTexto2")+'</p>' +
+        guias.map(guiaHtml).join("") +
+        '<p style="font-size:12.5px;font-weight:800;color:var(--ink-600);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 10px;">'+t("guiasBilingues")+'</p>' +
+        guiasBilingues.map(guiaHtml).join("") +
+        '<button class="btn-ghost" id="guiasVoltar">'+t("voltar")+'</button>' +
+      '</div>';
+    document.getElementById("guiasVoltar").onclick = renderMenu;
+  }
+
   function renderMassagem(){
     content.innerHTML =
       '<div class="card">' +
@@ -518,6 +561,7 @@
         (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha_troca"><span class="ic">'+icG("droplet")+'</span><span><span>'+t("trocarLenha")+'</span><span class="sub">'+t("trocarLenhaSub")+'</span></span></button>' : '') +
         (acomodacao.fogueira ? '<button class="btn-opt" data-tipo="lenha"><span class="ic">'+icG("flame")+'</span><span><span>'+t("reposicaoLenha")+'</span><span class="sub">'+t("pedirMaisLenha")+'</span></span></button>' : '') +
         '<button class="btn-opt" id="btnMassagem"><span class="ic">'+icG("leaf")+'</span><span><span>'+t("massagem")+'</span><span class="sub">'+t("massagemSub")+'</span></span></button>' +
+        '<button class="btn-opt" id="btnGuias"><span class="ic">'+icG("compass")+'</span><span><span>'+t("guias")+'</span><span class="sub">'+t("guiasSub")+'</span></span></button>' +
         '<button class="btn-opt" id="btnGestao" style="margin-bottom:0;background:#e9f9ef;border-color:#25D366;"><span class="ic">'+icG("chat")+'</span><span><span>'+t("faleGestao")+'</span><span class="sub">'+t("whatsappDireto")+'</span></span></button>' +
       '</div>';
     content.querySelectorAll("[data-tipo]").forEach(function(b){
@@ -532,6 +576,7 @@
     });
     document.getElementById("btnFrigobar").onclick = renderFrigobarForm;
     document.getElementById("btnMassagem").onclick = renderMassagem;
+    document.getElementById("btnGuias").onclick = renderGuias;
     document.getElementById("btnGestao").onclick = renderConfirmacaoGestao;
     if(document.getElementById("verMeusPedidos")) document.getElementById("verMeusPedidos").onclick = renderAcompanhamento;
   }
