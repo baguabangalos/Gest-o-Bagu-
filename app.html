@@ -540,7 +540,12 @@
         <option value="Uniformes">Uniformes</option>
         <option value="Lojinha">Lojinha</option>
         <option value="UTV">UTV</option>
-        <option value="Restaurante">Restaurante</option>
+        <option value="Mercearia">Mercearia</option>
+        <option value="Bebidas">Bebidas</option>
+        <option value="Hortifruti">Hortifruti</option>
+        <option value="Proteínas">Proteínas</option>
+        <option value="Descartáveis">Descartáveis</option>
+        <option value="Outros">Outros</option>
       </select>
       <label>Unidade</label>
       <input type="text" id="f_unit" placeholder="Ex: un, kg, L, pacote" required>
@@ -1072,8 +1077,12 @@
     }
   });
 
-  var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção","Uniformes","Lojinha","UTV","Restaurante"];
-  var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção","Uniformes":"Uniformes","Lojinha":"Lojinha","UTV":"UTV","Restaurante":"Restaurante"};
+  var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção","Uniformes","Lojinha","UTV"];
+  // O estoque do Restaurante é de OUTRA empresa: tem itens, movimentações, contagens e fornecedores próprios.
+  var CATEGORIAS_REST = ["Mercearia","Bebidas","Hortifruti","Proteínas","Limpeza","Descartáveis","Outros"];
+  var estoqueModo = "pousada";        // qual estoque está ativo agora: "pousada" | "restaurante"
+  var estoqueEmpresaSel = "pousada";  // pedido de navegação (muda quando se entra pelo Restaurante)
+  var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção","Uniformes":"Uniformes","Lojinha":"Lojinha","UTV":"UTV","Mercearia":"Mercearia","Bebidas":"Bebidas","Hortifruti":"Hortifruti","Proteínas":"Proteínas","Descartáveis":"Descartáveis","Outros":"Outros"};
   var WEEKDAYS = [
     {key:"dom",label:"Dom"},{key:"seg",label:"Seg"},{key:"ter",label:"Ter"},
     {key:"qua",label:"Qua"},{key:"qui",label:"Qui"},{key:"sex",label:"Sex"},{key:"sab",label:"Sáb"}
@@ -1108,7 +1117,7 @@
     abrirHistoricoSheet(b.getAttribute("data-hist-tab"), b.getAttribute("data-hist-id"), b.getAttribute("data-hist-titulo"));
   }, true);
   function mapItemFromRow(r){
-    return {id:r.id, category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
+    return {id:r.id, empresa:(r.empresa||"pousada"), category:r.category, name:r.name, unit:r.unit, qty:Number(r.qty), min:Number(r.min),
       photo:r.photo, supplierId:r.supplier_id, trackUsage:!!r.track_usage, qtyEmUso:Number(r.qty_em_uso||0),
       qtyUsado:Number(r.qty_usado||0),
       localizacao:r.localizacao, instaladoEm:r.instalado_em, numeroSerie:r.numero_serie, codigoBarras:r.codigo_barras, nomesFornecedor:(r.nomes_fornecedor||""), links:(Array.isArray(r.links_compra)?r.links_compra:[]), precoVenda:(r.preco_venda!=null?Number(r.preco_venda):null), precoCusto:(r.preco_custo!=null?Number(r.preco_custo):null),
@@ -1120,13 +1129,13 @@
       recebidoPorNome:r.recebido_por_nome, comprovanteUniforme:r.comprovante_uniforme, aud:audDe(r)};
   }
   function mapSupplierFromRow(r){
-    return {id:r.id, name:r.name, phone:r.phone, notes:r.notes, orderDays:r.order_days||[], pedidoMinimo:(r.pedido_minimo!=null?Number(r.pedido_minimo):null)};
+    return {id:r.id, empresa:(r.empresa||"pousada"), name:r.name, phone:r.phone, notes:r.notes, orderDays:r.order_days||[], pedidoMinimo:(r.pedido_minimo!=null?Number(r.pedido_minimo):null)};
   }
   function mapCountSessionFromRow(r){
-    return {id:r.id, date:new Date(r.date).getTime(), entries:r.entries||[]};
+    return {id:r.id, empresa:(r.empresa||"pousada"), date:new Date(r.date).getTime(), entries:r.entries||[]};
   }
   function mapPedidoCompraFromRow(r){
-    return {id:r.id, itens:r.itens||[], foto:r.foto, observacao:r.observacao, status:r.status,
+    return {id:r.id, empresa:(r.empresa||"pousada"), itens:r.itens||[], foto:r.foto, observacao:r.observacao, status:r.status,
       criadoEm:new Date(r.criado_em).getTime(), criadoPor:r.criado_por,
       recebidoEm:(r.recebido_em?new Date(r.recebido_em).getTime():null), recebidoPor:r.recebido_por, aud:audDe(r)};
   }
@@ -1508,7 +1517,13 @@
     }catch(err){ console.error("turno_atividade_execucoes:", err); return null; }
   }
   async function loadAllFromSupabase(){
-    return filtrarEstoquePorPermissao(await loadAllFromSupabaseCompleto());
+    var st = prepararEstoques(await loadAllFromSupabaseCompleto());
+    var modoAntes = estoqueModo; estoqueModo = "pousada";
+    try{ st = filtrarEstoquePorPermissao(st); }finally{ estoqueModo = modoAntes; }
+    st.estoques.pousada = st.estoque;
+    if(!podeEstoqueRestaurante()){ var r = st.estoques.restaurante; r.items = []; r.movements = []; r.suppliers = []; r.countSessions = []; r.pedidosCompra = []; }
+    st.estoque = st.estoques[estoqueModo] || st.estoques.pousada;
+    return st;
   }
   async function loadAllFromSupabaseCompleto(){
     var results = await Promise.all([
@@ -1589,7 +1604,7 @@
 
   // Acesso ao estoque só de uma categoria (ex.: só Limpeza, só Manutenção):
   // são permissões à parte; quem tem o "Estoque" completo vê todas as categorias.
-  var ESTOQUE_CAT_MODULO = {"Frigobar":"estoque_frigobar", "Limpeza":"estoque_limpeza", "Enxoval":"estoque_enxoval", "Manutenção":"estoque_manutencao", "Uniformes":"estoque_uniformes", "Lojinha":"estoque_lojinha", "UTV":"estoque_utv", "Restaurante":"estoque_restaurante"};
+  var ESTOQUE_CAT_MODULO = {"Frigobar":"estoque_frigobar", "Limpeza":"estoque_limpeza", "Enxoval":"estoque_enxoval", "Manutenção":"estoque_manutencao", "Uniformes":"estoque_uniformes", "Lojinha":"estoque_lojinha", "UTV":"estoque_utv"};
   // Permissões detalhadas por aba e ações especiais (mesmo modelo do estoque):
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
@@ -1631,10 +1646,41 @@
   // Categorias do estoque que esta pessoa pode ver.
   function estoqueCategoriasPermitidas(){
     if(!currentUser) return [];
+    if(estoqueModo === "restaurante") return podeEstoqueRestaurante() ? CATEGORIAS_REST.slice() : [];
     if(currentUser.role === "admin" || permFlag("estoque","ver")) return CATEGORIES.slice();
     return CATEGORIES.filter(function(cat){ return ESTOQUE_CAT_MODULO[cat] && permFlag(ESTOQUE_CAT_MODULO[cat], "ver"); });
   }
-  function estoqueRestrito(){ return estoqueCategoriasPermitidas().length < CATEGORIES.length; }
+  function podeEstoqueRestaurante(){ return !!currentUser && (currentUser.role === "admin" || permFlag("estoque_restaurante","ver")); }
+  function estoqueRestrito(){ return estoqueModo === "restaurante" || estoqueCategoriasPermitidas().length < CATEGORIES.length; }
+  // Separa os dados das duas empresas: state.estoque aponta sempre pro estoque ativo.
+  function prepararEstoques(st){
+    var e = st.estoque;
+    var ehR = function(x){ return x.empresa === "restaurante"; };
+    var itR = e.items.filter(ehR), idsR = {};
+    itR.forEach(function(it){ idsR[it.id] = true; });
+    var rest = {
+      items: itR,
+      movements: e.movements.filter(function(m){ return idsR[m.itemId]; }),
+      suppliers: e.suppliers.filter(ehR),
+      countSessions: e.countSessions.filter(ehR),
+      pedidosCompra: e.pedidosCompra.filter(ehR),
+      hospedinOcupacao: e.hospedinOcupacao, hospedinData: e.hospedinData, ultimaSincronizacaoServidor: e.ultimaSincronizacaoServidor
+    };
+    e.items = e.items.filter(function(x){ return !ehR(x); });
+    e.movements = e.movements.filter(function(m){ return !idsR[m.itemId]; });
+    e.suppliers = e.suppliers.filter(function(x){ return !ehR(x); });
+    e.countSessions = e.countSessions.filter(function(x){ return !ehR(x); });
+    e.pedidosCompra = e.pedidosCompra.filter(function(x){ return !ehR(x); });
+    st.estoques = {pousada:e, restaurante:rest};
+    return st;
+  }
+  function aplicarModoEstoque(){
+    if(!state || !state.estoques) return;
+    var m = (appSection === "estoque" && estoqueEmpresaSel === "restaurante" && podeEstoqueRestaurante()) ? "restaurante" : "pousada";
+    if(appSection !== "estoque") estoqueEmpresaSel = "pousada";
+    if(m !== estoqueModo){ estoqueModo = m; activeCategory = null; itemSearchQuery = ""; }
+    state.estoque = state.estoques[m];
+  }
   function filtrarEstoquePorPermissao(st){
     if(!currentUser || !st || !st.estoque || !estoqueRestrito()) return st;
     var cats = estoqueCategoriasPermitidas();
@@ -2782,6 +2828,7 @@
     if((appSection === "admin" || appSection === "personalizar") && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
     else if((appSection === "supervisao" || appSection === "usosb") && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
     else if(appSection !== "home" && appSection !== "admin" && appSection !== "personalizar" && appSection !== "supervisao" && appSection !== "configuracoes" && appSection !== "sugestoes" && appSection !== "usosb" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
+    aplicarModoEstoque();
     renderHeader();
     document.getElementById("homeView").style.display = appSection==="home" ? "block":"none";
     document.getElementById("itemsView").style.display = (appSection==="estoque" && activeView==="items") ? "block":"none";
@@ -2789,7 +2836,7 @@
     document.getElementById("abastecimentoView").style.display = (appSection==="estoque" && activeView==="abastecimento") ? "block":"none";
     document.getElementById("historyView").style.display = (appSection==="estoque" && activeView==="history") ? "block":"none";
     document.getElementById("reportView").style.display = (appSection==="estoque" && activeView==="report") ? "block":"none";
-    var navConsumo = document.getElementById("navConsumoBtn"); if(navConsumo) navConsumo.style.display = (appSection==="estoque" && activeCategory==="Restaurante") ? "" : "none";
+    var navConsumo = document.getElementById("navConsumoBtn"); if(navConsumo) navConsumo.style.display = (appSection==="estoque" && estoqueModo==="restaurante") ? "" : "none";
     document.getElementById("procedimentosView").style.display = appSection==="procedimentos" ? "block":"none";
     document.getElementById("manutencoesView").style.display = appSection==="manutencoes" ? "block":"none";
     document.getElementById("adminView").style.display = appSection==="admin" ? "block":"none";
@@ -2849,7 +2896,7 @@
       if(activeView==="abastecimento") renderAbastecimento();
       if(activeView==="history") renderHistory();
       if(activeView==="report"){
-        if(activeCategory !== "Restaurante"){ activeView = "items"; renderApp(); return; }
+        if(estoqueModo !== "restaurante"){ activeView = "items"; renderApp(); return; }
         document.getElementById("reportView").innerHTML = '<div id="consumoRestSection"></div>';
         renderConsumoRestaurante();
       }
@@ -3052,7 +3099,7 @@
   function renderTabs(){
     var nav = document.getElementById("tabs");
     nav.innerHTML = "";
-    if(activeCategory === "Restaurante" && podeVer("restaurante")){
+    if(estoqueModo === "restaurante" && podeVer("restaurante")){
       var voltar = document.createElement("button");
       voltar.textContent = "‹ Restaurante";
       voltar.onclick = function(){ appSection = "restaurante"; renderApp(); };
@@ -3147,7 +3194,7 @@
         metaText = "guardado (mín. "+fmtQty(it.min)+") · em uso: "+fmtQty(it.qtyEmUso)+" "+escapeHtml(it.unit);
         if(it.category === "Uniformes") metaText += " · usado (no estoque): "+fmtQty(it.qtyUsado)+" "+escapeHtml(it.unit);
       } else {
-        metaText = "mínimo: "+fmtQty(it.min)+" "+escapeHtml(it.unit)+(it.precoVenda!=null ? " · valor "+restMoney(it.precoVenda) : "")+(it.precoCusto!=null && (podeVerFinanceiro() || it.category==="Restaurante") ? " · custo "+restMoney(it.precoCusto) : "");
+        metaText = "mínimo: "+fmtQty(it.min)+" "+escapeHtml(it.unit)+(it.precoVenda!=null ? " · valor "+restMoney(it.precoVenda) : "")+(it.precoCusto!=null && (podeVerFinanceiro() || estoqueModo==="restaurante") ? " · custo "+restMoney(it.precoCusto) : "");
       }
       if(supplier) metaText += " · "+escapeHtml(supplier.name);
       if(it.numeroSerie) metaText += " · nº série "+escapeHtml(it.numeroSerie);
@@ -3606,8 +3653,8 @@
   function renderConsumoRestaurante(){
     var el = document.getElementById("consumoRestSection");
     if(!el) return;
-    if(estoqueCategoriasPermitidas().indexOf("Restaurante") === -1){ el.innerHTML = ""; return; }
-    var itens = state.estoque.items.filter(function(it){ return it.category === "Restaurante"; });
+    if(estoqueModo !== "restaurante"){ el.innerHTML = ""; return; }
+    var itens = state.estoque.items.slice();
     var DIA = 86400000, agora = Date.now();
     var dias = consumoRestDias, semanas = Math.round(dias/7);
     var ini = agora - dias*DIA;
@@ -4045,7 +4092,7 @@
         var fotoParaSalvar = await uploadAnexoParaStorage(pedidoCompraFotoPendente, "pedidos-compra");
         var payload = {id:uid(), itens:itens, foto:fotoParaSalvar,
           observacao:document.getElementById("pedidoObservacao").value.trim()||null,
-          status:"pendente", criado_por:(currentUser?currentUser.id:null)};
+          status:"pendente", criado_por:(currentUser?currentUser.id:null), empresa:estoqueModo};
         var dataPedNovo = document.getElementById("pedidoData").value;
         if(dataPedNovo && dataPedNovo !== localDateStr(new Date())) payload.criado_em = isoComDia(dataPedNovo, null);
         var p = await dbInsert("pedidos_compra", payload, mapPedidoCompraFromRow);
@@ -4331,7 +4378,7 @@
         changed++;
       }
       if(sessionEntries.length > 0){
-        var cs = await dbInsert("count_sessions", {id:uid(), date:sessionDateIso, entries:sessionEntries}, mapCountSessionFromRow);
+        var cs = await dbInsert("count_sessions", {id:uid(), date:sessionDateIso, entries:sessionEntries, empresa:estoqueModo}, mapCountSessionFromRow);
         state.estoque.countSessions.unshift(cs);
       }
       showToast(changed > 0 ? (changed + (changed===1 ? " item ajustado" : " itens ajustados")) : "Contagem registrada (sem mudanças)");
@@ -4418,7 +4465,7 @@
     document.getElementById("f_min").value = item ? item.min : "";
     document.getElementById("f_precoVenda").value = (item && item.precoVenda!=null) ? item.precoVenda : "";
     document.getElementById("f_precoCusto").value = (item && item.precoCusto!=null) ? item.precoCusto : "";
-    function ajustaCustoWrap(){ document.getElementById("f_precoCustoWrap").style.display = (podeVerFinanceiro() || document.getElementById("f_category").value === "Restaurante") ? "block" : "none"; }
+    function ajustaCustoWrap(){ document.getElementById("f_precoCustoWrap").style.display = (podeVerFinanceiro() || estoqueModo === "restaurante") ? "block" : "none"; }
     ajustaCustoWrap();
     document.getElementById("f_category").onchange = ajustaCustoWrap;
     var trackUsage = item ? !!item.trackUsage : (activeCategory === "Enxoval");
@@ -4491,7 +4538,7 @@
       var photoParaSalvar = await uploadAnexoParaStorage(pendingPhoto, "items");
       var payload = {category:category, name:name, unit:unit, qty:qty, min:min, photo:photoParaSalvar,
         supplier_id:supplierId, track_usage:trackUsage, qty_em_uso:qtyEmUso, qty_usado:qtyUsado, numero_serie:numeroSerie||null, codigo_barras:codigoBarras||null, nomes_fornecedor:(document.getElementById("f_nomesFornecedor").value.trim()||null), links_compra:lerLinksDoForm(), preco_venda:(document.getElementById("f_precoVenda").value!=="" ? parseFloat(document.getElementById("f_precoVenda").value) : null)};
-      if(podeVerFinanceiro() || category === "Restaurante") payload.preco_custo = (document.getElementById("f_precoCusto").value!=="" ? parseFloat(document.getElementById("f_precoCusto").value) : null);
+      if(podeVerFinanceiro() || estoqueModo === "restaurante") payload.preco_custo = (document.getElementById("f_precoCusto").value!=="" ? parseFloat(document.getElementById("f_precoCusto").value) : null);
       if(editingItemId){
         payload.editado_por = currentUser ? currentUser.id : null;
         payload.editado_em = new Date().toISOString();
@@ -4502,7 +4549,12 @@
       } else {
         payload.id = uid();
         payload.criado_por = currentUser ? currentUser.id : null;
+        payload.empresa = estoqueModo;
         var it2 = await dbInsert("items", payload, mapItemFromRow);
+        if(estoqueModo === "restaurante" && it2.empresa !== "restaurante"){
+          try{ await dbDelete("items", it2.id); }catch(e){}
+          throw new Error("Falta rodar a migração do estoque do Restaurante no Supabase.");
+        }
         state.estoque.items.push(it2);
         showToast("Item adicionado");
       }
@@ -4548,7 +4600,9 @@
   // Nomes sugeridos ao registrar quem recebeu um uniforme — ainda dá pra
   // digitar qualquer outro nome que não esteja nessa lista.
   var FUNCIONARIOS_CONHECIDOS = ["Guilherme"];
+  var DESTINOS_REST = ["Cozinha","Bar","Salão","Funcionários","Vencidos","Danificados"];
   function listaDestinos(){
+    if(estoqueModo === "restaurante") return DESTINOS_REST.slice();
     var acomodacoesNomes = state.acomodacoes.filter(function(a){ return a.ativo; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); })
       .map(function(a){ return a.nome; });
@@ -5307,6 +5361,7 @@
         showToast("Fornecedor atualizado");
       } else {
         payload.id = uid();
+        payload.empresa = estoqueModo;
         var s2 = await dbInsert("suppliers", payload, mapSupplierFromRow);
         state.estoque.suppliers.push(s2);
         savedId = s2.id;
@@ -11148,7 +11203,7 @@
       '<button data-rsub="relatorio" class="'+(restSub==="relatorio"?"active":"")+'">Relatório</button>' +
       '<button data-rsub="restricoes" class="'+(restSub==="restricoes"?"active":"")+'">Restrições'+(restricoesPendentesN()?(' · '+restricoesPendentesN()):'')+'</button>' +
       '<button data-rsub="louca" class="'+(restSub==="louca"?"active":"")+'">Serviço do dia'+(loucaPendentes().length?(' · '+loucaPendentes().length):'')+'</button>' +
-      (estoqueCategoriasPermitidas().indexOf("Restaurante") > -1 ? '<button data-rsub="estoque-itens">Estoque</button><button data-rsub="estoque-count">Contagem</button><button data-rsub="estoque-report">Consumo</button>' : '') +
+      (podeEstoqueRestaurante() ? '<button data-rsub="estoque-itens">Estoque</button><button data-rsub="estoque-count">Contagem</button><button data-rsub="estoque-report">Consumo</button>' : '') +
       '</div>';
 
     if(restSub === "abertas"){
@@ -11213,7 +11268,7 @@
     main.querySelectorAll("[data-rsub]").forEach(function(b){ b.onclick = function(){
       var alvo = b.getAttribute("data-rsub");
       if(alvo.indexOf("estoque-") === 0){ // estoque do Restaurante: abre o estoque já na categoria Restaurante
-        activeCategory = "Restaurante"; activeView = alvo.slice(8); appSection = "estoque"; renderApp(); return;
+        estoqueEmpresaSel = "restaurante"; activeView = alvo.slice(8); appSection = "estoque"; renderApp(); return;
       }
       restSub = alvo; renderRestaurante();
       if(restSub === "restricoes") carregarPreCheckins().then(function(){ if(restSub === "restricoes" && appSection === "restaurante" && !restComandaId) renderRestaurante(); });
@@ -13808,7 +13863,6 @@
     finMov.lista.forEach(function(m){
       if(m.ts < ini || m.ts >= fim) return;
       var it = itens[m.itemId]; if(!it) return;
-      if(it.category === "Restaurante") return; // estoque do restaurante (terceiro) não entra nas finanças da pousada
       var custo = it.precoCusto, venda = it.precoVenda;
       // Materiais de consumo (limpeza, enxoval, manutenção, uniformes…): o gasto conta na COMPRA, mesmo sem lucro.
       // As saídas deles não entram de novo (nem como perda nem como cortesia) pra não contar duas vezes.
