@@ -13296,8 +13296,17 @@
   }
   // QR único da acomodação: aponta pra página do hóspede (liberar.html). O hóspede cai no pedido de limpeza;
   // a equipe, escaneando dentro do app (ou com a câmera do celular já logada), cai na limpeza dela.
+  // Página do hóspede no domínio próprio. Só passa a ser usada nos QR Codes se estiver respondendo;
+  // senão, continua apontando pro endereço atual (assim nunca gera QR para um endereço fora do ar).
+  var GUEST_DOMINIO = "https://experiencia.bagua.ia.br/liberar.html";
+  var guestBaseAtiva = null;
+  (function(){
+    try{
+      fetch(GUEST_DOMINIO, {mode:"no-cors", cache:"no-store"}).then(function(){ guestBaseAtiva = GUEST_DOMINIO; }).catch(function(){});
+    }catch(e){}
+  })();
   function urlScanAcomodacao(acomodacaoId){
-    var base = window.location.origin + window.location.pathname.replace(/[^\/]*$/, "liberar.html");
+    var base = guestBaseAtiva || (window.location.origin + window.location.pathname.replace(/[^\/]*$/, "liberar.html"));
     return base + "?a=" + encodeURIComponent(acomodacaoId);
   }
   var qrSelecionados = {}; // id -> false quando desmarcado (padrão: todos marcados)

@@ -93,6 +93,7 @@
     <p id="acomodacaoLabel">Carregando…</p>
   </header>
   <div id="content"></div>
+  <p id="linkEquipe" style="display:none;text-align:center;margin:18px 0 0;font-size:11.5px;"><a href="#" style="color:var(--ink-600);opacity:.6;text-decoration:none;">Equipe</a></p>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -417,6 +418,13 @@
 
   var params = new URLSearchParams(window.location.search);
   var slug = params.get("a");
+  try{
+    if(slug && /^https?:$/.test(location.protocol) && location.hostname.indexOf("github.io") < 0){
+      var le = document.getElementById("linkEquipe");
+      le.style.display = "block";
+      le.querySelector("a").href = "https://baguabangalos.github.io/Gest-o-Bagu-/app.html?scan=" + encodeURIComponent(slug);
+    }
+  }catch(e){}
   // QR único: se quem escaneou é da equipe (já está logada no app neste celular), manda direto pro app,
   // que abre a limpeza dessa acomodação. Hóspede nunca tem essa sessão, então segue normal.
   // Para ver a página do hóspede mesmo estando logada, abra o link com &hospede=1.
