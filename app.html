@@ -1608,7 +1608,7 @@
   // Permissões detalhadas por aba e ações especiais (mesmo modelo do estoque):
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
-    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", "estoque-itens":"estoque_restaurante", "estoque-count":"estoque_restaurante", "estoque-report":"estoque_restaurante", restricoes:"restaurante_restricoes", louca:"restaurante_louca"}},
+    restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", "estoque-itens":"estoque_restaurante", "estoque-count":"estoque_restaurante", "estoque-report":"estoque_restaurante", restricoes:"restaurante_restricoes", louca:"restaurante_louca", cafe:"restaurante_cafe"}},
     recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada", chuvas:"recepcao_chuvas"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
@@ -2743,7 +2743,7 @@
 
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
-    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições", louca:"Serviço do dia"},
+    restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições", louca:"Serviço do dia", cafe:"Café da manhã"},
     recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada", chuvas:"Guarda-chuvas"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
@@ -11389,6 +11389,7 @@
       '<button data-rsub="cardapio" class="'+(restSub==="cardapio"?"active":"")+'">Cardápio</button>' +
       '<button data-rsub="relatorio" class="'+(restSub==="relatorio"?"active":"")+'">Relatório</button>' +
       '<button data-rsub="restricoes" class="'+(restSub==="restricoes"?"active":"")+'">Restrições'+(restricoesPendentesN()?(' · '+restricoesPendentesN()):'')+'</button>' +
+      '<button data-rsub="cafe" class="'+(restSub==="cafe"?"active":"")+'">Café da manhã</button>' +
       '<button data-rsub="louca" class="'+(restSub==="louca"?"active":"")+'">Serviço do dia'+(loucaPendentes().length?(' · '+loucaPendentes().length):'')+'</button>' +
       (podeEstoqueRestaurante() ? '<button data-rsub="estoque-itens">Estoque</button><button data-rsub="estoque-count">Contagem</button><button data-rsub="estoque-report">Consumo</button>' : '') +
       '</div>';
@@ -11416,6 +11417,8 @@
         html += '<p style="margin:8px 0;font-size:16px;font-weight:800;">Total a cobrar: '+restMoney(soma)+'</p>' +
           (podeEditarAba("restaurante","contas") && podeAcao("restaurante","restaurante_acao_cobrar") ? '<button class="btn btn-in restCobrar" data-ids="'+lista.map(function(c){ return c.id; }).join(",")+'">'+ic("check")+' Marcar como cobrado</button>' : '') + '</div>';
       });
+    } else if(restSub === "cafe"){
+      html += cafeHtml();
     } else if(restSub === "louca"){
       html += loucaRestauranteHtml();
     } else if(restSub === "restricoes"){
@@ -11459,10 +11462,12 @@
       }
       restSub = alvo; renderRestaurante();
       if(restSub === "restricoes") carregarPreCheckins().then(function(){ if(restSub === "restricoes" && appSection === "restaurante" && !restComandaId) renderRestaurante(); });
+      if(restSub === "cafe") cafeAtualizarOcupacao(false);
     }; });
     if(restSub === "louca") ligarLoucaRestaurante(main);
     if(restSub === "relatorio") restRelatorioLigar(main);
     if(restSub === "restricoes") ligarCopiarMsgRestricao(main);
+    if(restSub === "cafe") cafeLigar(main);
     main.querySelectorAll(".rest-card").forEach(function(c){
       c.onclick = async function(){
         restComandaId = c.getAttribute("data-id");
@@ -11519,6 +11524,243 @@
       }catch(err){ console.error(err); showToast("Erro ao abrir a comanda (rodou a migração v20?)"); this.disabled = false; }
     };
   }
+
+
+  // ---------- Restaurante › Café da manhã (próximos 7 dias) ----------
+  // Toma café quem já dormiu na casa na noite anterior: entrada antes do dia e
+  // saída no dia ou depois (no dia da saída ainda toma café; no da chegada, não).
+  var CAFE_DIAS = 7;
+  var cafeDiaAberto = null;
+  var cafeNovas = {};
+  var cafeConhecidas = null;
+  var cafeUltimaAtualizacao = null;
+  var cafeAtualizando = false;
+  var CAFE_DIAS_SEMANA = ["domingo","segunda","terça","quarta","quinta","sexta","sábado"];
+  function cafeChave(r){ return r.searchable_code ? String(r.searchable_code) : (r.acomodacao + "|" + String(r.checkin).slice(0,10)); }
+  function cafeNomeAcomodacao(codigo){
+    var a = (state.acomodacoes||[]).filter(function(x){ return x.codigoHospedin === codigo; })[0];
+    return a ? a.nome : codigo;
+  }
+  function cafeAjustes(){ return cfgGet("cafe_ajustes", {}); }
+  function cafeManuais(){ var m = appConfig && appConfig.cafe_manuais; return (m && Array.isArray(m.itens)) ? m.itens : []; }
+  function cafePreCheckinDe(r){
+    var cod = r.searchable_code ? String(r.searchable_code) : null;
+    var ci = String(r.checkin).slice(0,10);
+    var nomeAc = normalizarBusca(cafeNomeAcomodacao(r.acomodacao));
+    return (preCheckins||[]).filter(function(p){
+      if(cod && p.codigo_reserva && String(p.codigo_reserva) === cod) return true;
+      if(p.codigo_reserva && cod) return false;
+      return p.checkin && String(p.checkin).slice(0,10) === ci && normalizarBusca(p.acomodacao_nome||"") === nomeAc;
+    })[0] || null;
+  }
+  // Lista de hóspedes que tomam café em um dia (Date à meia-noite)
+  function cafeDoDia(dia){
+    var t = dia.getTime(), lista = [];
+    var ajustes = cafeAjustes();
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      var ci = parseDataLocal(r.checkin), co = parseDataLocal(r.checkout); if(!ci || !co) return;
+      if(!(ci.getTime() < t && co.getTime() >= t)) return;
+      var k = cafeChave(r), aj = ajustes[k] || null;
+      var restr = [];
+      var pc = cafePreCheckinDe(r);
+      if(pc) restricoesDoPreCheckin(pc).forEach(function(x){ restr.push(x); });
+      if(r.observacao && RESTRICAO_REGEX.test(r.observacao)) restr.push(String(r.observacao).trim());
+      if(aj && aj.restricao) restr.push(aj.restricao);
+      var pessoasHosp = (Number(r.adultos)||0) + (Number(r.criancas)||0);
+      var pessoas = (aj && aj.pessoas != null && aj.pessoas !== "") ? Number(aj.pessoas) : pessoasHosp;
+      var novaRecente = false;
+      var criada = r.created_at || r.criado_em || r.inserted_at;
+      if(criada && (Date.now() - new Date(criada).getTime()) < 48*3600*1000) novaRecente = true;
+      lista.push({chave:k, manual:false, acomodacao:cafeNomeAcomodacao(r.acomodacao), hospede:r.hospede||"", pessoas:pessoas, criancas:Number(r.criancas)||0,
+        semCafe:!!(aj && aj.sem_cafe), restricoes:restr, ajustada:!!aj, nova:!!(cafeNovas[k] || novaRecente),
+        chegou: ci.getTime() === t - 86400000, saiHoje: co.getTime() === t, checkin:String(r.checkin).slice(0,10), checkout:String(r.checkout).slice(0,10)});
+    });
+    cafeManuais().forEach(function(m){
+      var ci = parseDataLocal(m.checkin), co = parseDataLocal(m.checkout); if(!ci || !co) return;
+      if(!(ci.getTime() < t && co.getTime() >= t)) return;
+      lista.push({chave:"manual:"+m.id, manual:true, id:m.id, acomodacao:m.acomodacao||"Sem acomodação", hospede:m.hospede||"", pessoas:Number(m.pessoas)||0, criancas:0,
+        semCafe:false, restricoes:(m.restricao ? [m.restricao] : []), ajustada:false, nova:false, chegou:ci.getTime()===t-86400000, saiHoje:co.getTime()===t,
+        checkin:String(m.checkin).slice(0,10), checkout:String(m.checkout).slice(0,10)});
+    });
+    lista.sort(function(a,b){ return a.acomodacao.localeCompare(b.acomodacao, "pt-BR", {numeric:true}); });
+    return lista;
+  }
+  function cafeRotuloDia(i, dia){
+    var base = CAFE_DIAS_SEMANA[dia.getDay()] + " " + String(dia.getDate()).padStart(2,"0") + "/" + String(dia.getMonth()+1).padStart(2,"0");
+    return (i === 0 ? "Hoje · " : (i === 1 ? "Amanhã · " : "")) + base;
+  }
+  function cafeResumoDia(lista){
+    var ativas = lista.filter(function(x){ return !x.semCafe; });
+    return {acom:ativas.length, pessoas:ativas.reduce(function(a,x){ return a + x.pessoas; }, 0), restr:ativas.filter(function(x){ return x.restricoes.length; }).length};
+  }
+  function cafeTextoDia(i, dia, lista){
+    var r = cafeResumoDia(lista);
+    var t = "☕ Café da manhã — " + cafeRotuloDia(i, dia) + "\n" + r.acom + " acomodações · " + r.pessoas + " pessoas\n";
+    lista.filter(function(x){ return !x.semCafe; }).forEach(function(x){
+      t += "\n• " + x.acomodacao + (x.hospede ? " — " + x.hospede : "") + " (" + x.pessoas + (x.pessoas === 1 ? " pessoa" : " pessoas") + ")";
+      x.restricoes.forEach(function(rs){ t += "\n   ⚠️ " + rs; });
+    });
+    return t;
+  }
+  function cafeHtml(){
+    var pode = podeEditarAba("restaurante","cafe");
+    var hoje = new Date(); hoje.setHours(0,0,0,0);
+    var html = '<p class="item-meta" style="margin:0 0 10px;">Quem toma café nos próximos 7 dias: hóspedes que dormem na casa na noite anterior (no dia da saída ainda toma café; no dia da chegada, não). A lista acompanha as reservas do Hospedin e se atualiza sozinha quando entra reserva nova.</p>';
+    html += '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
+      '<button type="button" class="btn btn-out" id="cafeAtualizarBtn" style="flex:1;">'+ic("refresh")+' Atualizar agora</button>' +
+      (pode ? '<button type="button" class="btn btn-out" id="cafeNovoBtn" style="flex:1;">+ Hóspede manual</button>' : '') + '</div>';
+    if(cafeUltimaAtualizacao) html += '<p class="item-meta" style="font-size:11.5px;margin:-4px 0 10px;">Atualizado às '+cafeUltimaAtualizacao.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</p>';
+    if(preCheckinsErro) html += '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Não consegui carregar os pedidos de chegada — as restrições informadas pelo hóspede podem estar faltando.</p>';
+    var semanaRestr = 0;
+    for(var i = 0; i < CAFE_DIAS; i++){
+      var dia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + i);
+      var chaveDia = isoLocal(dia);
+      var lista = cafeDoDia(dia), res = cafeResumoDia(lista);
+      semanaRestr += res.restr;
+      var aberto = (cafeDiaAberto === null ? i === 0 : cafeDiaAberto === chaveDia);
+      var novas = lista.filter(function(x){ return x.nova; }).length;
+      html += '<div class="card" style="margin-bottom:10px;'+(res.restr?'border-left:4px solid var(--amber-600);':'')+'">' +
+        '<div class="cafeDiaHead" data-dia="'+chaveDia+'" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;">' +
+          '<div><p class="item-name" style="margin:0;text-transform:capitalize;">'+escapeHtml(cafeRotuloDia(i, dia))+'</p>' +
+          '<p class="item-meta" style="margin:2px 0 0;">'+res.acom+(res.acom===1?' acomodação':' acomodações')+' · '+res.pessoas+(res.pessoas===1?' pessoa':' pessoas')+
+            (res.restr ? ' · <b style="color:var(--amber-600);">'+res.restr+' com restrição</b>' : '')+
+            (novas ? ' · <b style="color:var(--red-600);">'+novas+' nova'+(novas>1?'s':'')+'</b>' : '')+'</p></div>' +
+          '<span style="font-size:20px;font-weight:800;color:var(--ink-600);">'+(aberto?'−':'+')+'</span></div>';
+      if(aberto){
+        if(!lista.length) html += '<div class="empty" style="margin-top:8px;">Ninguém toma café neste dia.</div>';
+        else {
+          html += '<button type="button" class="cafeCopiarBtn" data-i="'+i+'" style="display:block;width:100%;margin:8px 0;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:8px;padding:9px;font-family:inherit;font-size:13px;font-weight:700;">'+ic("doc")+' Copiar lista do dia</button>';
+          lista.sort(function(a,b){ return (b.restricoes.length?1:0) - (a.restricoes.length?1:0) || a.acomodacao.localeCompare(b.acomodacao,"pt-BR",{numeric:true}); });
+          lista.forEach(function(x){
+            html += '<div style="border-top:1px solid var(--line);padding:9px 0;'+(x.semCafe?'opacity:.5;':'')+'">' +
+              '<div style="display:flex;justify-content:space-between;gap:8px;"><span class="item-name" style="margin:0;">'+ic("bed")+' '+escapeHtml(x.acomodacao)+
+                (x.nova?' <span style="font-size:10.5px;font-weight:800;color:#fff;background:var(--red-600);border-radius:6px;padding:2px 6px;">NOVA</span>':'')+
+                (x.manual?' <span style="font-size:10.5px;font-weight:800;color:var(--ink-600);background:var(--sand-100);border-radius:6px;padding:2px 6px;">MANUAL</span>':'')+'</span>' +
+                '<strong style="white-space:nowrap;">'+(x.semCafe?'sem café':(x.pessoas+(x.pessoas===1?' pessoa':' pessoas')))+'</strong></div>' +
+              '<p class="item-meta" style="margin:2px 0 0;">'+(x.hospede?escapeHtml(x.hospede)+' · ':'')+'entrada '+dataBr(x.checkin)+' · saída '+dataBr(x.checkout)+(x.saiHoje?' · <b>sai hoje</b>':'')+(x.chegou?' · chegou ontem':'')+(x.criancas?' · '+x.criancas+(x.criancas===1?' criança':' crianças'):'')+'</p>' +
+              x.restricoes.map(function(t){ return '<p class="item-meta" style="background:var(--sand-100);border-radius:7px;padding:6px 9px;font-weight:600;color:var(--ink-900);margin-top:4px;">'+ic("warning")+' '+escapeHtml(t)+'</p>'; }).join("") +
+              (pode ? '<div class="item-actions" style="margin-top:6px;"><button type="button" class="btn btn-out cafeEditarBtn" data-k="'+escapeHtml(x.chave)+'" data-dia="'+chaveDia+'">Editar</button>' +
+                (x.manual ? '<button type="button" class="btn btn-out cafeExcluirManualBtn" data-id="'+escapeHtml(x.id)+'">Excluir</button>' : (x.ajustada ? '<button type="button" class="btn btn-out cafeLimparAjusteBtn" data-k="'+escapeHtml(x.chave)+'">Remover ajuste</button>' : '')) + '</div>' : '') +
+            '</div>';
+          });
+        }
+      }
+      html += '</div>';
+    }
+    return html;
+  }
+  function cafeEncontrar(chave, chaveDia){
+    var dia = parseDataLocal(chaveDia); if(!dia) return null;
+    return cafeDoDia(dia).filter(function(x){ return x.chave === chave; })[0] || null;
+  }
+  function cafeSheetEditar(x){
+    var campos = '';
+    if(x.manual){
+      campos += '<label>Acomodação</label><input type="text" id="cfAco" value="'+escapeHtml(x.acomodacao)+'" style="'+REST_INPUT+'">' +
+        '<label>Hóspede</label><input type="text" id="cfNome" value="'+escapeHtml(x.hospede)+'" style="'+REST_INPUT+'">' +
+        '<label>Entrada</label><input type="date" id="cfCi" value="'+escapeHtml(x.checkin)+'" style="'+REST_INPUT+'">' +
+        '<label>Saída</label><input type="date" id="cfCo" value="'+escapeHtml(x.checkout)+'" style="'+REST_INPUT+'">';
+    } else {
+      campos += '<p class="item-meta" style="margin:0 0 8px;">'+escapeHtml(x.acomodacao)+(x.hospede?' — '+escapeHtml(x.hospede):'')+' · reserva do Hospedin (datas e nome vêm de lá; aqui você ajusta só o café).</p>';
+    }
+    campos += '<label>Pessoas no café</label><input type="number" min="0" id="cfPessoas" value="'+x.pessoas+'" style="'+REST_INPUT+'">';
+    if(!x.manual) campos += '<label style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="checkbox" id="cfSem" '+(x.semCafe?'checked':'')+'> Esta reserva não toma café</label>';
+    var ajRestr = x.manual ? (x.restricoes[0]||"") : ((cafeAjustes()[x.chave]||{}).restricao || "");
+    campos += '<label>Restrição alimentar'+(x.manual?'':' (anotada aqui, além das que o hóspede informou)')+'</label><textarea id="cfRestr" rows="3" style="'+REST_INPUT+'resize:vertical;">'+escapeHtml(ajRestr)+'</textarea>' +
+      '<div class="sheet-actions"><button type="button" class="btn-secondary" id="cfCancel">Cancelar</button><button type="button" class="btn-primary" id="cfSalvar">'+ic("check")+' Salvar</button></div>';
+    var ov = restAbrirSheet(x.manual ? "Hóspede manual" : "Ajustar café", campos);
+    document.getElementById("cfCancel").onclick = restFecharSheet;
+    document.getElementById("cfSalvar").onclick = async function(){
+      var pessoas = document.getElementById("cfPessoas").value;
+      var restr = document.getElementById("cfRestr").value.trim();
+      if(x.manual){
+        var aco = document.getElementById("cfAco").value.trim(), ci = document.getElementById("cfCi").value, co = document.getElementById("cfCo").value;
+        if(!aco || !ci || !co || co < ci){ showToast("Confira acomodação e datas"); return; }
+        var lista = JSON.parse(JSON.stringify(cafeManuais()));
+        var m = lista.filter(function(y){ return y.id === x.id; })[0];
+        if(!m){ m = {id:x.id}; lista.push(m); }
+        m.acomodacao = aco; m.hospede = document.getElementById("cfNome").value.trim(); m.checkin = ci; m.checkout = co; m.pessoas = Number(pessoas)||0; m.restricao = restr;
+        if(await cfgSalvar("cafe_manuais", {__lista:true, itens:lista})){ restFecharSheet(); renderRestaurante(); }
+      } else {
+        var aj = JSON.parse(JSON.stringify(cafeAjustes()));
+        aj[x.chave] = {pessoas:(pessoas===""?null:Number(pessoas)), sem_cafe:document.getElementById("cfSem").checked, restricao:restr};
+        if(await cfgSalvar("cafe_ajustes", aj)){ restFecharSheet(); renderRestaurante(); }
+      }
+    };
+  }
+  function cafeLigar(root){
+    var bt = root.querySelector("#cafeAtualizarBtn");
+    if(bt) bt.onclick = function(){ cafeAtualizarOcupacao(false, true); };
+    var nv = root.querySelector("#cafeNovoBtn");
+    if(nv) nv.onclick = function(){
+      var h = new Date(); h.setHours(0,0,0,0);
+      var amanha = new Date(h.getFullYear(), h.getMonth(), h.getDate()+1);
+      cafeSheetEditar({manual:true, id:uid(), acomodacao:"", hospede:"", pessoas:2, checkin:isoLocal(h), checkout:isoLocal(amanha), restricoes:[], semCafe:false});
+    };
+    root.querySelectorAll(".cafeDiaHead").forEach(function(h){ h.onclick = function(){
+      var d = h.getAttribute("data-dia"); cafeDiaAberto = (cafeDiaAberto === d ? "" : d); renderRestaurante();
+    }; });
+    root.querySelectorAll(".cafeCopiarBtn").forEach(function(b){ b.onclick = function(){
+      var i = Number(b.getAttribute("data-i")); var h = new Date(); h.setHours(0,0,0,0);
+      var dia = new Date(h.getFullYear(), h.getMonth(), h.getDate()+i);
+      copiarTextoApp(cafeTextoDia(i, dia, cafeDoDia(dia)));
+    }; });
+    root.querySelectorAll(".cafeEditarBtn").forEach(function(b){ b.onclick = function(){
+      var x = cafeEncontrar(b.getAttribute("data-k"), b.getAttribute("data-dia")); if(x) cafeSheetEditar(x);
+    }; });
+    root.querySelectorAll(".cafeLimparAjusteBtn").forEach(function(b){ b.onclick = async function(){
+      if(!confirm("Remover o ajuste desta reserva? Ela volta a seguir só o que vem do Hospedin.")) return;
+      var aj = JSON.parse(JSON.stringify(cafeAjustes())); delete aj[b.getAttribute("data-k")];
+      if(await cfgSalvar("cafe_ajustes", aj)) renderRestaurante();
+    }; });
+    root.querySelectorAll(".cafeExcluirManualBtn").forEach(function(b){ b.onclick = async function(){
+      if(!confirm("Excluir este hóspede manual? Não dá para desfazer.")) return;
+      var id = b.getAttribute("data-id");
+      var lista = cafeManuais().filter(function(y){ return y.id !== id; });
+      if(await cfgSalvar("cafe_manuais", {__lista:true, itens:lista})) renderRestaurante();
+    }; });
+  }
+  // Recarrega as reservas do Hospedin; se entrou reserva nova que cai nos próximos 7 dias, avisa e marca como NOVA.
+  async function cafeAtualizarOcupacao(avisar, manual){
+    if(cafeAtualizando || !currentUser || !sb) return;
+    cafeAtualizando = true;
+    try{
+      if(!cafeConhecidas){ cafeConhecidas = {}; (state.estoque.hospedinOcupacao||[]).forEach(function(r){ cafeConhecidas[cafeChave(r)] = true; }); }
+      var res = await sb.from("hospedin_ocupacao").select("*").gte("checkout", hospedinCutoffDate()).order("checkin", {ascending:false}).limit(5000);
+      if(res.error) throw res.error;
+      var rows = res.data || [];
+      var mapa = {}, novas = [];
+      rows.forEach(function(r){
+        var k = cafeChave(r); mapa[k] = true;
+        if(!cafeConhecidas[k] && hospedinLinhaValida(r)){ cafeNovas[k] = true; novas.push(r); }
+      });
+      cafeConhecidas = mapa;
+      state.estoque.hospedinOcupacao = rows;
+      if(state.estoques){ state.estoques.pousada.hospedinOcupacao = rows; state.estoques.restaurante.hospedinOcupacao = rows; }
+      cafeUltimaAtualizacao = new Date();
+      try{ await carregarPreCheckins(); }catch(e){}
+      var hoje = new Date(); hoje.setHours(0,0,0,0);
+      var fimJanela = hoje.getTime() + (CAFE_DIAS+1)*86400000;
+      var naJanela = novas.filter(function(r){ var ci = parseDataLocal(r.checkin), co = parseDataLocal(r.checkout); return ci && co && ci.getTime() < fimJanela && co.getTime() >= hoje.getTime(); });
+      if(naJanela.length && (avisar || manual)){
+        playNotifySound();
+        var r0 = naJanela[0];
+        mostrarAlertaPedido("Reserva nova — " + cafeNomeAcomodacao(r0.acomodacao) + " (entrada " + dataBr(r0.checkin) + ")" + (naJanela.length > 1 ? " e mais " + (naJanela.length-1) : ""), function(){
+          appSection = "restaurante"; restSub = "cafe"; restComandaId = null; renderApp();
+        }, "Café da manhã");
+      } else if(manual) showToast("Lista atualizada");
+      if(appSection === "restaurante" && restSub === "cafe" && !restComandaId && !document.getElementById("restOverlay")) renderRestaurante();
+    }catch(err){ console.error("cafe:", err); if(manual) showToast("Não consegui atualizar agora"); }
+    finally{ cafeAtualizando = false; }
+  }
+  // Confere reservas novas a cada 2 minutos (o Hospedin é sincronizado a cada 15) para quem acompanha o restaurante.
+  setInterval(function(){
+    try{
+      if(!currentUser || document.hidden || !podeVer("restaurante")) return;
+      cafeAtualizarOcupacao(true);
+    }catch(e){}
+  }, 120000);
 
   // ---------- Restaurante › Relatório (ocupação + contas de quem sai) ----------
   var restRelPeriodo = "hoje"; // hoje | amanha | sete
@@ -13575,6 +13817,7 @@
     {key:"restaurante_relatorio", label:"Restaurante — só Relatório (ocupação e contas)", sub:true},
     {key:"restaurante_restricoes", label:"Restaurante — só Restrições alimentares", sub:true},
     {key:"restaurante_louca", label:"Restaurante — só Serviço do dia (louça para recolher)", sub:true},
+    {key:"restaurante_cafe", label:"Restaurante — só Café da manhã (próximos 7 dias)", sub:true},
     {key:"restaurante_acao_240", label:"Restaurante — lançar itens na mesa 240 (cortesia)", acao:true},
     {key:"restaurante_acao_fechar", label:"Restaurante — fechar conta", acao:true},
     {key:"restaurante_acao_lancar_conta", label:"Restaurante — lançar na conta da acomodação", acao:true},
