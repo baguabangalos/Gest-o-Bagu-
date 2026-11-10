@@ -11618,15 +11618,12 @@
       var chaveDia = isoLocal(dia);
       var lista = cafeDoDia(dia), res = cafeResumoDia(lista);
       semanaRestr += res.restr;
-      var aberto = (cafeDiaAberto === null ? i === 0 : cafeDiaAberto === chaveDia);
+      var aberto = (cafeDiaAberto === chaveDia);
       var novas = lista.filter(function(x){ return x.nova; }).length;
-      html += '<div class="card" style="margin-bottom:10px;'+(res.restr?'border-left:4px solid var(--amber-600);':'')+'">' +
+      html += '<div class="card" style="margin-bottom:8px;padding:12px 14px;">' +
         '<div class="cafeDiaHead" data-dia="'+chaveDia+'" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;">' +
-          '<div><p class="item-name" style="margin:0;text-transform:capitalize;">'+escapeHtml(cafeRotuloDia(i, dia))+'</p>' +
-          '<p class="item-meta" style="margin:2px 0 0;">'+res.acom+(res.acom===1?' acomodação':' acomodações')+' · '+res.pessoas+(res.pessoas===1?' pessoa':' pessoas')+
-            (res.restr ? ' · <b style="color:var(--amber-600);">'+res.restr+' com restrição</b>' : '')+
-            (novas ? ' · <b style="color:var(--red-600);">'+novas+' nova'+(novas>1?'s':'')+'</b>' : '')+'</p></div>' +
-          '<span style="font-size:20px;font-weight:800;color:var(--ink-600);">'+(aberto?'−':'+')+'</span></div>';
+          '<span class="item-name" style="margin:0;text-transform:capitalize;">'+escapeHtml(cafeRotuloDia(i, dia))+'</span>' +
+          '<span style="font-weight:800;white-space:nowrap;">'+res.acom+(res.acom===1?' acomodação':' acomodações')+' · '+res.pessoas+(res.pessoas===1?' pessoa':' pessoas')+'</span></div>';
       if(aberto){
         if(!lista.length) html += '<div class="empty" style="margin-top:8px;">Ninguém toma café neste dia.</div>';
         else {
