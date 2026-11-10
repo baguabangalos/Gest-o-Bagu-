@@ -3382,7 +3382,128 @@
   // ocupação passada (via sincronização com o Hospedin) para estimar
   // uma taxa de consumo "por acomodação", e projeta essa taxa sobre a
   // ocupação prevista para os próximos dias.
+  // ---------- Sugestão de compra por acomodação ----------
+  // Para cada item: consumo de cada acomodação (saídas com destino = acomodação) dividido pelas diárias
+  // em que ela esteve ocupada nos últimos 60 dias, projetado nas diárias já reservadas pra ela nos próximos
+  // 15 dias ou 1 mês (configurável por item). Itens "trocados a cada lavagem" (ex.: bucha) usam a quantidade
+  // por lavagem × check-outs previstos nas acomodações da regra. Consumo sem acomodação (recepção,
+  // funcionários etc.) entra como taxa geral por diária.
+  var ocupHist = {rows:[], quando:0, carregando:null};
+  async function carregarOcupHist(){
+    if(Date.now() - ocupHist.quando < 10*60*1000 && ocupHist.rows.length) return ocupHist.rows;
+    if(ocupHist.carregando) return ocupHist.carregando;
+    ocupHist.carregando = (async function(){
+      try{
+        var d = new Date(); d.setDate(d.getDate() - 70);
+        var corte = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+        var r = await sb.from("hospedin_ocupacao").select("acomodacao,checkin,checkout,status").gte("checkout", corte).limit(5000);
+        if(!r.error){ ocupHist.rows = r.data || []; ocupHist.quando = Date.now(); }
+      }catch(e){ console.error(e); }
+      ocupHist.carregando = null;
+      return ocupHist.rows;
+    })();
+    return ocupHist.carregando;
+  }
+  var HORIZONTE_PADRAO = {"Frigobar":15, "Lojinha":15, "UTV":15};
+  function horizonteItem(item){
+    var c = cfgGet("compra_horizonte", {});
+    var h = c[item.id];
+    if(h === 15 || h === 30) return h;
+    return HORIZONTE_PADRAO[item.category] || 30;
+  }
+  function regrasLavagem(){
+    var c = cfgGet("compra_regras", null);
+    if(c && c.lavagem) return c.lavagem;
+    // padrão: buchas trocadas a cada lavagem em João de Barro, Casa Maria e Loft
+    var bucha = state.estoque.items.filter(function(i){ return /bucha/i.test(i.name); });
+    var acs = state.acomodacoes.filter(function(a){ return /jo[aã]o de barro|casa maria|loft/i.test(a.nome); }).map(function(a){ return a.id; });
+    if(!bucha.length || !acs.length) return [];
+    return bucha.map(function(b){ return {itemId:b.id, acomodacaoIds:acs, porLavagem:1}; });
+  }
   function computePurchaseSuggestions(){
+    var rows = ocupHist.rows;
+    if(!rows.length) return computePurchaseSuggestionsLegacy();
+    var DIA = 86400000;
+    var hoje = new Date(); hoje.setHours(0,0,0,0); var t0 = hoje.getTime();
+    var PASSADO = 60, passIni = t0 - PASSADO*DIA;
+    var acs = state.acomodacoes.filter(function(a){ return a.ativo && a.codigoHospedin; });
+    var porCodigo = {}; acs.forEach(function(a){ porCodigo[a.codigoHospedin] = a; });
+    function noites(code, de, ate){
+      var tot = 0;
+      rows.forEach(function(r){
+        if(r.acomodacao !== code || !hospedinLinhaValida(r)) return;
+        var ci = parseDataLocal(r.checkin), co = parseDataLocal(r.checkout); if(!ci || !co) return;
+        var a = Math.max(ci.getTime(), de), b = Math.min(co.getTime(), ate);
+        if(b > a) tot += Math.round((b - a)/DIA);
+      });
+      return tot;
+    }
+    function saidas(code, de, ate){ // check-outs (lavagens) no intervalo
+      var n = 0;
+      rows.forEach(function(r){
+        if(r.acomodacao !== code || !hospedinLinhaValida(r)) return;
+        var co = parseDataLocal(r.checkout); if(!co) return;
+        if(co.getTime() >= de && co.getTime() < ate) n++;
+      });
+      return n;
+    }
+    var info = {};
+    acs.forEach(function(a){
+      info[a.id] = {a:a, passado:noites(a.codigoHospedin, passIni, t0), f15:noites(a.codigoHospedin, t0, t0+15*DIA), f30:noites(a.codigoHospedin, t0, t0+30*DIA)};
+    });
+    var totPassado = 0, tot15 = 0, tot30 = 0;
+    Object.keys(info).forEach(function(k){ totPassado += info[k].passado; tot15 += info[k].f15; tot30 += info[k].f30; });
+    var regras = regrasLavagem();
+    var okCatsSug = estoqueCategoriasPermitidas();
+    var agora = Date.now();
+    var consumoPorItem = {};
+    state.estoque.movements.forEach(function(m){
+      if(m.date < passIni) return;
+      var amt = 0;
+      if(m.type === "saida") amt = m.qty; else if(m.type === "ajuste" && typeof m.delta === "number" && m.delta < 0) amt = Math.abs(m.delta);
+      if(amt <= 0) return;
+      var c = consumoPorItem[m.itemId] = consumoPorItem[m.itemId] || {total:0, porAcom:{}};
+      c.total += amt;
+      var ac = (m.type === "saida" && m.destino) ? acs.filter(function(a){ return a.nome === m.destino; })[0] : null;
+      if(ac) c.porAcom[ac.id] = (c.porAcom[ac.id] || 0) + amt;
+    });
+    var out = state.estoque.items.map(function(item){
+      if(okCatsSug.indexOf(item.category) === -1) return null;
+      var h = horizonteItem(item);
+      var cons = consumoPorItem[item.id] || {total:0, porAcom:{}};
+      var regra = regras.filter(function(r){ return r.itemId === item.id; })[0] || null;
+      var idsRegra = regra ? regra.acomodacaoIds : [];
+      var need = 0, partes = [], geralCons = cons.total;
+      Object.keys(info).forEach(function(id){
+        var inf = info[id], c = cons.porAcom[id] || 0;
+        if(idsRegra.indexOf(id) > -1){ geralCons -= c; return; } // regra manda nessas acomodações
+        if(c > 0 && inf.passado > 0){
+          var proj = (c / inf.passado) * (h === 15 ? inf.f15 : inf.f30);
+          geralCons -= c; need += proj;
+          if(proj > 0) partes.push({nome:inf.a.nome, qty:proj});
+        }
+      });
+      var totNoites = totPassado || 1, futTot = h === 15 ? tot15 : tot30;
+      if(geralCons > 0){ var pg = (geralCons / totNoites) * futTot; need += pg; if(pg > 0) partes.push({nome:"Geral (recepção, funcionários etc.)", qty:pg}); }
+      var lavagens = 0;
+      if(regra){
+        idsRegra.forEach(function(id){
+          var inf = info[id]; if(!inf) return;
+          var n = saidas(inf.a.codigoHospedin, t0, t0 + h*DIA);
+          lavagens += n;
+          if(n > 0){ var q = n * (regra.porLavagem || 1); need += q; partes.push({nome:inf.a.nome+" ("+n+" lavagem"+(n>1?"ns":"")+")", qty:q}); }
+        });
+      }
+      if(need <= 0 && cons.total <= 0 && !regra) return null;
+      partes.sort(function(a,b){ return b.qty - a.qty; });
+      var idealMin = Math.ceil(need * 0.3), idealMax = Math.ceil(need * 1.1);
+      return {item:item, consumed:cons.total, projectedNeed:need, idealMin:idealMin, idealMax:idealMax,
+        suggestedPurchase:Math.max(0, idealMax - item.qty), horizonte:h, partes:partes, regra:regra, lavagens:lavagens};
+    }).filter(Boolean).sort(function(a,b){ return b.suggestedPurchase - a.suggestedPurchase; });
+    return {pastDays:PASSADO, pastOccupied:totPassado, futureDays:15, futureOccupied:tot15, future30:tot30, porAcomodacao:true, rows:out};
+  }
+
+  function computePurchaseSuggestionsLegacy(){
     var hd = state.estoque.hospedinData;
     if(!hd || !hd.ok) return null;
     var pastDays = hd.past_period.days;
@@ -3590,7 +3711,7 @@
       var toBuy = suggestions.rows.filter(function(r){ return r.suggestedPurchase > 0; });
       lines.push("");
       lines.push("SUGESTÃO DE COMPRA (baseada em ocupação Hospedin):");
-      lines.push("  Ocupação últimos "+suggestions.pastDays+"d: "+suggestions.pastOccupied+" acomodações · próximos "+suggestions.futureDays+"d: "+suggestions.futureOccupied+" acomodações");
+      lines.push(suggestions.porAcomodacao ? ("  Base: últimos "+suggestions.pastDays+"d ("+suggestions.pastOccupied+" diárias) · reservado próximos 15d: "+suggestions.futureOccupied+" diárias, próximo mês: "+suggestions.future30+" diárias") : ("  Ocupação últimos "+suggestions.pastDays+"d: "+suggestions.pastOccupied+" acomodações · próximos "+suggestions.futureDays+"d: "+suggestions.futureOccupied+" acomodações"));
       if(toBuy.length > 0){
         toBuy.forEach(function(r){
           lines.push("  "+r.item.name+": comprar "+fmtQty(r.suggestedPurchase)+" "+r.item.unit+" (ideal: "+fmtQty(r.idealMin)+"–"+fmtQty(r.idealMax)+" "+r.item.unit+")");
@@ -4187,9 +4308,61 @@
     };
   }
 
+  var regraEditando = null; // {idx|-1, itemId, acomodacaoIds, porLavagem}
+  function regrasLavagemHtml(){
+    var regras = regrasLavagem();
+    var h = '<div class="card" style="margin:0 0 12px;"><div class="item-meta" style="margin:0 0 6px;"><b>Itens trocados a cada lavagem</b> (ex.: bucha)</div>';
+    if(!regras.length) h += '<p class="item-meta" style="margin:0 0 6px;">Nenhuma regra. Esses itens são calculados pelo consumo normal.</p>';
+    regras.forEach(function(r, i){
+      var it = state.estoque.items.filter(function(x){ return x.id === r.itemId; })[0];
+      var nomes = r.acomodacaoIds.map(function(id){ var a = state.acomodacoes.filter(function(x){ return x.id === id; })[0]; return a ? a.nome : null; }).filter(Boolean).join(", ");
+      h += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:13.5px;"><span><b>'+escapeHtml(it?it.name:"(item removido)")+'</b> · '+fmtQty(r.porLavagem||1)+' por lavagem<br><span class="item-meta" style="margin:0;">'+escapeHtml(nomes||"sem acomodações")+'</span></span><span style="white-space:nowrap;"><button type="button" class="regraEd" data-i="'+i+'" style="background:none;border:none;color:var(--teal-700);font-weight:700;font-family:inherit;">Editar</button><button type="button" class="regraDel" data-i="'+i+'" style="background:none;border:none;color:var(--red-600);font-weight:700;font-family:inherit;">Excluir</button></span></div>';
+    });
+    if(regraEditando){
+      var re = regraEditando;
+      h += '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px;"><label class="item-meta" style="display:block;margin:0 0 4px;">Item</label><select id="regraItem" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-family:inherit;margin-bottom:8px;">' +
+        state.estoque.items.slice().sort(function(a,b){ return a.name.localeCompare(b.name,"pt-BR"); }).map(function(it){ return '<option value="'+it.id+'"'+(it.id===re.itemId?' selected':'')+'>'+escapeHtml(it.name)+'</option>'; }).join("") +
+        '</select><label class="item-meta" style="display:block;margin:0 0 4px;">Quantidade trocada por lavagem</label><input id="regraQtd" type="number" min="0" step="0.5" value="'+(re.porLavagem||1)+'" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-family:inherit;margin-bottom:8px;">' +
+        '<label class="item-meta" style="display:block;margin:0 0 4px;">Acomodações</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:10px;">' +
+        state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); }).map(function(a){ return '<label style="font-size:13px;display:flex;gap:6px;align-items:center;"><input type="checkbox" class="regraAc" value="'+a.id+'"'+(re.acomodacaoIds.indexOf(a.id)>-1?' checked':'')+'>'+escapeHtml(a.nome)+'</label>'; }).join("") +
+        '</div><div style="display:flex;gap:8px;"><button type="button" id="regraSalvar" class="btn-primary" style="flex:1;">Salvar</button><button type="button" id="regraCancelar" class="btn-ghost" style="flex:1;">Cancelar</button></div></div>';
+    } else {
+      h += '<button type="button" id="regraNova" class="link-btn" style="margin-top:8px;">+ Adicionar item trocado a cada lavagem</button>';
+    }
+    return h + '</div>';
+  }
+  async function salvarRegrasLavagem(lista){
+    try{ await cfgSalvar("compra_regras", {lavagem:lista}); regraEditando = null; renderPurchaseSuggestSection(); }
+    catch(e){ console.error(e); showToast("Não foi possível salvar (só administrador)"); }
+  }
+  function ligarRegrasLavagem(el){
+    var nova = el.querySelector("#regraNova"); if(nova) nova.onclick = function(){ regraEditando = {idx:-1, itemId:null, acomodacaoIds:[], porLavagem:1}; renderPurchaseSuggestSection(); };
+    el.querySelectorAll(".regraEd").forEach(function(b){ b.onclick = function(){ var i = parseInt(b.getAttribute("data-i"),10), r = regrasLavagem()[i]; regraEditando = {idx:i, itemId:r.itemId, acomodacaoIds:r.acomodacaoIds.slice(), porLavagem:r.porLavagem||1}; renderPurchaseSuggestSection(); }; });
+    el.querySelectorAll(".regraDel").forEach(function(b){ b.onclick = function(){
+      if(!confirm("Excluir esta regra?")) return;
+      var l = regrasLavagem().slice(); l.splice(parseInt(b.getAttribute("data-i"),10), 1); salvarRegrasLavagem(l);
+    }; });
+    var canc = el.querySelector("#regraCancelar"); if(canc) canc.onclick = function(){ regraEditando = null; renderPurchaseSuggestSection(); };
+    var salv = el.querySelector("#regraSalvar"); if(salv) salv.onclick = function(){
+      var itemId = el.querySelector("#regraItem").value;
+      var acIds = Array.prototype.map.call(el.querySelectorAll(".regraAc:checked"), function(c){ return c.value; });
+      var q = parseFloat(el.querySelector("#regraQtd").value) || 1;
+      if(!acIds.length){ showToast("Marque ao menos uma acomodação"); return; }
+      var l = regrasLavagem().slice();
+      var nr = {itemId:itemId, acomodacaoIds:acIds, porLavagem:q};
+      if(regraEditando.idx >= 0) l[regraEditando.idx] = nr; else l.push(nr);
+      salvarRegrasLavagem(l);
+    };
+  }
+
   function renderPurchaseSuggestSection(){
     var el = document.getElementById("purchaseSuggestSection");
     if(!el) return;
+    if(!ocupHist.rows.length && !ocupHist.carregando){
+      el.innerHTML = '<div class="section-title">Sugestão de compra</div><p class="item-meta">Calculando com a ocupação por acomodação…</p>';
+      carregarOcupHist().then(function(){ renderPurchaseSuggestSection(); });
+      return;
+    }
     var suggestions = computePurchaseSuggestions();
     var servidor = state.estoque.ultimaSincronizacaoServidor;
     var syncBadge = "";
@@ -4218,7 +4391,10 @@
       return;
     }
 
-    html += '<p class="count-intro">Ocupação últimos '+suggestions.pastDays+' dias: <b>'+suggestions.pastOccupied+'</b> acomodações · próximos '+suggestions.futureDays+' dias: <b>'+suggestions.futureOccupied+'</b> acomodações</p>';
+    html += suggestions.porAcomodacao
+      ? '<p class="count-intro">Base: últimos '+suggestions.pastDays+' dias (<b>'+suggestions.pastOccupied+'</b> diárias ocupadas). Já reservado: próximos 15 dias <b>'+suggestions.futureOccupied+'</b> diárias · próximo mês <b>'+suggestions.future30+'</b> diárias. Cada item é calculado acomodação por acomodação.</p>'
+      : '<p class="count-intro">Ocupação últimos '+suggestions.pastDays+' dias: <b>'+suggestions.pastOccupied+'</b> acomodações · próximos '+suggestions.futureDays+' dias: <b>'+suggestions.futureOccupied+'</b> acomodações</p>';
+    if(suggestions.porAcomodacao) html += regrasLavagemHtml();
     html += '<div class="card">';
     suggestions.rows.forEach(function(r){
       var buy = r.suggestedPurchase > 0;
@@ -4228,6 +4404,9 @@
           '<span class="suggest-buy-badge '+(buy?"":"ok")+'">'+(buy ? ("Comprar "+fmtQty(r.suggestedPurchase)+" "+escapeHtml(r.item.unit)) : "Estoque OK")+'</span>' +
         '</div>' +
         '<p class="suggest-row-meta">Estoque atual: '+fmtQty(r.item.qty)+' '+escapeHtml(r.item.unit)+' · ideal: '+fmtQty(r.idealMin)+'–'+fmtQty(r.idealMax)+' '+escapeHtml(r.item.unit)+'</p>' +
+        (r.horizonte ? ('<div style="display:flex;gap:6px;align-items:center;margin:6px 0;"><span class="item-meta" style="margin:0;">Considerar:</span>' + [[15,"15 dias"],[30,"1 mês"]].map(function(o){ return '<button type="button" class="horzBtn" data-iid="'+r.item.id+'" data-h="'+o[0]+'" style="padding:5px 11px;border-radius:999px;border:1px solid var(--line);font-family:inherit;font-size:12px;font-weight:700;background:'+(r.horizonte===o[0]?'var(--ink-900)':'transparent')+';color:'+(r.horizonte===o[0]?'#fff':'var(--ink-900)')+';">'+o[1]+'</button>'; }).join("") + '</div>') : '') +
+        (r.regra ? '<p class="suggest-row-meta" style="color:var(--teal-700);font-weight:700;">Troca a cada lavagem: '+r.lavagens+' lavagem(ns) prevista(s) × '+fmtQty(r.regra.porLavagem||1)+'</p>' : '') +
+        ((r.partes && r.partes.length) ? '<p class="suggest-row-meta">Previsto: '+r.partes.slice(0,6).map(function(x){ return escapeHtml(x.nome)+' '+fmtQty(Math.round(x.qty*10)/10); }).join(' · ')+(r.partes.length>6?' · …':'')+'</p>' : '') +
         (buy ? linksCompraHtml(r.item, "Onde comprar:") : '') +
       '</div>';
     });
@@ -4258,6 +4437,14 @@
       html += '</div>';
     }
     el.innerHTML = html;
+    ligarRegrasLavagem(el);
+    el.querySelectorAll(".horzBtn").forEach(function(b){
+      b.onclick = async function(){
+        var c = JSON.parse(JSON.stringify(cfgGet("compra_horizonte", {})));
+        c[b.getAttribute("data-iid")] = parseInt(b.getAttribute("data-h"),10);
+        try{ await cfgSalvar("compra_horizonte", c); renderPurchaseSuggestSection(); }catch(e){ console.error(e); showToast("Não foi possível salvar (só administrador)"); }
+      };
+    });
     el.querySelectorAll(".pedirZapBtn").forEach(function(btn){
       btn.onclick = function(){
         var sid = btn.getAttribute("data-sid"), sup = supplierById(sid), rows = gruposZap[sid] || [];
