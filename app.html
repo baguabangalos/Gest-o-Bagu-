@@ -281,6 +281,8 @@
   .seg-toggle button.active{background:var(--teal-700);color:#fff;}
   #abastecimentoView .seg-toggle button{font-size:14.5px;padding:12px 6px;}
   #recepcaoView .seg-toggle button{font-size:14px;}
+  #recepcaoView .seg-toggle, #manutencoesView .seg-toggle{flex-direction:column;gap:8px;}
+  #recepcaoView .seg-toggle button, #manutencoesView .seg-toggle button{width:100%;text-align:left;font-size:15px;padding:14px 16px;}
 
   .period-chips{display:flex;gap:6px;margin-bottom:14px;}
   .period-chips button{
@@ -6513,12 +6515,12 @@
       '<button data-msub="pendentes" class="'+(manutencaoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-msub="concluidas" class="'+(manutencaoSubView==="concluidas"?"active":"")+'">Concluídas</button>' +
       (podeVer("equipamentos") ? '<button data-msub="equipamentos" class="'+(manutencaoSubView==="equipamentos"?"active":"")+'">Equipamentos'+(equipAtencao?(' · '+equipAtencao):'')+'</button>' : '') +
-    '</div>';
+    '</div><div id="manutSubTopo"></div>';
     if(manutencaoSubView === "equipamentos" && podeVer("equipamentos")){
       html += equipamentosHtml();
       main.innerHTML = html;
       main.querySelectorAll("[data-msub]").forEach(function(b){
-        b.onclick = function(){ manutencaoSubView = b.getAttribute("data-msub"); renderManutencoes(); };
+        b.onclick = function(){ manutencaoSubView = b.getAttribute("data-msub"); renderManutencoes(); var tp = document.getElementById("manutSubTopo"); if(tp) tp.scrollIntoView({behavior:"smooth", block:"start"}); };
       });
       ligarEquipamentos(main);
       return;
@@ -6557,7 +6559,7 @@
     }
     main.innerHTML = html;
     main.querySelectorAll("[data-msub]").forEach(function(b){
-      b.onclick = function(){ manutencaoSubView = b.getAttribute("data-msub"); renderManutencoes(); };
+      b.onclick = function(){ manutencaoSubView = b.getAttribute("data-msub"); renderManutencoes(); var tp = document.getElementById("manutSubTopo"); if(tp) tp.scrollIntoView({behavior:"smooth", block:"start"}); };
     });
     // Busca: só esconde/mostra os cards já desenhados (não redesenha a tela,
     // pra não perder o foco do campo enquanto a pessoa digita).
@@ -13030,11 +13032,12 @@
     var html = '<div class="seg-toggle">' +
       '<button data-rsub="abastecimento" class="'+(recepcaoSubView==="abastecimento"?"active":"")+'">'+ic("cube")+' Solicitações</button>' +
       '<button data-rsub="limpeza" class="'+(recepcaoSubView==="limpeza"?"active":"")+'">'+ic("broom")+' Limpeza'+(recepcaoLimpezaPendentesN()?' ('+recepcaoLimpezaPendentesN()+')':'')+'</button>' +
+      (podeVer("hospedes") ? '<button type="button" data-goto="hospedes">'+ic("user")+' Hóspedes</button>' : '') +
       '<button data-rsub="avulsos" class="'+(recepcaoSubView==="avulsos"?"active":"")+'">'+ic("plus")+' Avulsos</button>' +
       '<button data-rsub="chegadas" class="'+(recepcaoSubView==="chegadas"?"active":"")+'">'+ic("bed")+' Chegadas'+(preCheckinsNaoVistos().length?' ('+preCheckinsNaoVistos().length+')':'')+'</button>' +
       '<button data-rsub="entrada" class="'+(recepcaoSubView==="entrada"?"active":"")+'">'+ic("bed")+' Pendências de entrada'+(pendenciasEntradaAbertas().length?(' ('+pendenciasEntradaAbertas().length+')'):'')+'</button>' +
       '<button data-rsub="chuvas" class="'+(recepcaoSubView==="chuvas"?"active":"")+'">'+ic("box")+' Guarda-chuvas'+(umb.carregado && !umb.erro && umbEmprestados().length?' ('+umbEmprestados().length+')':'')+'</button>' +
-    '</div>';
+    '</div><div id="recSubTopo"></div>';
 
     if(recepcaoSubView === "limpeza"){
       var bloqueadasRecepcao = state.solicitacoes.filter(function(s){ return s.status === "bloqueada"; })
@@ -13279,10 +13282,14 @@
     if(!umb.tentado && recepcaoSubView !== "chuvas" && podeVerAba("recepcao","chuvas")){ umb.tentado = true; carregarChuvas().then(function(){ if(appSection==="recepcao") renderRecepcao(); }); }
     wireSolicitacaoActions(main);
 
+    main.querySelectorAll("[data-goto]").forEach(function(b){
+      b.onclick = function(){ appSection = b.getAttribute("data-goto"); renderApp(); window.scrollTo(0,0); };
+    });
     main.querySelectorAll("[data-rsub]").forEach(function(b){
       b.onclick = function(){
         recepcaoSubView = b.getAttribute("data-rsub");
         renderRecepcao();
+        var topoR = document.getElementById("recSubTopo"); if(topoR) topoR.scrollIntoView({behavior:"smooth", block:"start"});
         if(recepcaoSubView === "chegadas") carregarPreCheckins().then(function(){ if(recepcaoSubView === "chegadas") renderRecepcao(); });
         if(recepcaoSubView === "entrada" || recepcaoSubView === "limpeza") carregarPendenciasEntrada().then(function(){ if(recepcaoSubView === "entrada" || recepcaoSubView === "limpeza") renderRecepcao(); });
       };
