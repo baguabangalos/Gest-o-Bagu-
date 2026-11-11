@@ -3040,12 +3040,36 @@
 
 
   // ---------- Minha agenda (calendário pessoal de demandas, no perfil) ----------
+  // Cada demanda: {id,titulo,data,hora,obs,feito,rep,dias,ate,feitos,excecoes}. rep: ""|"diaria"|"semanal"|"dias"|"mensal".
   var agendaMes = null, agendaDiaSel = null;
   var AGENDA_MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  var AGENDA_DIAS_NOME = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+  var AGENDA_REP_NOME = {"":"Não repete", diaria:"Todos os dias", semanal:"Toda semana (mesmo dia da semana)", dias:"Em dias da semana que eu escolher", mensal:"Todo mês (mesmo dia)"};
   function agendaChave(){ return "agenda_" + (currentUser ? currentUser.id : "sem"); }
   function agendaItens(){ var a = appConfig && appConfig[agendaChave()]; return (a && Array.isArray(a.itens)) ? a.itens : []; }
   async function agendaSalvar(itens){ return await cfgSalvar(agendaChave(), {itens:itens}); }
   function agendaDataBr(iso){ var q = String(iso).split("-"); return q[2]+"/"+q[1]+"/"+q[0]; }
+  function agendaPartes(iso){ var q = String(iso).split("-"); return new Date(+q[0], +q[1]-1, +q[2]); }
+  // A demanda cai neste dia?
+  function agendaOcorre(x, iso){
+    if(iso < x.data) return false;
+    if(!x.rep) return iso === x.data;
+    if(x.ate && iso > x.ate) return false;
+    if(x.excecoes && x.excecoes.indexOf(iso) > -1) return false;
+    var d = agendaPartes(iso), d0 = agendaPartes(x.data);
+    if(x.rep === "diaria") return true;
+    if(x.rep === "semanal") return d.getDay() === d0.getDay();
+    if(x.rep === "dias") return (x.dias || []).indexOf(d.getDay()) > -1;
+    if(x.rep === "mensal"){ var ult = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); return d.getDate() === Math.min(d0.getDate(), ult); }
+    return false;
+  }
+  function agendaFeito(x, iso){ return x.rep ? !!(x.feitos && x.feitos[iso]) : !!x.feito; }
+  function agendaDoDia(itens, iso){ return itens.filter(function(x){ return agendaOcorre(x, iso); }); }
+  function agendaRepResumo(x){
+    if(!x.rep) return "";
+    var t = x.rep === "dias" ? ("toda " + (x.dias||[]).map(function(n){ return AGENDA_DIAS_NOME[n]; }).join(", ")) : ({diaria:"todo dia", semanal:"toda semana", mensal:"todo mês"})[x.rep];
+    return t + (x.ate ? " até " + agendaDataBr(x.ate).slice(0,5) : "");
+  }
   function agendaRender(){
     var box = document.getElementById("agendaBox"); if(!box || !currentUser) return;
     var hoje = new Date(); hoje.setHours(0,0,0,0);
@@ -3053,8 +3077,6 @@
     if(!agendaMes) agendaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     if(!agendaDiaSel) agendaDiaSel = hojeIso;
     var itens = agendaItens();
-    var porDia = {};
-    itens.forEach(function(x){ (porDia[x.data] = porDia[x.data] || []).push(x); });
     var ano = agendaMes.getFullYear(), mes = agendaMes.getMonth();
     var primeiro = new Date(ano, mes, 1).getDay(), diasMes = new Date(ano, mes+1, 0).getDate();
     var h = '<div class="card" style="margin-bottom:16px;">' +
@@ -3069,29 +3091,40 @@
     for(var i = 0; i < primeiro; i++) h += '<span></span>';
     for(var d = 1; d <= diasMes; d++){
       var iso = ano+"-"+String(mes+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
-      var lista = porDia[iso] || [];
-      var pend = lista.filter(function(x){ return !x.feito; }).length;
+      var lista = agendaDoDia(itens, iso);
+      var pend = lista.filter(function(x){ return !agendaFeito(x, iso); }).length;
       var sel = iso === agendaDiaSel, ehHoje = iso === hojeIso;
       var ponto = lista.length ? '<span style="display:block;width:6px;height:6px;border-radius:50%;margin:2px auto 0;background:'+(pend ? (iso < hojeIso ? 'var(--red-600)' : 'var(--amber-600)') : 'var(--teal-700)')+';"></span>' : '<span style="display:block;height:8px;"></span>';
       h += '<button type="button" class="agDia" data-d="'+iso+'" style="border:'+(ehHoje?'2px solid var(--teal-700)':'1px solid var(--line)')+';border-radius:9px;padding:6px 0 2px;font-family:inherit;font-size:13.5px;font-weight:'+(ehHoje?'800':'600')+';background:'+(sel?'var(--teal-100)':'#fff')+';color:var(--ink-900);">'+d+ponto+'</button>';
     }
     h += '</div>';
     h += '<p style="margin:14px 0 6px;font-weight:800;">'+agendaDataBr(agendaDiaSel)+(agendaDiaSel===hojeIso?' · hoje':'')+'</p>';
-    var doDia = (porDia[agendaDiaSel] || []).slice().sort(function(a,b){ return (a.hora||"99:99").localeCompare(b.hora||"99:99"); });
+    var doDia = agendaDoDia(itens, agendaDiaSel).sort(function(a,b){ return (a.hora||"99:99").localeCompare(b.hora||"99:99"); });
     if(!doDia.length) h += '<p class="item-meta" style="margin:0 0 8px;">Nenhuma demanda neste dia.</p>';
     doDia.forEach(function(x){
-      h += '<div style="border-top:1px solid var(--line);padding:8px 0;display:flex;gap:10px;align-items:flex-start;'+(x.feito?'opacity:.6;':'')+'">' +
-        '<input type="checkbox" class="agFeito" data-id="'+escapeHtml(x.id)+'" '+(x.feito?'checked':'')+' style="width:20px;height:20px;margin-top:2px;flex-shrink:0;">' +
-        '<div style="flex:1;min-width:0;"><p class="item-name" style="margin:0;'+(x.feito?'text-decoration:line-through;':'')+'">'+(x.hora?'<span style="color:var(--teal-700);">'+escapeHtml(x.hora)+'</span> · ':'')+escapeHtml(x.titulo)+'</p>' +
+      var fe = agendaFeito(x, agendaDiaSel);
+      h += '<div style="border-top:1px solid var(--line);padding:8px 0;display:flex;gap:10px;align-items:flex-start;'+(fe?'opacity:.6;':'')+'">' +
+        '<input type="checkbox" class="agFeito" data-id="'+escapeHtml(x.id)+'" '+(fe?'checked':'')+' style="width:20px;height:20px;margin-top:2px;flex-shrink:0;">' +
+        '<div style="flex:1;min-width:0;"><p class="item-name" style="margin:0;'+(fe?'text-decoration:line-through;':'')+'">'+(x.hora?'<span style="color:var(--teal-700);">'+escapeHtml(x.hora)+'</span> · ':'')+escapeHtml(x.titulo)+'</p>' +
+        (x.rep ? '<p class="item-meta" style="margin:2px 0 0;">'+ic("refresh")+'se repete '+escapeHtml(agendaRepResumo(x))+'</p>' : '') +
         (x.obs ? '<p class="item-meta" style="margin:2px 0 0;white-space:pre-wrap;">'+escapeHtml(x.obs)+'</p>' : '') +
         '<div class="item-actions" style="margin-top:6px;"><button type="button" class="btn btn-out agEditar" data-id="'+escapeHtml(x.id)+'">Editar</button><button type="button" class="btn btn-out agExcluir" data-id="'+escapeHtml(x.id)+'">Excluir</button></div></div></div>';
     });
     h += '<button type="button" class="btn btn-in" id="agNova" style="width:100%;margin-top:6px;padding:12px;">+ Nova demanda</button>';
-    var atrasadas = itens.filter(function(x){ return !x.feito && x.data < hojeIso; }).sort(function(a,b){ return a.data.localeCompare(b.data); });
+    // atrasadas: avulsas pendentes de dias anteriores + repetidas não feitas nos últimos 7 dias
+    var atrasadas = [];
+    itens.forEach(function(x){
+      if(!x.rep){ if(!x.feito && x.data < hojeIso) atrasadas.push({x:x, iso:x.data}); return; }
+      for(var k = 7; k >= 1; k--){
+        var di = isoLocal(new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()-k));
+        if(agendaOcorre(x, di) && !agendaFeito(x, di)) atrasadas.push({x:x, iso:di});
+      }
+    });
+    atrasadas.sort(function(a,b){ return a.iso.localeCompare(b.iso); });
     if(atrasadas.length){
       h += '<p style="margin:16px 0 4px;font-weight:800;color:var(--red-600);">'+ic("warning")+' Atrasadas ('+atrasadas.length+')</p>';
-      atrasadas.forEach(function(x){
-        h += '<button type="button" class="agDia" data-d="'+x.data+'" style="display:block;width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);padding:7px 0;font-family:inherit;font-size:13.5px;color:var(--ink-900);">'+agendaDataBr(x.data).slice(0,5)+' · '+escapeHtml(x.titulo)+'</button>';
+      atrasadas.slice(0, 20).forEach(function(a){
+        h += '<button type="button" class="agDia" data-d="'+a.iso+'" style="display:block;width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);padding:7px 0;font-family:inherit;font-size:13.5px;color:var(--ink-900);">'+agendaDataBr(a.iso).slice(0,5)+' · '+escapeHtml(a.x.titulo)+'</button>';
       });
     }
     h += '<p class="item-meta" style="font-size:11px;margin:12px 0 0;">Esta agenda é só sua.</p></div>';
@@ -3105,35 +3138,72 @@
     box.querySelectorAll(".agEditar").forEach(function(b){ b.onclick = function(){
       var x = agendaItens().filter(function(y){ return y.id === b.getAttribute("data-id"); })[0]; if(x) agendaForm(x);
     }; });
-    box.querySelectorAll(".agExcluir").forEach(function(b){ b.onclick = async function(){
-      if(!confirm("Excluir esta demanda?")) return;
+    box.querySelectorAll(".agExcluir").forEach(function(b){ b.onclick = function(){
       var id = b.getAttribute("data-id");
-      if(await agendaSalvar(agendaItens().filter(function(y){ return y.id !== id; }))) agendaRender();
+      var x = agendaItens().filter(function(y){ return y.id === id; })[0]; if(!x) return;
+      if(!x.rep){
+        if(!confirm("Excluir esta demanda?")) return;
+        agendaSalvar(agendaItens().filter(function(y){ return y.id !== id; })).then(function(ok){ if(ok) agendaRender(); });
+        return;
+      }
+      restAbrirSheet("Excluir demanda que se repete",
+        '<p style="margin:0 0 12px;">'+escapeHtml(x.titulo)+' — '+escapeHtml(agendaRepResumo(x))+'</p>' +
+        '<button type="button" class="btn btn-out" id="agExcDia" style="width:100%;margin-bottom:8px;">Só o dia '+agendaDataBr(agendaDiaSel).slice(0,5)+'</button>' +
+        '<button type="button" class="btn btn-out" id="agExcPartir" style="width:100%;margin-bottom:8px;">Este dia e os próximos (parar de repetir)</button>' +
+        '<button type="button" class="btn btn-out" id="agExcTodas" style="width:100%;margin-bottom:8px;color:#c0392b;">Todas as repetições</button>' +
+        '<button type="button" class="btn-secondary" id="agExcCancel" style="width:100%;">Cancelar</button>');
+      document.getElementById("agExcCancel").onclick = restFecharSheet;
+      function aplicar(fn){ var novos = JSON.parse(JSON.stringify(agendaItens())); novos = fn(novos); agendaSalvar(novos).then(function(ok){ if(ok){ restFecharSheet(); agendaRender(); } }); }
+      document.getElementById("agExcDia").onclick = function(){ aplicar(function(n){ n.forEach(function(y){ if(y.id===id){ y.excecoes = (y.excecoes||[]).concat([agendaDiaSel]); } }); return n; }); };
+      document.getElementById("agExcPartir").onclick = function(){ aplicar(function(n){
+        var antes = isoLocal(new Date(agendaPartes(agendaDiaSel).getTime() - 86400000));
+        return n.filter(function(y){ return !(y.id===id && antes < y.data); }).map(function(y){ if(y.id===id) y.ate = antes; return y; }); }); };
+      document.getElementById("agExcTodas").onclick = function(){ aplicar(function(n){ return n.filter(function(y){ return y.id !== id; }); }); };
     }; });
     box.querySelectorAll(".agFeito").forEach(function(c){ c.onchange = async function(){
       var id = c.getAttribute("data-id");
       var novos = JSON.parse(JSON.stringify(agendaItens()));
-      novos.forEach(function(y){ if(y.id === id) y.feito = c.checked; });
+      novos.forEach(function(y){
+        if(y.id !== id) return;
+        if(y.rep){ y.feitos = y.feitos || {}; if(c.checked) y.feitos[agendaDiaSel] = true; else delete y.feitos[agendaDiaSel]; }
+        else y.feito = c.checked;
+      });
       if(await agendaSalvar(novos)) agendaRender();
     }; });
   }
   function agendaForm(x){
     var novo = !x;
-    x = x || {id:uid(), titulo:"", data:agendaDiaSel || isoLocal(new Date()), hora:"", obs:"", feito:false};
+    x = x || {id:uid(), titulo:"", data:agendaDiaSel || isoLocal(new Date()), hora:"", obs:"", feito:false, rep:"", dias:[], ate:""};
+    var diasSel = x.dias || [];
     restAbrirSheet(novo ? "Nova demanda" : "Editar demanda",
       '<label>O que precisa fazer</label><input type="text" id="agTitulo" value="'+escapeHtml(x.titulo)+'" style="'+REST_INPUT+'">' +
-      '<label>Data</label><input type="date" id="agData" value="'+escapeHtml(x.data)+'" style="'+REST_INPUT+'">' +
+      '<label>Data'+(x.rep?' (primeira vez)':'')+'</label><input type="date" id="agData" value="'+escapeHtml(x.data)+'" style="'+REST_INPUT+'">' +
       '<label>Horário (opcional)</label><input type="time" id="agHora" value="'+escapeHtml(x.hora||"")+'" style="'+REST_INPUT+'">' +
+      '<label>Repetir</label><select id="agRep" style="'+REST_INPUT+'">' + Object.keys(AGENDA_REP_NOME).map(function(k){ return '<option value="'+k+'"'+((x.rep||"")===k?' selected':'')+'>'+AGENDA_REP_NOME[k]+'</option>'; }).join("") + '</select>' +
+      '<div id="agDiasBox" style="display:none;margin-top:8px;">' + AGENDA_DIAS_NOME.map(function(n,i){ return '<label style="display:inline-flex;align-items:center;gap:4px;margin:0 10px 6px 0;font-weight:600;"><input type="checkbox" class="agDiaSem" value="'+i+'" '+(diasSel.indexOf(i)>-1?'checked':'')+'> '+n+'</label>'; }).join("") + '</div>' +
+      '<div id="agAteBox" style="display:none;"><label>Repetir até (opcional)</label><input type="date" id="agAte" value="'+escapeHtml(x.ate||"")+'" style="'+REST_INPUT+'"></div>' +
       '<label>Observação (opcional)</label><textarea id="agObs" rows="3" style="'+REST_INPUT+'resize:vertical;">'+escapeHtml(x.obs||"")+'</textarea>' +
       '<div class="sheet-actions"><button type="button" class="btn-secondary" id="agCancel">Cancelar</button><button type="button" class="btn-primary" id="agSalvar">'+ic("check")+' Salvar</button></div>');
+    function ajustarCampos(){
+      var r = document.getElementById("agRep").value;
+      document.getElementById("agDiasBox").style.display = (r === "dias") ? "block" : "none";
+      document.getElementById("agAteBox").style.display = r ? "block" : "none";
+    }
+    document.getElementById("agRep").onchange = ajustarCampos; ajustarCampos();
     document.getElementById("agCancel").onclick = restFecharSheet;
     document.getElementById("agSalvar").onclick = async function(){
       var t = document.getElementById("agTitulo").value.trim(), d = document.getElementById("agData").value;
+      var rep = document.getElementById("agRep").value;
+      var dias = Array.prototype.slice.call(document.querySelectorAll(".agDiaSem")).filter(function(c){ return c.checked; }).map(function(c){ return Number(c.value); });
+      var ate = document.getElementById("agAte").value;
       if(!t || !d){ showToast("Escreva a demanda e escolha a data"); return; }
+      if(rep === "dias" && !dias.length){ showToast("Marque pelo menos um dia da semana"); return; }
+      if(rep && ate && ate < d){ showToast("A data final precisa ser depois da primeira"); return; }
       var novos = JSON.parse(JSON.stringify(agendaItens()));
       var alvo = novos.filter(function(y){ return y.id === x.id; })[0];
       if(!alvo){ alvo = {id:x.id, feito:false}; novos.push(alvo); }
       alvo.titulo = t; alvo.data = d; alvo.hora = document.getElementById("agHora").value; alvo.obs = document.getElementById("agObs").value.trim();
+      alvo.rep = rep; alvo.dias = (rep === "dias" ? dias : []); alvo.ate = (rep ? ate : "");
       if(await agendaSalvar(novos)){ restFecharSheet(); agendaDiaSel = d; var q = d.split("-"); agendaMes = new Date(+q[0], +q[1]-1, 1); agendaRender(); }
     };
   }
