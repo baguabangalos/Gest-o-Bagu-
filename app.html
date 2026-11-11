@@ -3110,7 +3110,8 @@
         (x.obs ? '<p class="item-meta" style="margin:2px 0 0;white-space:pre-wrap;">'+escapeHtml(x.obs)+'</p>' : '') +
         '<div class="item-actions" style="margin-top:6px;"><button type="button" class="btn btn-out agEditar" data-id="'+escapeHtml(x.id)+'">Editar</button><button type="button" class="btn btn-out agExcluir" data-id="'+escapeHtml(x.id)+'">Excluir</button></div></div></div>';
     });
-    h += '<button type="button" class="btn btn-in" id="agNova" style="width:100%;margin-top:6px;padding:12px;">+ Nova demanda</button>';
+    h += '<button type="button" class="btn btn-in" id="agNova" style="width:100%;margin-top:6px;padding:12px;">+ Nova demanda</button>' +
+      '<button type="button" class="btn btn-out" id="agTodasBtn" style="width:100%;margin-top:8px;padding:11px;">'+ic("doc")+' Ver todas as minhas demandas ('+itens.length+')</button>';
     // atrasadas: avulsas pendentes de dias anteriores + repetidas não feitas nos últimos 7 dias
     var atrasadas = [];
     itens.forEach(function(x){
@@ -3135,31 +3136,11 @@
       agendaDiaSel = b.getAttribute("data-d"); var q = agendaDiaSel.split("-"); agendaMes = new Date(+q[0], +q[1]-1, 1); agendaRender();
     }; });
     box.querySelector("#agNova").onclick = function(){ agendaForm(null); };
+    box.querySelector("#agTodasBtn").onclick = function(){ agendaBusca = ""; agendaTodas(); };
     box.querySelectorAll(".agEditar").forEach(function(b){ b.onclick = function(){
       var x = agendaItens().filter(function(y){ return y.id === b.getAttribute("data-id"); })[0]; if(x) agendaForm(x);
     }; });
-    box.querySelectorAll(".agExcluir").forEach(function(b){ b.onclick = function(){
-      var id = b.getAttribute("data-id");
-      var x = agendaItens().filter(function(y){ return y.id === id; })[0]; if(!x) return;
-      if(!x.rep){
-        if(!confirm("Excluir esta demanda?")) return;
-        agendaSalvar(agendaItens().filter(function(y){ return y.id !== id; })).then(function(ok){ if(ok) agendaRender(); });
-        return;
-      }
-      restAbrirSheet("Excluir demanda que se repete",
-        '<p style="margin:0 0 12px;">'+escapeHtml(x.titulo)+' — '+escapeHtml(agendaRepResumo(x))+'</p>' +
-        '<button type="button" class="btn btn-out" id="agExcDia" style="width:100%;margin-bottom:8px;">Só o dia '+agendaDataBr(agendaDiaSel).slice(0,5)+'</button>' +
-        '<button type="button" class="btn btn-out" id="agExcPartir" style="width:100%;margin-bottom:8px;">Este dia e os próximos (parar de repetir)</button>' +
-        '<button type="button" class="btn btn-out" id="agExcTodas" style="width:100%;margin-bottom:8px;color:#c0392b;">Todas as repetições</button>' +
-        '<button type="button" class="btn-secondary" id="agExcCancel" style="width:100%;">Cancelar</button>');
-      document.getElementById("agExcCancel").onclick = restFecharSheet;
-      function aplicar(fn){ var novos = JSON.parse(JSON.stringify(agendaItens())); novos = fn(novos); agendaSalvar(novos).then(function(ok){ if(ok){ restFecharSheet(); agendaRender(); } }); }
-      document.getElementById("agExcDia").onclick = function(){ aplicar(function(n){ n.forEach(function(y){ if(y.id===id){ y.excecoes = (y.excecoes||[]).concat([agendaDiaSel]); } }); return n; }); };
-      document.getElementById("agExcPartir").onclick = function(){ aplicar(function(n){
-        var antes = isoLocal(new Date(agendaPartes(agendaDiaSel).getTime() - 86400000));
-        return n.filter(function(y){ return !(y.id===id && antes < y.data); }).map(function(y){ if(y.id===id) y.ate = antes; return y; }); }); };
-      document.getElementById("agExcTodas").onclick = function(){ aplicar(function(n){ return n.filter(function(y){ return y.id !== id; }); }); };
-    }; });
+    box.querySelectorAll(".agExcluir").forEach(function(b){ b.onclick = function(){ agendaExcluir(b.getAttribute("data-id"), false); }; });
     box.querySelectorAll(".agFeito").forEach(function(c){ c.onchange = async function(){
       var id = c.getAttribute("data-id");
       var novos = JSON.parse(JSON.stringify(agendaItens()));
@@ -3169,6 +3150,78 @@
         else y.feito = c.checked;
       });
       if(await agendaSalvar(novos)) agendaRender();
+    }; });
+  }
+
+  function agendaExcluir(id, daLista){
+    var x = agendaItens().filter(function(y){ return y.id === id; })[0]; if(!x) return;
+    function depois(){ restFecharSheet(); agendaRender(); if(daLista) agendaTodas(); }
+    if(!x.rep){
+      if(!confirm("Excluir esta demanda?")) return;
+      agendaSalvar(agendaItens().filter(function(y){ return y.id !== id; })).then(function(ok){ if(ok) depois(); });
+      return;
+    }
+    restAbrirSheet("Excluir demanda que se repete",
+      '<p style="margin:0 0 12px;">'+escapeHtml(x.titulo)+' — '+escapeHtml(agendaRepResumo(x))+'</p>' +
+      (daLista ? '' :
+        '<button type="button" class="btn btn-out" id="agExcDia" style="width:100%;margin-bottom:8px;">Só o dia '+agendaDataBr(agendaDiaSel).slice(0,5)+'</button>' +
+        '<button type="button" class="btn btn-out" id="agExcPartir" style="width:100%;margin-bottom:8px;">Este dia e os próximos (parar de repetir)</button>') +
+      '<button type="button" class="btn btn-out" id="agExcTodas" style="width:100%;margin-bottom:8px;color:#c0392b;">Todas as repetições</button>' +
+      '<button type="button" class="btn-secondary" id="agExcCancel" style="width:100%;">Cancelar</button>');
+    document.getElementById("agExcCancel").onclick = function(){ restFecharSheet(); if(daLista) agendaTodas(); };
+    function aplicar(fn){ var novos = JSON.parse(JSON.stringify(agendaItens())); novos = fn(novos); agendaSalvar(novos).then(function(ok){ if(ok) depois(); }); }
+    if(!daLista){
+      document.getElementById("agExcDia").onclick = function(){ aplicar(function(n){ n.forEach(function(y){ if(y.id===id){ y.excecoes = (y.excecoes||[]).concat([agendaDiaSel]); } }); return n; }); };
+      document.getElementById("agExcPartir").onclick = function(){ aplicar(function(n){
+        var antes = isoLocal(new Date(agendaPartes(agendaDiaSel).getTime() - 86400000));
+        return n.filter(function(y){ return !(y.id===id && antes < y.data); }).map(function(y){ if(y.id===id) y.ate = antes; return y; }); }); };
+    }
+    document.getElementById("agExcTodas").onclick = function(){ aplicar(function(n){ return n.filter(function(y){ return y.id !== id; }); }); };
+  }
+  // Lista de TUDO que já foi cadastrado, com busca — para não repetir demanda.
+  var agendaBusca = "";
+  function agendaTodasHtml(){
+    var hojeIso = isoLocal(new Date());
+    var q = normalizarBusca(agendaBusca);
+    var itens = agendaItens().filter(function(x){ return !q || normalizarBusca(x.titulo + " " + (x.obs||"")).indexOf(q) > -1; });
+    function linha(x){
+      var fe = x.rep ? false : !!x.feito;
+      var quando = x.rep ? ('começa em '+agendaDataBr(x.data).slice(0,5)+' · se repete '+agendaRepResumo(x)) : (agendaDataBr(x.data).slice(0,5)+(x.hora?' às '+x.hora:''));
+      return '<div style="border-top:1px solid var(--line);padding:9px 0;'+(fe?'opacity:.6;':'')+'">' +
+        '<p class="item-name" style="margin:0;'+(fe?'text-decoration:line-through;':'')+'">'+escapeHtml(x.titulo)+'</p>' +
+        '<p class="item-meta" style="margin:2px 0 0;">'+escapeHtml(quando)+(fe?' · feita':'')+(!x.rep&&!x.feito&&x.data<hojeIso?' · <b style="color:var(--red-600);">atrasada</b>':'')+'</p>' +
+        (x.obs ? '<p class="item-meta" style="margin:2px 0 0;white-space:pre-wrap;">'+escapeHtml(x.obs)+'</p>' : '') +
+        '<div class="item-actions" style="margin-top:6px;"><button type="button" class="btn btn-out agTEd" data-id="'+escapeHtml(x.id)+'">Editar</button><button type="button" class="btn btn-out agTEx" data-id="'+escapeHtml(x.id)+'">Excluir</button><button type="button" class="btn btn-out agTVer" data-d="'+(x.rep && x.data < hojeIso ? hojeIso : x.data)+'">Ver no calendário</button></div></div>';
+    }
+    var rep = itens.filter(function(x){ return x.rep; }).sort(function(a,b){ return a.titulo.localeCompare(b.titulo,"pt-BR"); });
+    var pend = itens.filter(function(x){ return !x.rep && !x.feito; }).sort(function(a,b){ return a.data.localeCompare(b.data) || (a.hora||"").localeCompare(b.hora||""); });
+    var feitas = itens.filter(function(x){ return !x.rep && x.feito; }).sort(function(a,b){ return b.data.localeCompare(a.data); });
+    var h = '<input type="search" id="agBusca" placeholder="Buscar nas minhas demandas…" value="'+escapeHtml(agendaBusca)+'" style="'+REST_INPUT+'margin-bottom:6px;">' +
+      '<p class="item-meta" style="margin:0 0 6px;">'+itens.length+(itens.length===1?' demanda':' demandas')+(q?' encontradas':' no total')+'</p>';
+    if(!itens.length) return h + '<div class="empty">Nenhuma demanda'+(q?' com essa busca':' cadastrada ainda')+'.</div>';
+    if(rep.length) h += '<p style="margin:12px 0 2px;font-weight:800;">'+ic("refresh")+' Que se repetem ('+rep.length+')</p>' + rep.map(linha).join("");
+    if(pend.length) h += '<p style="margin:12px 0 2px;font-weight:800;">Pendentes ('+pend.length+')</p>' + pend.map(linha).join("");
+    if(feitas.length) h += '<p style="margin:12px 0 2px;font-weight:800;">Feitas ('+feitas.length+')</p>' + feitas.map(linha).join("");
+    return h;
+  }
+  function agendaTodas(){
+    restAbrirSheet("Todas as minhas demandas", '<div id="agTodasBox" style="max-height:70vh;overflow:auto;">'+agendaTodasHtml()+'</div>');
+    agendaTodasLigar();
+  }
+  function agendaTodasLigar(){
+    var box = document.getElementById("agTodasBox"); if(!box) return;
+    var inp = box.querySelector("#agBusca");
+    if(inp) inp.oninput = function(){
+      agendaBusca = inp.value; var pos = inp.selectionStart;
+      box.innerHTML = agendaTodasHtml(); agendaTodasLigar();
+      var n = box.querySelector("#agBusca"); n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){}
+    };
+    box.querySelectorAll(".agTEd").forEach(function(b){ b.onclick = function(){
+      var x = agendaItens().filter(function(y){ return y.id === b.getAttribute("data-id"); })[0]; if(x){ restFecharSheet(); agendaForm(x); }
+    }; });
+    box.querySelectorAll(".agTEx").forEach(function(b){ b.onclick = function(){ restFecharSheet(); agendaExcluir(b.getAttribute("data-id"), true); }; });
+    box.querySelectorAll(".agTVer").forEach(function(b){ b.onclick = function(){
+      restFecharSheet(); agendaDiaSel = b.getAttribute("data-d"); var q = agendaDiaSel.split("-"); agendaMes = new Date(+q[0], +q[1]-1, 1); agendaRender();
     }; });
   }
   function agendaForm(x){
@@ -3198,6 +3251,10 @@
       var ate = document.getElementById("agAte").value;
       if(!t || !d){ showToast("Escreva a demanda e escolha a data"); return; }
       if(rep === "dias" && !dias.length){ showToast("Marque pelo menos um dia da semana"); return; }
+      if(novo){
+        var igual = agendaItens().filter(function(y){ return normalizarBusca(y.titulo) === normalizarBusca(t); })[0];
+        if(igual && !confirm("Você já tem uma demanda chamada \""+igual.titulo+"\" ("+agendaRepResumo(igual)+(igual.rep?"":agendaDataBr(igual.data).slice(0,5))+"). Criar mesmo assim?")) return;
+      }
       if(rep && ate && ate < d){ showToast("A data final precisa ser depois da primeira"); return; }
       var novos = JSON.parse(JSON.stringify(agendaItens()));
       var alvo = novos.filter(function(y){ return y.id === x.id; })[0];
