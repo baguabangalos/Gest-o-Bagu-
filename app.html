@@ -2966,7 +2966,8 @@
     if(podeVer("estoque")) cards.push({section:"estoque", titulo:"Estoque", icon:ic("box"), sub:estoqueSub});
     if(podeVer("procedimentos")) cards.push({section:"procedimentos", titulo:"Procedimentos", icon:ic("doc"), sub:procSub});
     if(podeVer("manutencao")) cards.push({section:"manutencoes", titulo:"Manutenções", icon:ic("wrench"), sub:manutSub});
-    if(podeVer("hospedes")) cards.push({section:"hospedes", titulo:"Hóspedes", icon:ic("user"), sub:"buscar documento por CPF/passaporte"});
+    // Hóspedes agora fica dentro da Recepção; só aparece aqui para quem tem Hóspedes mas não tem acesso à Recepção.
+    if(podeVer("hospedes") && !podeVer("recepcao")) cards.push({section:"hospedes", titulo:"Hóspedes", icon:ic("user"), sub:"buscar documento por CPF/passaporte"});
     if(podeVer("limpeza")){
       var limpPend = state.solicitacoes.filter(function(s){ return s.status!=="concluido" && !isRecepcaoOnly(s.tipo); }).length;
       var limpSub = limpPend > 0 ? (limpPend + (limpPend===1?" pedido em aberto":" pedidos em aberto")) : "tudo em dia";
@@ -3006,7 +3007,7 @@
     if(podeVer("escala_trabalho")){
       cards.push({section:"escala", titulo:"Equipe", icon:ic("users"), sub:"horários, folga e setor"});
     }
-    if(podeVer("financeiro_estoque")){
+    if(podeVer("financeiro_estoque") && !(currentUser && currentUser.role === "admin")){
       cards.push({section:"financeiro", titulo:"Lucro e perdas", icon:ic("gauge"), sub:"resultado mensal do estoque"});
     }
     if(podeVer("tarefas_dia") && (podeAtribuirTarefas() || !podeVer("checklist_turno"))){
@@ -3015,11 +3016,9 @@
     }
     if(currentUser && currentUser.role === "admin") cards.push({section:"supervisao", titulo:"Supervisão", icon:ic("search"), sub:"painel geral e histórico"});
     if(currentUser && currentUser.role === "admin") cards.push({section:"admin", titulo:"Administração", icon:ic("key"), sub:(adminPendentesN>0 ? (adminPendentesN+(adminPendentesN===1?" conta aguardando aprovação":" contas aguardando aprovação")) : "gerenciar quem acessa o quê")});
-    if(currentUser && currentUser.role === "admin") cards.push({section:"personalizar", titulo:"Personalizar", icon:ic("pencil"), sub:"abas, cards e listas do app"});
     if(currentUser && currentUser.role === "admin"){
       if(!usoSb.tentado){ usoSb.tentado = true; carregarUsoSb().then(function(){ if(usoSbAlertas().length) mostrarAlertaPedido("Uso do sistema perto do limite: "+usoSbAlertas().map(function(a){return a.nome+" "+a.pct+"%";}).join(", "), function(){ appSection="usosb"; renderApp(); }, "Uso do sistema"); if(appSection==="home") renderApp(); }); }
       var usoAl = usoSbAlertas();
-      cards.push({section:"usosb", titulo:"Uso do sistema", icon:ic("search"), sub:(usoAl.length ? "perto do limite: "+usoAl.map(function(a){return a.nome;}).join(", ") : "banco, arquivos e usuários"), subVermelho:usoAl.length>0});
     }
     cards.push({section:"sugestoes", titulo:"Sugestões", icon:ic("pencil"), sub:"ideias para melhorar o app"});
     cards.push({section:"configuracoes", titulo:"Configurações", icon:ic("logout"), sub:"minha conta e sair"});
@@ -15044,7 +15043,7 @@
       '<button type="button" data-asub="relatorio">'+ic("mail")+' Relatório</button>' +
       '<button type="button" data-asub="usuarios">'+ic("users")+' Usuários e permissões'+(adminPendentesN>0?' ('+adminPendentesN+')':'')+'</button>' +
       '<button type="button" data-agoto="personalizar">'+ic("pencil")+' Personalizar</button>' +
-      '<button type="button" data-agoto="usosb">'+ic("search")+' Uso do sistema</button>' +
+      '<button type="button" data-agoto="usosb">'+ic("search")+' Uso do sistema'+(usoSbAlertas().length?' — perto do limite':'')+'</button>' +
       '<button type="button" data-agoto="financeiro">'+ic("gauge")+' Lucros e perdas</button>' +
     '</div>';
     html += '<div id="adminSecRel" style="display:'+((!adminMenu && adminSub==="relatorio")?'block':'none')+';"><div class="section-title" style="margin-top:0;">'+ic("mail")+' Relatório semanal por email</div>';
