@@ -3038,6 +3038,106 @@
     });
   }
 
+
+  // ---------- Minha agenda (calendário pessoal de demandas, no perfil) ----------
+  var agendaMes = null, agendaDiaSel = null;
+  var AGENDA_MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  function agendaChave(){ return "agenda_" + (currentUser ? currentUser.id : "sem"); }
+  function agendaItens(){ var a = appConfig && appConfig[agendaChave()]; return (a && Array.isArray(a.itens)) ? a.itens : []; }
+  async function agendaSalvar(itens){ return await cfgSalvar(agendaChave(), {itens:itens}); }
+  function agendaDataBr(iso){ var q = String(iso).split("-"); return q[2]+"/"+q[1]+"/"+q[0]; }
+  function agendaRender(){
+    var box = document.getElementById("agendaBox"); if(!box || !currentUser) return;
+    var hoje = new Date(); hoje.setHours(0,0,0,0);
+    var hojeIso = isoLocal(hoje);
+    if(!agendaMes) agendaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    if(!agendaDiaSel) agendaDiaSel = hojeIso;
+    var itens = agendaItens();
+    var porDia = {};
+    itens.forEach(function(x){ (porDia[x.data] = porDia[x.data] || []).push(x); });
+    var ano = agendaMes.getFullYear(), mes = agendaMes.getMonth();
+    var primeiro = new Date(ano, mes, 1).getDay(), diasMes = new Date(ano, mes+1, 0).getDate();
+    var h = '<div class="card" style="margin-bottom:16px;">' +
+      '<p style="margin:0 0 10px;font-size:16px;font-weight:700;">'+ic("calendar")+' Minha agenda</p>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+        '<button type="button" id="agPrev" style="background:none;border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:16px;">‹</button>' +
+        '<strong>'+AGENDA_MESES[mes]+' '+ano+'</strong>' +
+        '<button type="button" id="agNext" style="background:none;border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:16px;">›</button></div>' +
+      '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;font-size:11.5px;color:var(--ink-600);margin-bottom:3px;">' +
+        ["D","S","T","Q","Q","S","S"].map(function(d){ return '<span>'+d+'</span>'; }).join("") + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">';
+    for(var i = 0; i < primeiro; i++) h += '<span></span>';
+    for(var d = 1; d <= diasMes; d++){
+      var iso = ano+"-"+String(mes+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+      var lista = porDia[iso] || [];
+      var pend = lista.filter(function(x){ return !x.feito; }).length;
+      var sel = iso === agendaDiaSel, ehHoje = iso === hojeIso;
+      var ponto = lista.length ? '<span style="display:block;width:6px;height:6px;border-radius:50%;margin:2px auto 0;background:'+(pend ? (iso < hojeIso ? 'var(--red-600)' : 'var(--amber-600)') : 'var(--teal-700)')+';"></span>' : '<span style="display:block;height:8px;"></span>';
+      h += '<button type="button" class="agDia" data-d="'+iso+'" style="border:'+(ehHoje?'2px solid var(--teal-700)':'1px solid var(--line)')+';border-radius:9px;padding:6px 0 2px;font-family:inherit;font-size:13.5px;font-weight:'+(ehHoje?'800':'600')+';background:'+(sel?'var(--teal-100)':'#fff')+';color:var(--ink-900);">'+d+ponto+'</button>';
+    }
+    h += '</div>';
+    h += '<p style="margin:14px 0 6px;font-weight:800;">'+agendaDataBr(agendaDiaSel)+(agendaDiaSel===hojeIso?' · hoje':'')+'</p>';
+    var doDia = (porDia[agendaDiaSel] || []).slice().sort(function(a,b){ return (a.hora||"99:99").localeCompare(b.hora||"99:99"); });
+    if(!doDia.length) h += '<p class="item-meta" style="margin:0 0 8px;">Nenhuma demanda neste dia.</p>';
+    doDia.forEach(function(x){
+      h += '<div style="border-top:1px solid var(--line);padding:8px 0;display:flex;gap:10px;align-items:flex-start;'+(x.feito?'opacity:.6;':'')+'">' +
+        '<input type="checkbox" class="agFeito" data-id="'+escapeHtml(x.id)+'" '+(x.feito?'checked':'')+' style="width:20px;height:20px;margin-top:2px;flex-shrink:0;">' +
+        '<div style="flex:1;min-width:0;"><p class="item-name" style="margin:0;'+(x.feito?'text-decoration:line-through;':'')+'">'+(x.hora?'<span style="color:var(--teal-700);">'+escapeHtml(x.hora)+'</span> · ':'')+escapeHtml(x.titulo)+'</p>' +
+        (x.obs ? '<p class="item-meta" style="margin:2px 0 0;white-space:pre-wrap;">'+escapeHtml(x.obs)+'</p>' : '') +
+        '<div class="item-actions" style="margin-top:6px;"><button type="button" class="btn btn-out agEditar" data-id="'+escapeHtml(x.id)+'">Editar</button><button type="button" class="btn btn-out agExcluir" data-id="'+escapeHtml(x.id)+'">Excluir</button></div></div></div>';
+    });
+    h += '<button type="button" class="btn btn-in" id="agNova" style="width:100%;margin-top:6px;padding:12px;">+ Nova demanda</button>';
+    var atrasadas = itens.filter(function(x){ return !x.feito && x.data < hojeIso; }).sort(function(a,b){ return a.data.localeCompare(b.data); });
+    if(atrasadas.length){
+      h += '<p style="margin:16px 0 4px;font-weight:800;color:var(--red-600);">'+ic("warning")+' Atrasadas ('+atrasadas.length+')</p>';
+      atrasadas.forEach(function(x){
+        h += '<button type="button" class="agDia" data-d="'+x.data+'" style="display:block;width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);padding:7px 0;font-family:inherit;font-size:13.5px;color:var(--ink-900);">'+agendaDataBr(x.data).slice(0,5)+' · '+escapeHtml(x.titulo)+'</button>';
+      });
+    }
+    h += '<p class="item-meta" style="font-size:11px;margin:12px 0 0;">Esta agenda é só sua.</p></div>';
+    box.innerHTML = h;
+    box.querySelector("#agPrev").onclick = function(){ agendaMes = new Date(ano, mes-1, 1); agendaRender(); };
+    box.querySelector("#agNext").onclick = function(){ agendaMes = new Date(ano, mes+1, 1); agendaRender(); };
+    box.querySelectorAll(".agDia").forEach(function(b){ b.onclick = function(){
+      agendaDiaSel = b.getAttribute("data-d"); var q = agendaDiaSel.split("-"); agendaMes = new Date(+q[0], +q[1]-1, 1); agendaRender();
+    }; });
+    box.querySelector("#agNova").onclick = function(){ agendaForm(null); };
+    box.querySelectorAll(".agEditar").forEach(function(b){ b.onclick = function(){
+      var x = agendaItens().filter(function(y){ return y.id === b.getAttribute("data-id"); })[0]; if(x) agendaForm(x);
+    }; });
+    box.querySelectorAll(".agExcluir").forEach(function(b){ b.onclick = async function(){
+      if(!confirm("Excluir esta demanda?")) return;
+      var id = b.getAttribute("data-id");
+      if(await agendaSalvar(agendaItens().filter(function(y){ return y.id !== id; }))) agendaRender();
+    }; });
+    box.querySelectorAll(".agFeito").forEach(function(c){ c.onchange = async function(){
+      var id = c.getAttribute("data-id");
+      var novos = JSON.parse(JSON.stringify(agendaItens()));
+      novos.forEach(function(y){ if(y.id === id) y.feito = c.checked; });
+      if(await agendaSalvar(novos)) agendaRender();
+    }; });
+  }
+  function agendaForm(x){
+    var novo = !x;
+    x = x || {id:uid(), titulo:"", data:agendaDiaSel || isoLocal(new Date()), hora:"", obs:"", feito:false};
+    restAbrirSheet(novo ? "Nova demanda" : "Editar demanda",
+      '<label>O que precisa fazer</label><input type="text" id="agTitulo" value="'+escapeHtml(x.titulo)+'" style="'+REST_INPUT+'">' +
+      '<label>Data</label><input type="date" id="agData" value="'+escapeHtml(x.data)+'" style="'+REST_INPUT+'">' +
+      '<label>Horário (opcional)</label><input type="time" id="agHora" value="'+escapeHtml(x.hora||"")+'" style="'+REST_INPUT+'">' +
+      '<label>Observação (opcional)</label><textarea id="agObs" rows="3" style="'+REST_INPUT+'resize:vertical;">'+escapeHtml(x.obs||"")+'</textarea>' +
+      '<div class="sheet-actions"><button type="button" class="btn-secondary" id="agCancel">Cancelar</button><button type="button" class="btn-primary" id="agSalvar">'+ic("check")+' Salvar</button></div>');
+    document.getElementById("agCancel").onclick = restFecharSheet;
+    document.getElementById("agSalvar").onclick = async function(){
+      var t = document.getElementById("agTitulo").value.trim(), d = document.getElementById("agData").value;
+      if(!t || !d){ showToast("Escreva a demanda e escolha a data"); return; }
+      var novos = JSON.parse(JSON.stringify(agendaItens()));
+      var alvo = novos.filter(function(y){ return y.id === x.id; })[0];
+      if(!alvo){ alvo = {id:x.id, feito:false}; novos.push(alvo); }
+      alvo.titulo = t; alvo.data = d; alvo.hora = document.getElementById("agHora").value; alvo.obs = document.getElementById("agObs").value.trim();
+      if(await agendaSalvar(novos)){ restFecharSheet(); agendaDiaSel = d; var q = d.split("-"); agendaMes = new Date(+q[0], +q[1]-1, 1); agendaRender(); }
+    };
+  }
+
   // ---------- Configurações ----------
   function renderConfiguracoes(){
     var main = document.getElementById("configuracoesView");
@@ -3046,6 +3146,7 @@
         '<p style="margin:0 0 3px;font-size:16px;font-weight:700;">'+escapeHtml((currentUser&&currentUser.nome)||"")+'</p>' +
         '<p style="margin:0;font-size:13px;color:var(--ink-600);">'+escapeHtml((currentUser&&currentUser.email)||"")+(currentUser&&currentUser.role==="admin"?" · admin":"")+'</p>' +
       '</div>' +
+      '<div id="agendaBox"></div>' +
       '<button type="button" id="cfgMinhaContaBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("key")+' Minha conta<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Trocar e-mail e senha</span></button>' +
       '<div style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;">' +
         '<div><p style="margin:0;font-size:14.5px;font-weight:700;color:var(--ink-900);">'+ic("bell")+' Notificações</p><p id="cfgNotifStatusTxt" style="margin:2px 0 0;font-size:12.5px;color:var(--ink-600);">Verificando…</p></div>' +
@@ -3056,6 +3157,7 @@
       '<button type="button" id="cfgSairBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">'+ic("logout")+' Sair da conta</button>' +
       '<button type="button" id="cfgSairEquipeBtn" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:10px;font-family:inherit;font-size:14.5px;font-weight:700;color:#c0392b;">'+ic("trash")+' Sair da equipe (desativar minha conta)<span style="display:block;font-weight:400;font-size:12.5px;color:var(--ink-600);margin-top:2px;">Use se você deixou de trabalhar aqui. Seu acesso é encerrado.</span></button>';
     document.getElementById("cfgSairEquipeBtn").onclick = function(){ removerContaApp(null); };
+    agendaRender();
     document.getElementById("cfgMinhaContaBtn").onclick = abrirMinhaConta;
     document.getElementById("cfgSairBtn").onclick = fazerLogout;
     document.getElementById("cfgSyncHospedinBtn").onclick = function(){ openHospedinSync(); };
