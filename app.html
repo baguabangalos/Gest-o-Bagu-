@@ -1619,7 +1619,7 @@
     restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", "estoque-itens":"estoque_restaurante", "estoque-count":"estoque_restaurante", "estoque-report":"estoque_restaurante", restricoes:"restaurante_restricoes", louca:"restaurante_louca", cafe:"restaurante_cafe"}},
     recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada", chuvas:"recepcao_chuvas", qr:"recepcao_qr"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
-    escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{calendario:"escala_horarios", horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
+    escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{calendario:"escala_horarios", trocas:"escala_trocas", horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
     limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada"}},
     manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas", equipamentos:"equipamentos"}}
   };
@@ -2093,6 +2093,7 @@
     state = await loadAllFromSupabase();
     carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
     carregarPendenciasEntrada().then(function(){ if(appSection==="home") renderApp(); });
+    carregarTrocasEscala().then(function(){ if(appSection==="home" || appSection==="escala") renderApp(); }).catch(function(){});
     if(currentUser.role === "admin"){
       sb.from("profiles").select("id", {count:"exact", head:true}).eq("aprovado", false).neq("ativo", false).then(function(r){
         if(!r.error && typeof r.count === "number"){ adminPendentesN = r.count; if(appSection==="home") renderApp(); }
@@ -2769,7 +2770,7 @@
     restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições", louca:"Serviço do dia", cafe:"Café da manhã"},
     recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada", chuvas:"Guarda-chuvas", qr:"QR Code"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
-    escala_trabalho:{horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
+    escala_trabalho:{calendario:"Calendário", trocas:"Trocas", horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
     limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada"},
     manutencao:{pendentes:"Pendentes", concluidas:"Concluídas", equipamentos:"Equipamentos"}
   };
@@ -3005,7 +3006,8 @@
       cards.push({section:"checklistturno", titulo:"Checklist de Turno", icon:ic("clock"), sub:checklistSub, subVermelho:turnosAtrasadosN>0});
     }
     if(podeVer("escala_trabalho")){
-      cards.push({section:"escala", titulo:"Equipe", icon:ic("users"), sub:"horários, folga e setor"});
+      var trocasN = trocasEscPendentesN();
+      cards.push({section:"escala", titulo:"Equipe", icon:ic("users"), sub:(trocasN ? (trocasN+(trocasN===1?" troca de folga pra responder":" trocas de folga pra responder")) : "horários, folga e setor"), subVermelho:trocasN>0});
     }
     if(podeVer("financeiro_estoque") && !(currentUser && currentUser.role === "admin")){
       cards.push({section:"financeiro", titulo:"Lucro e perdas", icon:ic("gauge"), sub:"resultado mensal do estoque"});
@@ -8110,6 +8112,7 @@
     var podeEd = podeEditar("escala_trabalho");
     var html = '<div class="seg-toggle">' +
       '<button data-eqsub="calendario" class="'+(equipeSubView==="calendario"?"active":"")+'">Calendário</button>' +
+      '<button data-eqsub="trocas" class="'+(equipeSubView==="trocas"?"active":"")+'">Trocas'+(trocasEscPendentesN()?' <span style="background:var(--red-600);color:#fff;border-radius:9px;padding:0 6px;font-size:11px;">'+trocasEscPendentesN()+'</span>':'')+'</button>' +
       '<button data-eqsub="horarios" class="'+(equipeSubView==="horarios"?"active":"")+'">Horários</button>' +
       '<button data-eqsub="folga" class="'+(equipeSubView==="folga"?"active":"")+'">Folga</button>' +
       '<button data-eqsub="guarda" class="'+(equipeSubView==="guarda"?"active":"")+'">Guarda</button>' +
@@ -8123,6 +8126,7 @@
     });
     var body = document.getElementById("equipeSubBody");
     if(equipeSubView === "calendario") renderEquipeCalendario(body);
+    else if(equipeSubView === "trocas") renderEquipeTrocas(body);
     else if(equipeSubView === "folga") renderEquipeFolga(body, podeEd);
     else if(equipeSubView === "guarda") renderEquipeGuarda(body, podeEd);
     else if(equipeSubView === "setor") renderEquipeSetor(body);
@@ -8190,6 +8194,199 @@
     var ant = body.querySelector("#eqCalAnt"), prox = body.querySelector("#eqCalProx");
     if(ant) ant.onclick = function(){ eqCalMes = (M===0 ? {a:A-1,m:11} : {a:A,m:M-1}); eqCalDia = null; renderEquipeCalendario(body); };
     if(prox) prox.onclick = function(){ eqCalMes = (M===11 ? {a:A+1,m:0} : {a:A,m:M+1}); eqCalDia = null; renderEquipeCalendario(body); };
+  }
+
+  // ---------- Equipe › Trocas (trocar folga ou horário com outra pessoa; o admin autoriza) ----------
+  var trocasEsc = [];
+  var trocasEscForm = null; // null | {id|null}
+  var TROCA_STATUS = {
+    aguardando_parceiro:{t:"Aguardando a outra pessoa", cor:"var(--amber-600)"},
+    aguardando_adm:{t:"Aguardando o administrador", cor:"var(--amber-600)"},
+    aprovada:{t:"Autorizada — escala atualizada", cor:"var(--teal-700)"},
+    recusada_parceiro:{t:"Recusada pela outra pessoa", cor:"var(--red-600)"},
+    recusada_adm:{t:"Recusada pelo administrador", cor:"var(--red-600)"},
+    cancelada:{t:"Cancelada", cor:"var(--ink-600)"}
+  };
+  async function carregarTrocasEscala(){
+    var r = await sb.from("trocas_escala").select("*").order("criado_em", {ascending:false}).limit(500);
+    if(r.error) throw r.error;
+    trocasEsc = r.data || [];
+  }
+  function trocasEscPendentesN(){
+    if(!currentUser) return 0;
+    var adm = currentUser.role === "admin";
+    return trocasEsc.filter(function(t){
+      return (t.status==="aguardando_parceiro" && t.parceiro_id===currentUser.id) || (adm && t.status==="aguardando_adm");
+    }).length;
+  }
+  function nomePessoaEscala(id){ var p = (state.staffProfiles||[]).find(function(x){ return x.id===id; }); return p ? p.nome : "alguém"; }
+  function fmtDataTroca(d){ if(!d) return ""; var dt = new Date(d+"T00:00:00"); return d.split("-").reverse().join("/")+" ("+DIAS_SEMANA_NOMES[dt.getDay()].slice(0,3).toLowerCase()+")"; }
+  function horaTxt(e){ return (e && e.horaInicio) ? (e.horaInicio+" às "+(e.horaFim||"?")) : "sem horário"; }
+  // Texto do que vai acontecer + validação (usa a escala de agora)
+  function trocaResumo(t){
+    var A = t.solicitante_id, B = t.parceiro_id, nA = nomePessoaEscala(A), nB = nomePessoaEscala(B);
+    var eAa = escalaEfetiva(A, t.data_a), eBa = escalaEfetiva(B, t.data_a);
+    if(t.tipo === "horario"){
+      if(eAa.tipo!=="trabalho") return {erro:nA+" não trabalha em "+fmtDataTroca(t.data_a)+"."};
+      if(eBa.tipo!=="trabalho") return {erro:nB+" não trabalha em "+fmtDataTroca(t.data_a)+"."};
+      return {texto:"Em "+fmtDataTroca(t.data_a)+": "+nA+" passa a fazer "+horaTxt(eBa)+" e "+nB+" passa a fazer "+horaTxt(eAa)+".",
+        exc:[{u:A,d:t.data_a,tipo:"trabalho",hi:eBa.horaInicio,hf:eBa.horaFim},{u:B,d:t.data_a,tipo:"trabalho",hi:eAa.horaInicio,hf:eAa.horaFim}]};
+    }
+    if(!t.data_b) return {erro:"Escolha o dia de "+nB+" que você vai assumir."};
+    var eBb = escalaEfetiva(B, t.data_b), eAb = escalaEfetiva(A, t.data_b);
+    if(eAa.tipo!=="trabalho") return {erro:nA+" não trabalha em "+fmtDataTroca(t.data_a)+" — escolha um dia em que trabalha."};
+    if(eBa.tipo==="trabalho") return {erro:nB+" já trabalha em "+fmtDataTroca(t.data_a)+" — escolha um dia em que ela/ele está de folga."};
+    if(eBb.tipo!=="trabalho") return {erro:nB+" não trabalha em "+fmtDataTroca(t.data_b)+" — escolha um dia em que trabalha."};
+    if(eAb.tipo==="trabalho") return {erro:nA+" já trabalha em "+fmtDataTroca(t.data_b)+" — escolha um dia em que está de folga."};
+    return {texto:nA+" folga em "+fmtDataTroca(t.data_a)+" e "+nB+" cobre ("+horaTxt(eAa)+"); "+nB+" folga em "+fmtDataTroca(t.data_b)+" e "+nA+" cobre ("+horaTxt(eBb)+").",
+      exc:[{u:A,d:t.data_a,tipo:"folga_extra"},{u:B,d:t.data_a,tipo:"trabalho",hi:eAa.horaInicio,hf:eAa.horaFim},
+           {u:B,d:t.data_b,tipo:"folga_extra"},{u:A,d:t.data_b,tipo:"trabalho",hi:eBb.horaInicio,hf:eBb.horaFim}]};
+  }
+  async function trocaAplicar(t){
+    var r = trocaResumo(t);
+    if(r.erro) throw new Error(r.erro);
+    // não sobrescreve atestado/falta/folga extra já registrados
+    r.exc.forEach(function(x){
+      if(state.escalaExcecoes.some(function(e){ return e.userId===x.u && e.data===x.d; })) throw new Error("Já existe uma exceção registrada para "+nomePessoaEscala(x.u)+" em "+fmtDataTroca(x.d)+" — resolva em Equipe → Folga antes.");
+    });
+    var obsA = "Troca de "+(t.tipo==="horario"?"horário":"folga")+" com ";
+    var feitos = [];
+    for(var i=0;i<r.exc.length;i++){
+      var x = r.exc[i], outro = (x.u===t.solicitante_id ? t.parceiro_id : t.solicitante_id);
+      var novo = await dbInsert("escala_excecoes", {id:uid(), user_id:x.u, data:x.d, tipo:x.tipo, hora_inicio:x.hi||null, hora_fim:x.hf||null, observacao:obsA+nomePessoaEscala(outro), setor:null}, mapEscalaExcecaoFromRow);
+      state.escalaExcecoes.push(novo); feitos.push({user_id:x.u, data:x.d});
+    }
+    return feitos;
+  }
+  async function trocaDesfazer(t){
+    var lista = t.aplicado || [];
+    for(var i=0;i<lista.length;i++){
+      var ex = state.escalaExcecoes.find(function(e){ return e.userId===lista[i].user_id && e.data===lista[i].data; });
+      if(ex){ await dbDelete("escala_excecoes", ex.id); state.escalaExcecoes = state.escalaExcecoes.filter(function(e){ return e.id!==ex.id; }); }
+    }
+  }
+  async function trocaAtualizar(id, campos){
+    var r = await sb.from("trocas_escala").update(campos).eq("id", id);
+    if(r.error) throw r.error;
+    await carregarTrocasEscala();
+  }
+
+  function renderEquipeTrocas(body){
+    var me = currentUser.id, adm = currentUser.role === "admin";
+    var aguardandoMim = trocasEsc.filter(function(t){ return t.status==="aguardando_parceiro" && t.parceiro_id===me; });
+    var aguardandoAdm = adm ? trocasEsc.filter(function(t){ return t.status==="aguardando_adm"; }) : [];
+    var html = '<p style="color:var(--ink-600);font-size:12.5px;margin:0 0 12px;">Peça pra trocar um dia de folga ou o horário com um colega. Ele(a) precisa aceitar e depois o administrador autoriza — só então a escala muda.</p>';
+    html += '<button type="button" id="trocaNovaBtn" class="btn-primary" style="width:100%;margin-bottom:12px;">+ Pedir uma troca</button>';
+    if(trocasEscForm) html += '<div id="trocaFormBox"></div>';
+
+    function cartao(t, modo){
+      var st = TROCA_STATUS[t.status] || {t:t.status, cor:"var(--ink-600)"};
+      var r = trocaResumo(t);
+      var h = '<div class="card" style="margin-bottom:10px;border-left:4px solid '+st.cor+';">' +
+        '<p style="margin:0 0 4px;font-weight:800;">'+escapeHtml(nomePessoaEscala(t.solicitante_id))+' ⇄ '+escapeHtml(nomePessoaEscala(t.parceiro_id))+' · '+(t.tipo==="horario"?"troca de horário":"troca de folga")+'</p>' +
+        '<p style="margin:0 0 4px;font-size:13px;">'+(r.texto ? escapeHtml(r.texto) : '<span style="color:var(--red-600);">'+escapeHtml(r.erro)+'</span>')+'</p>' +
+        (t.obs ? '<p class="item-meta" style="margin:0 0 4px;">Motivo: '+escapeHtml(t.obs)+'</p>' : '') +
+        (t.adm_obs ? '<p class="item-meta" style="margin:0 0 4px;">Admin: '+escapeHtml(t.adm_obs)+'</p>' : '') +
+        '<p style="margin:0 0 8px;font-size:12px;font-weight:700;color:'+st.cor+';">'+st.t+'</p>';
+      var bt = 'style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;font-family:inherit;font-size:13px;font-weight:700;margin-right:6px;"';
+      var btV = 'style="padding:8px 12px;border-radius:8px;border:none;background:var(--teal-700);color:#fff;font-family:inherit;font-size:13px;font-weight:700;margin-right:6px;"';
+      if(t.status==="aguardando_parceiro" && t.parceiro_id===me) h += '<button type="button" class="troca-act" data-id="'+t.id+'" data-a="aceitar" '+btV+'>Aceitar</button><button type="button" class="troca-act" data-id="'+t.id+'" data-a="recusar" '+bt+'>Recusar</button>';
+      if(t.status==="aguardando_adm" && adm) h += '<button type="button" class="troca-act" data-id="'+t.id+'" data-a="autorizar" '+btV+'>Autorizar</button><button type="button" class="troca-act" data-id="'+t.id+'" data-a="negar" '+bt+'>Recusar</button>';
+      if(t.solicitante_id===me && t.status==="aguardando_parceiro") h += '<button type="button" class="troca-act" data-id="'+t.id+'" data-a="editar" '+bt+'>Editar</button>';
+      if(t.solicitante_id===me && (t.status==="aguardando_parceiro"||t.status==="aguardando_adm")) h += '<button type="button" class="troca-act" data-id="'+t.id+'" data-a="cancelar" '+bt+'>Cancelar pedido</button>';
+      if(adm) h += '<button type="button" class="troca-act" data-id="'+t.id+'" data-a="excluir" style="padding:8px 12px;border-radius:8px;border:1px solid #c0392b;background:#fff;color:#c0392b;font-family:inherit;font-size:13px;font-weight:700;">'+(t.status==="aprovada"?"Desfazer e excluir":"Excluir")+'</button>';
+      return h + '</div>';
+    }
+    if(aguardandoMim.length) html += '<p style="font-weight:800;margin:6px 0;">Pra você responder ('+aguardandoMim.length+')</p>' + aguardandoMim.map(cartao).join("");
+    if(aguardandoAdm.length) html += '<p style="font-weight:800;margin:6px 0;">Pra autorizar ('+aguardandoAdm.length+')</p>' + aguardandoAdm.map(cartao).join("");
+    var resto = trocasEsc.filter(function(t){
+      if(aguardandoMim.indexOf(t)>-1 || aguardandoAdm.indexOf(t)>-1) return false;
+      return adm || t.solicitante_id===me || t.parceiro_id===me;
+    });
+    html += '<p style="font-weight:800;margin:12px 0 6px;">'+(adm?'Todas as trocas':'Minhas trocas')+'</p>';
+    html += resto.length ? resto.map(cartao).join("") : '<div class="empty">Nenhuma troca ainda.</div>';
+    body.innerHTML = html;
+
+    var nb = body.querySelector("#trocaNovaBtn");
+    nb.onclick = function(){ trocasEscForm = {id:null}; renderEquipeTrocas(body); };
+    if(trocasEscForm) trocaMontarForm(body);
+
+    body.querySelectorAll(".troca-act").forEach(function(b){
+      b.onclick = async function(){
+        var id = b.getAttribute("data-id"), a = b.getAttribute("data-a");
+        var t = trocasEsc.find(function(x){ return x.id===id; }); if(!t) return;
+        try{
+          if(a==="editar"){ trocasEscForm = {id:id}; renderEquipeTrocas(body); window.scrollTo(0,0); return; }
+          if(a==="aceitar"){ await trocaAtualizar(id, {status:"aguardando_adm", parceiro_resposta_em:new Date().toISOString()}); showToast("Aceito — agora vai pro administrador autorizar"); }
+          else if(a==="recusar"){ if(!confirm("Recusar esse pedido de troca?")) return; await trocaAtualizar(id, {status:"recusada_parceiro", parceiro_resposta_em:new Date().toISOString()}); showToast("Pedido recusado"); }
+          else if(a==="cancelar"){ if(!confirm("Cancelar o seu pedido?")) return; await trocaAtualizar(id, {status:"cancelada"}); showToast("Pedido cancelado"); }
+          else if(a==="negar"){ var motivo = prompt("Motivo da recusa (opcional):") ; if(motivo===null) return; await trocaAtualizar(id, {status:"recusada_adm", adm_id:me, adm_resposta_em:new Date().toISOString(), adm_obs:motivo||null}); showToast("Troca recusada"); }
+          else if(a==="autorizar"){
+            var feitos = await trocaAplicar(t);
+            await trocaAtualizar(id, {status:"aprovada", adm_id:me, adm_resposta_em:new Date().toISOString(), aplicado:feitos});
+            showToast("Troca autorizada — escala atualizada");
+          }
+          else if(a==="excluir"){
+            if(!confirm(t.status==="aprovada" ? "Isso desfaz a troca na escala e apaga o registro. Continuar?" : "Excluir esse registro?")) return;
+            if(t.status==="aprovada") await trocaDesfazer(t);
+            var d = await sb.from("trocas_escala").delete().eq("id", id); if(d.error) throw d.error;
+            await carregarTrocasEscala(); showToast("Excluído");
+          }
+          renderEquipe();
+        }catch(err){ console.error(err); alert(err && err.message ? err.message : "Não consegui concluir — tente de novo."); }
+      };
+    });
+  }
+
+  function trocaMontarForm(body){
+    var box = body.querySelector("#trocaFormBox"); if(!box) return;
+    var ed = trocasEscForm.id ? trocasEsc.find(function(x){ return x.id===trocasEscForm.id; }) : null;
+    var me = currentUser.id;
+    var colegas = (state.staffProfiles||[]).filter(function(p){ return p.ativo!==false && p.id!==me && p.equipe; });
+    var inp = 'style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:#fff;margin:4px 0 10px;"';
+    box.innerHTML = '<div class="card" style="margin-bottom:12px;">' +
+      '<p style="margin:0 0 8px;font-weight:800;">'+(ed?'Editar pedido de troca':'Novo pedido de troca')+'</p>' +
+      '<label style="font-size:12px;font-weight:700;">O que quer trocar</label>' +
+      '<select id="trTipo" '+inp+'><option value="dia">Trocar dia de folga (eu folgo num dia e cubro outro)</option><option value="horario">Trocar de horário no mesmo dia</option></select>' +
+      '<label style="font-size:12px;font-weight:700;">Com quem</label>' +
+      '<select id="trParceiro" '+inp+'><option value="">Escolha…</option>'+colegas.map(function(p){ return '<option value="'+p.id+'">'+escapeHtml(p.nome)+'</option>'; }).join("")+'</select>' +
+      '<label id="trLblA" style="font-size:12px;font-weight:700;">Dia em que eu trabalho e quero folgar</label><input type="date" id="trDataA" '+inp+'>' +
+      '<div id="trBoxB"><label style="font-size:12px;font-weight:700;">Dia em que ele(a) trabalha e eu vou cobrir</label><input type="date" id="trDataB" '+inp+'></div>' +
+      '<label style="font-size:12px;font-weight:700;">Motivo (opcional)</label><input type="text" id="trObs" '+inp+'>' +
+      '<div id="trPrev" class="item-meta" style="margin:0 0 10px;"></div>' +
+      '<button type="button" id="trEnviar" class="btn-primary" style="width:100%;margin-bottom:8px;">'+(ed?'Salvar alterações':'Enviar pedido')+'</button>' +
+      '<button type="button" id="trFechar" style="width:100%;padding:10px;border:1px solid var(--line);background:#fff;border-radius:9px;font-family:inherit;font-size:14px;">Fechar</button></div>';
+    var $ = function(i){ return box.querySelector("#"+i); };
+    if(ed){ $("trTipo").value = ed.tipo; $("trParceiro").value = ed.parceiro_id; $("trDataA").value = ed.data_a||""; $("trDataB").value = ed.data_b||""; $("trObs").value = ed.obs||""; }
+    function atual(){ return {solicitante_id:me, parceiro_id:$("trParceiro").value, tipo:$("trTipo").value, data_a:$("trDataA").value, data_b:$("trTipo").value==="dia" ? $("trDataB").value : null}; }
+    function previa(){
+      var h = $("trTipo").value === "horario";
+      $("trBoxB").style.display = h ? "none" : "block";
+      $("trLblA").textContent = h ? "Dia da troca de horário" : "Dia em que eu trabalho e quero folgar";
+      var t = atual(), el = $("trPrev");
+      if(!t.parceiro_id || !t.data_a || (!h && !t.data_b)){ el.textContent = ""; return; }
+      var r = trocaResumo(t);
+      el.innerHTML = r.texto ? '<strong>Vai ficar assim:</strong> '+escapeHtml(r.texto) : '<span style="color:var(--red-600);">'+escapeHtml(r.erro)+'</span>';
+    }
+    ["trTipo","trParceiro","trDataA","trDataB"].forEach(function(i){ $(i).onchange = previa; });
+    previa();
+    $("trFechar").onclick = function(){ trocasEscForm = null; renderEquipeTrocas(body); };
+    $("trEnviar").onclick = async function(){
+      var t = atual(); t.obs = $("trObs").value.trim() || null;
+      if(!t.parceiro_id || !t.data_a){ showToast("Escolha a pessoa e o dia"); return; }
+      var r = trocaResumo(t); if(r.erro){ alert(r.erro); return; }
+      this.disabled = true;
+      try{
+        if(ed){
+          var u = await sb.from("trocas_escala").update({parceiro_id:t.parceiro_id, tipo:t.tipo, data_a:t.data_a, data_b:t.data_b, obs:t.obs}).eq("id", ed.id); if(u.error) throw u.error;
+        } else {
+          var ins = await sb.from("trocas_escala").insert({id:uid(), solicitante_id:me, parceiro_id:t.parceiro_id, tipo:t.tipo, data_a:t.data_a, data_b:t.data_b, obs:t.obs, status:"aguardando_parceiro"}); if(ins.error) throw ins.error;
+        }
+        await carregarTrocasEscala(); trocasEscForm = null;
+        showToast(ed ? "Pedido atualizado" : "Pedido enviado — "+nomePessoaEscala(t.parceiro_id)+" vai receber um aviso");
+        renderEquipe();
+      }catch(err){ console.error(err); this.disabled = false; alert("Não consegui enviar. Se a tabela de trocas ainda não existir no banco, avise a administração."); }
+    };
   }
 
   function renderEquipeHorarios(body, podeEd){
@@ -14174,6 +14371,7 @@
     {key:"checklist_turno_gestao", label:"Checklist de Turno — gestão (criar/editar turnos e atividades, ver equipe)"},
     {key:"escala_trabalho", label:"Equipe"},
     {key:"escala_horarios", label:"Equipe — só Horários", sub:true},
+    {key:"escala_trocas", label:"Equipe — só Trocas de folga/horário", sub:true},
     {key:"escala_folga", label:"Equipe — só Folga", sub:true},
     {key:"escala_guarda", label:"Equipe — só Guarda", sub:true},
     {key:"escala_feriados", label:"Equipe — só Feriados", sub:true},
