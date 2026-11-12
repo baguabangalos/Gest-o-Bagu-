@@ -607,6 +607,10 @@
       <label>Para onde foi</label>
       <select id="moveDestino"></select>
     </div>
+    <div id="moveNaoInfWrap" style="display:none;margin:2px 0 10px;">
+      <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:700;"><input type="checkbox" id="moveNaoInf" style="width:auto;margin:0;"> Consumido, mas não informado pelo hóspede</label>
+      <p id="moveNaoInfHint" class="item-meta" style="margin:4px 0 0;"></p>
+    </div>
     <div id="moveUniformeWrap" style="display:none;">
       <label>Nome de quem recebeu o uniforme</label>
       <input type="text" id="moveUniformeNome" placeholder="Nome completo" list="funcionariosDatalist">
@@ -3574,7 +3578,7 @@
       '<div><span class="move-tag '+tagClass+'">'+tagText+'</span> ' +
       '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
       (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
-      (m.note ? '<br><span style="color:var(--ink-400);font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
+      (m.note ? '<br><span style="'+(m.note.indexOf(NAO_INF_TAG)===0 ? 'color:var(--amber-600);font-weight:700;' : 'color:var(--ink-400);')+'font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
       (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">'+ic("user")+' Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
         (m.comprovanteUniforme ? '<br><button type="button" onclick="verAnexoClick(this, \''+escapeHtml(m.comprovanteUniforme)+'\')" style="margin-top:4px;background:var(--sand-100);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;">'+ic("camera")+' Ver comprovante</button>' : '') : '') +
       (m.aud ? auditoriaHtml("movements", m.id, name, m.aud, m.date) : '') +
@@ -5170,6 +5174,7 @@
   }
   document.getElementById("moveUniformeAssinarBtn").onclick = iniciarQuadroAssinatura;
   document.getElementById("moveUniformeLimparBtn").onclick = iniciarQuadroAssinatura;
+  var NAO_INF_TAG = "Consumido, mas não informado pelo hóspede";
   function openMoveSheet(item, type, destinoPreSelecionado){
     moveItemId = item.id;
     moveType = type;
@@ -5193,6 +5198,18 @@
     } else {
       destinoWrap.style.display = "none";
       destinoSelect.innerHTML = "";
+    }
+    var naoInfWrap = document.getElementById("moveNaoInfWrap");
+    document.getElementById("moveNaoInf").checked = false;
+    if(type === "saida" && item.category !== "Uniformes" && estoqueModo !== "restaurante"){
+      naoInfWrap.style.display = "block";
+      var temPreco = item.precoVenda != null;
+      document.getElementById("moveNaoInf").disabled = !temPreco;
+      document.getElementById("moveNaoInfHint").textContent = temPreco
+        ? "Escolha a acomodação em \"Para onde foi\". Fica registrado no histórico, com o valor de "+restMoney(item.precoVenda)+" por unidade."
+        : "Para usar esta opção, cadastre o preço de venda do item (editar item).";
+    } else {
+      naoInfWrap.style.display = "none";
     }
     var uniformeWrap = document.getElementById("moveUniformeWrap");
     if(type === "saida" && item.category === "Uniformes"){
@@ -5649,6 +5666,10 @@
       if(!destino){ showToast("Escolha pra onde foi o item"); return; }
     }
     var note = document.getElementById("moveNote").value.trim();
+    if(moveType === "saida" && item.category !== "Uniformes" && document.getElementById("moveNaoInf").checked){
+      if(!destino || destino === "Recepção"){ showToast("Escolha a acomodação do hóspede em \"Para onde foi\""); return; }
+      note = NAO_INF_TAG + (item.precoVenda!=null ? " ("+restMoney(item.precoVenda*qty)+")" : "") + (note ? " — "+note : "");
+    }
     var recebidoPorNome = null, comprovanteUniforme = null;
     if(moveType === "saida" && item.category === "Uniformes"){
       recebidoPorNome = document.getElementById("moveUniformeNome").value.trim();
