@@ -5184,51 +5184,87 @@
   // Item que SAIU da acomodação (vencido, danificado, quarto com defeito…).
   // Não desconta do estoque (ele já foi descontado quando foi levado pro quarto);
   // cria o pedido de reposição, ou soma no pedido pendente que já existe pra essa acomodação.
-  function abrirRetiradaSheet(item){
+  function abrirRetiradaSheet(item){ abrirRetiradaLoteSheet(item); }
+  function abrirRetiradaLoteSheet(itemInicial){
     if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
     var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var catalogo = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Lojinha"; })
+      .sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
     var ov = document.createElement("div"); ov.className = "sheet-overlay open";
-    ov.innerHTML = '<div class="sheet"><h2>Retirar da acomodação — '+escapeHtml(item.name)+'</h2>' +
-      '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 12px;">Não desconta do estoque de novo: o item já tinha saído quando foi levado pro quarto. O pedido de reposição é criado automaticamente (ou somado ao que já estiver pendente dessa acomodação).</p>' +
-      '<label>De qual acomodação saiu</label><select id="retAc"><option value="">Selecionar…</option>'+acs.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("")+'</select>' +
-      '<label>Quantidade ('+escapeHtml(item.unit)+')</label><input type="number" id="retQty" min="0" step="1" value="1">' +
+    ov.innerHTML = '<div class="sheet"><h2>Itens retirados da acomodação</h2>' +
+      '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 12px;">Não desconta do estoque de novo: o item já tinha saído quando foi levado pro quarto. O abastecimento de reposição é criado automaticamente, ou somado ao que já estiver pendente dessa acomodação.</p>' +
+      '<label>De qual acomodação saíram</label><select id="retAc"><option value="">Selecionar…</option>'+acs.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("")+'</select>' +
       '<label>Motivo</label><select id="retMotivo">'+RETIRADA_MOTIVOS.map(function(m){ return '<option>'+m+'</option>'; }).join("")+'</select>' +
+      '<label>Itens retirados</label><div id="retLista"></div>' +
+      '<div style="display:flex;gap:8px;margin:4px 0 14px;"><select id="retExtraSel" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);"><option value="">Selecionar item…</option>'+catalogo.map(function(it){ return '<option value="'+it.id+'">'+escapeHtml(it.name)+'</option>'; }).join("")+'</select>' +
+      '<button type="button" id="retExtraAdd" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button></div>' +
       '<label>Observação (opcional)</label><textarea id="retObs" placeholder="Ex: venceu em 10/11"></textarea>' +
-      '<label style="display:flex;align-items:center;gap:8px;font-weight:700;"><input type="checkbox" id="retRepor" checked style="width:auto;margin:0;"> Criar pedido de reposição (abastecimento)</label>' +
+      '<label style="display:flex;align-items:center;gap:8px;font-weight:700;"><input type="checkbox" id="retRepor" checked style="width:auto;margin:0;"> Criar abastecimento de reposição</label>' +
       '<div class="sheet-actions"><button type="button" class="btn-secondary" id="retCancel">Cancelar</button><button type="button" class="btn-primary" id="retOk">Confirmar</button></div></div>';
     document.body.appendChild(ov);
     ov.addEventListener("click", function(e){ if(e.target===ov) ov.remove(); });
     ov.querySelector("#retCancel").onclick = function(){ ov.remove(); };
+    var lista = ov.querySelector("#retLista");
+    function addLinha(it){
+      if(lista.querySelector('[data-item-id="'+it.id+'"]')){ showToast("Esse item já está na lista"); return; }
+      var d = document.createElement("div"); d.className = "card"; d.style.cssText = "margin-bottom:8px;padding:10px 12px;";
+      d.setAttribute("data-item-id", it.id);
+      d.innerHTML = '<div style="display:flex;align-items:center;gap:8px;"><p style="margin:0;flex:1;font-size:14px;font-weight:700;">'+escapeHtml(it.name)+'</p>' +
+        '<div class="qty-stepper" style="margin:0;"><button type="button" class="rm">−</button><input type="number" class="rq" step="1" min="1" value="1"><button type="button" class="rp">+</button></div>' +
+        '<button type="button" class="rx" style="background:none;border:none;color:var(--red-600);font-size:20px;font-weight:700;">×</button></div>';
+      lista.appendChild(d);
+      var inp = d.querySelector(".rq");
+      d.querySelector(".rm").onclick = function(){ inp.value = Math.max(1,(parseFloat(inp.value)||1)-1); };
+      d.querySelector(".rp").onclick = function(){ inp.value = (parseFloat(inp.value)||1)+1; };
+      d.querySelector(".rx").onclick = function(){ d.remove(); };
+    }
+    ov.querySelector("#retExtraAdd").onclick = function(){
+      var sel = ov.querySelector("#retExtraSel");
+      var it = state.estoque.items.find(function(x){ return x.id===sel.value; });
+      if(!it){ showToast("Escolha um item"); return; }
+      addLinha(it); sel.value = "";
+    };
+    if(itemInicial) addLinha(itemInicial);
     ov.querySelector("#retOk").onclick = async function(){
       var acId = ov.querySelector("#retAc").value;
-      var qty = parseFloat(ov.querySelector("#retQty").value);
       var motivo = ov.querySelector("#retMotivo").value;
       var obs = ov.querySelector("#retObs").value.trim();
       var repor = ov.querySelector("#retRepor").checked;
+      var linhas = [];
+      lista.querySelectorAll("[data-item-id]").forEach(function(d){
+        var it = state.estoque.items.find(function(x){ return x.id===d.getAttribute("data-item-id"); });
+        var q = parseFloat(d.querySelector(".rq").value)||0;
+        if(it && q>0) linhas.push({item:it, qty:q});
+      });
       if(!acId){ showToast("Escolha a acomodação"); return; }
-      if(isNaN(qty) || qty<=0){ showToast("Informe a quantidade"); return; }
+      if(!linhas.length){ showToast("Adicione pelo menos um item"); return; }
       var ac = state.acomodacoes.find(function(a){ return a.id===acId; });
       var btn = ov.querySelector("#retOk"); btn.disabled = true;
       try{
         var nota = RETIRADA_TAG+" — "+motivo+(obs?" — "+obs:"")+" (não desconta do estoque)";
-        var mov = await dbInsert("movements", {id:uid(), item_id:item.id, type:"ajuste", qty:qty, delta:0, note:nota, destino:ac.nome, date:new Date().toISOString()}, mapMovementFromRow);
-        state.estoque.movements.unshift(mov);
+        for(var i=0;i<linhas.length;i++){
+          var mov = await dbInsert("movements", {id:uid(), item_id:linhas[i].item.id, type:"ajuste", qty:linhas[i].qty, delta:0, note:nota, destino:ac.nome, date:new Date().toISOString()}, mapMovementFromRow);
+          state.estoque.movements.unshift(mov);
+        }
         var msg = "Retirada registrada";
         if(repor){
           var pend = state.solicitacoes.find(function(x){ return x.tipo==="frigobar" && x.acomodacaoId===acId && x.status==="pendente"; });
-          var obsRep = "Reposição: "+item.name+" retirado ("+motivo.toLowerCase()+")";
+          var nomes = linhas.map(function(l){ return l.item.name; }).join(", ");
+          var obsRep = "Reposição: "+nomes+" retirado(s) ("+motivo.toLowerCase()+")";
           if(pend){
             var itens = (pend.itens||[]).map(function(i){ return {nome:i.nome, quantidade:i.quantidade}; });
-            var alvo = normalizarBusca(item.name);
-            var ex = itens.find(function(i){ return normalizarBusca(i.nome)===alvo; });
-            if(ex) ex.quantidade = (Number(ex.quantidade)||0) + qty; else itens.push({nome:item.name, quantidade:qty});
+            linhas.forEach(function(l){
+              var alvo = normalizarBusca(l.item.name);
+              var ex = itens.find(function(i){ return normalizarBusca(i.nome)===alvo; });
+              if(ex) ex.quantidade = (Number(ex.quantidade)||0) + l.qty; else itens.push({nome:l.item.name, quantidade:l.qty});
+            });
             var novaObs = (pend.observacao ? pend.observacao+" | " : "") + obsRep;
             var up = await dbUpdate("solicitacoes_acomodacao", pend.id, {itens:itens, observacao:novaObs}, mapSolicitacaoFromRow);
             var ix = state.solicitacoes.findIndex(function(x){ return x.id===pend.id; });
             if(ix>-1) state.solicitacoes[ix] = up;
             msg = "Retirada registrada — somada ao abastecimento pendente de "+ac.nome;
           } else {
-            var novo = await dbInsert("solicitacoes_acomodacao", {id:uid(), acomodacao_id:acId, tipo:"frigobar", origem:"equipe", criado_por:(currentUser?currentUser.id:null), status:"pendente", itens:[{nome:item.name, quantidade:qty}], observacao:obsRep}, mapSolicitacaoFromRow);
+            var novo = await dbInsert("solicitacoes_acomodacao", {id:uid(), acomodacao_id:acId, tipo:"frigobar", origem:"equipe", criado_por:(currentUser?currentUser.id:null), status:"pendente", itens:linhas.map(function(l){ return {nome:l.item.name, quantidade:l.qty}; }), observacao:obsRep}, mapSolicitacaoFromRow);
             state.solicitacoes.unshift(novo);
             msg = "Retirada registrada — abastecimento criado para "+ac.nome;
           }
@@ -5237,6 +5273,7 @@
       }catch(err){ console.error(err); showToast("Erro ao registrar a retirada"); btn.disabled = false; }
     };
   }
+
   function openMoveSheet(item, type, destinoPreSelecionado){
     moveItemId = item.id;
     moveType = type;
@@ -11043,6 +11080,7 @@
       .sort(function(a,b){ return b.concluidoEm - a.concluidoEm; });
     var html = '<div style="margin-bottom:16px;">' +
       '<button type="button" id="novoAbastecimentoAvulsoBtn" style="display:block;width:100%;background:var(--teal-700);color:#fff;border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:10px;">+ Criar abastecimento avulso</button>' +
+      '<button type="button" id="retiradaLoteBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;margin-bottom:10px;">↩ Itens retirados da acomodação (vencidos, danificados…)</button>' +
       '<button type="button" id="importarExtratoBtn" style="display:block;width:100%;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("doc")+' Importar extrato do Hospedin (PDF)</button>' +
       '<input type="file" id="importarExtratoInput" accept="application/pdf" style="display:none;">' +
     '</div>';
@@ -11072,6 +11110,7 @@
     };
     document.getElementById("importarExtratoInput").addEventListener("change", handleImportarExtrato);
     document.getElementById("novoAbastecimentoAvulsoBtn").onclick = abrirNovoAbastecimentoAvulsoSheet;
+    document.getElementById("retiradaLoteBtn").onclick = function(){ abrirRetiradaLoteSheet(null); };
   }
 
   // ---------- Itens por acomodação (quantidade que fica em cada frigobar) ----------
