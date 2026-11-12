@@ -3538,6 +3538,7 @@
         '<div class="item-actions">' +
           '<button class="btn btn-in" data-act="in" data-id="'+it.id+'">↑ Entrada</button>' +
           '<button class="btn btn-out" data-act="out" data-id="'+it.id+'">↓ Saída</button>' +
+          ((estoqueModo !== "restaurante" && it.category !== "Uniformes") ? '<button class="btn btn-out" data-act="retirar" data-id="'+it.id+'">↩ Retirar de acomodação</button>' : '') +
           '<button class="btn btn-edit" data-act="edit" data-id="'+it.id+'">'+ic("pencil")+'</button>' +
         '</div>' + usageActions +
         '<div class="item-actions">' +
@@ -3573,12 +3574,13 @@
     var tagClass = tagInfo.cls;
     var tagText = tagInfo.label;
     var qtyText = m.type==='ajuste' ? ((m.delta>=0?'+':'')+fmtQty(m.delta)) : fmtQty(m.qty);
+    if(m.type==='ajuste' && m.note && m.note.indexOf(RETIRADA_TAG)===0){ tagText = "RETIRADO DA ACOMODAÇÃO"; tagClass = "saida"; qtyText = fmtQty(m.qty); }
     var podeMexer = (m.type === "entrada" || m.type === "saida") && (podeEditar("estoque") || podeExcluir("estoque"));
     return '<div class="move-row" style="flex-wrap:wrap;">' +
       '<div><span class="move-tag '+tagClass+'">'+tagText+'</span> ' +
       '<strong>'+escapeHtml(name)+'</strong> · '+qtyText+(it?(' '+escapeHtml(it.unit)):'') +
       (m.destino ? ' <span style="color:var(--teal-700);font-weight:700;">→ '+escapeHtml(m.destino)+'</span>' : '') +
-      (m.note ? '<br><span style="'+(m.note.indexOf(NAO_INF_TAG)===0 ? 'color:var(--amber-600);font-weight:700;' : 'color:var(--ink-400);')+'font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
+      (m.note ? '<br><span style="'+((m.note.indexOf(NAO_INF_TAG)===0 || m.note.indexOf(RETIRADA_TAG)===0) ? 'color:var(--amber-600);font-weight:700;' : 'color:var(--ink-400);')+'font-size:12px;">'+escapeHtml(m.note)+'</span>' : '') +
       (m.recebidoPorNome ? '<br><span style="color:var(--teal-700);font-weight:700;font-size:12px;">'+ic("user")+' Recebido por '+escapeHtml(m.recebidoPorNome)+'</span>' +
         (m.comprovanteUniforme ? '<br><button type="button" onclick="verAnexoClick(this, \''+escapeHtml(m.comprovanteUniforme)+'\')" style="margin-top:4px;background:var(--sand-100);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;">'+ic("camera")+' Ver comprovante</button>' : '') : '') +
       (m.aud ? auditoriaHtml("movements", m.id, name, m.aud, m.date) : '') +
@@ -3609,6 +3611,7 @@
   // separar a lista de Entradas da lista de Saídas na Supervisão.
   function moveDirecao(m){
     if(m.type === "entrada" || m.type === "retorno" || m.type === "retorno_usado" || m.type === "retorno_emprestimo") return "entrada";
+    if(m.type === "ajuste" && m.note && m.note.indexOf(RETIRADA_TAG)===0) return "saida";
     if(m.type === "ajuste") return (m.delta>=0) ? "entrada" : "saida";
     return "saida"; // saida, uso
   }
@@ -5097,6 +5100,7 @@
     var item = state.estoque.items.find(function(i){ return i.id===id; });
     if(!item) return;
     if(act === "edit"){ openItemSheet(item); }
+    else if(act === "retirar"){ abrirRetiradaSheet(item); }
     else if(act === "uso" || act === "retorno" || act === "retorno_usado" || act === "retorno_emprestimo"){ openMoveSheet(item, act); }
     else { openMoveSheet(item, act === "in" ? "entrada" : "saida"); }
   });
@@ -5175,6 +5179,64 @@
   document.getElementById("moveUniformeAssinarBtn").onclick = iniciarQuadroAssinatura;
   document.getElementById("moveUniformeLimparBtn").onclick = iniciarQuadroAssinatura;
   var NAO_INF_TAG = "Consumido, mas não informado pelo hóspede";
+  var RETIRADA_TAG = "Retirado da acomodação";
+  var RETIRADA_MOTIVOS = ["Vencido","Danificado","Acomodação com problema/defeito","Outro"];
+  // Item que SAIU da acomodação (vencido, danificado, quarto com defeito…).
+  // Não desconta do estoque (ele já foi descontado quando foi levado pro quarto);
+  // cria o pedido de reposição, ou soma no pedido pendente que já existe pra essa acomodação.
+  function abrirRetiradaSheet(item){
+    if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
+    var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var ov = document.createElement("div"); ov.className = "sheet-overlay open";
+    ov.innerHTML = '<div class="sheet"><h2>Retirar da acomodação — '+escapeHtml(item.name)+'</h2>' +
+      '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 12px;">Não desconta do estoque de novo: o item já tinha saído quando foi levado pro quarto. O pedido de reposição é criado automaticamente (ou somado ao que já estiver pendente dessa acomodação).</p>' +
+      '<label>De qual acomodação saiu</label><select id="retAc"><option value="">Selecionar…</option>'+acs.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("")+'</select>' +
+      '<label>Quantidade ('+escapeHtml(item.unit)+')</label><input type="number" id="retQty" min="0" step="1" value="1">' +
+      '<label>Motivo</label><select id="retMotivo">'+RETIRADA_MOTIVOS.map(function(m){ return '<option>'+m+'</option>'; }).join("")+'</select>' +
+      '<label>Observação (opcional)</label><textarea id="retObs" placeholder="Ex: venceu em 10/11"></textarea>' +
+      '<label style="display:flex;align-items:center;gap:8px;font-weight:700;"><input type="checkbox" id="retRepor" checked style="width:auto;margin:0;"> Criar pedido de reposição (abastecimento)</label>' +
+      '<div class="sheet-actions"><button type="button" class="btn-secondary" id="retCancel">Cancelar</button><button type="button" class="btn-primary" id="retOk">Confirmar</button></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener("click", function(e){ if(e.target===ov) ov.remove(); });
+    ov.querySelector("#retCancel").onclick = function(){ ov.remove(); };
+    ov.querySelector("#retOk").onclick = async function(){
+      var acId = ov.querySelector("#retAc").value;
+      var qty = parseFloat(ov.querySelector("#retQty").value);
+      var motivo = ov.querySelector("#retMotivo").value;
+      var obs = ov.querySelector("#retObs").value.trim();
+      var repor = ov.querySelector("#retRepor").checked;
+      if(!acId){ showToast("Escolha a acomodação"); return; }
+      if(isNaN(qty) || qty<=0){ showToast("Informe a quantidade"); return; }
+      var ac = state.acomodacoes.find(function(a){ return a.id===acId; });
+      var btn = ov.querySelector("#retOk"); btn.disabled = true;
+      try{
+        var nota = RETIRADA_TAG+" — "+motivo+(obs?" — "+obs:"")+" (não desconta do estoque)";
+        var mov = await dbInsert("movements", {id:uid(), item_id:item.id, type:"ajuste", qty:qty, delta:0, note:nota, destino:ac.nome, date:new Date().toISOString()}, mapMovementFromRow);
+        state.estoque.movements.unshift(mov);
+        var msg = "Retirada registrada";
+        if(repor){
+          var pend = state.solicitacoes.find(function(x){ return x.tipo==="frigobar" && x.acomodacaoId===acId && x.status==="pendente"; });
+          var obsRep = "Reposição: "+item.name+" retirado ("+motivo.toLowerCase()+")";
+          if(pend){
+            var itens = (pend.itens||[]).map(function(i){ return {nome:i.nome, quantidade:i.quantidade}; });
+            var alvo = normalizarBusca(item.name);
+            var ex = itens.find(function(i){ return normalizarBusca(i.nome)===alvo; });
+            if(ex) ex.quantidade = (Number(ex.quantidade)||0) + qty; else itens.push({nome:item.name, quantidade:qty});
+            var novaObs = (pend.observacao ? pend.observacao+" | " : "") + obsRep;
+            var up = await dbUpdate("solicitacoes_acomodacao", pend.id, {itens:itens, observacao:novaObs}, mapSolicitacaoFromRow);
+            var ix = state.solicitacoes.findIndex(function(x){ return x.id===pend.id; });
+            if(ix>-1) state.solicitacoes[ix] = up;
+            msg = "Retirada registrada — somada ao abastecimento pendente de "+ac.nome;
+          } else {
+            var novo = await dbInsert("solicitacoes_acomodacao", {id:uid(), acomodacao_id:acId, tipo:"frigobar", origem:"equipe", criado_por:(currentUser?currentUser.id:null), status:"pendente", itens:[{nome:item.name, quantidade:qty}], observacao:obsRep}, mapSolicitacaoFromRow);
+            state.solicitacoes.unshift(novo);
+            msg = "Retirada registrada — abastecimento criado para "+ac.nome;
+          }
+        }
+        ov.remove(); showToast(msg); renderApp();
+      }catch(err){ console.error(err); showToast("Erro ao registrar a retirada"); btn.disabled = false; }
+    };
+  }
   function openMoveSheet(item, type, destinoPreSelecionado){
     moveItemId = item.id;
     moveType = type;
