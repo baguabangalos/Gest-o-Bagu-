@@ -502,6 +502,7 @@
 <main id="financeiroView" style="display:none;"></main>
 <main id="sugestoesView" style="display:none;"></main>
 <main id="ajudaView" style="display:none;"></main>
+<main id="agendaView" style="display:none;"></main>
 <main id="usoSbView" style="display:none;"></main>
 <main id="hospedesView" style="display:none;"></main>
 <main id="limpezaView" style="display:none;"></main>
@@ -2649,6 +2650,10 @@
         h1.textContent = "Uso do sistema";
         sub.textContent = "Limites do plano gratuito";
         alertPill.style.display = "none";
+      } else if(appSection === "agenda"){
+        h1.textContent = "Minha agenda";
+        sub.textContent = "Suas demandas por dia";
+        alertPill.style.display = "none";
       } else if(appSection === "ajuda"){
         h1.textContent = "Como usar";
         sub.textContent = "Passo a passo das funções";
@@ -2787,9 +2792,9 @@
   var HOME_PADRAO = [
     ["estoque","Estoque"],["procedimentos","Procedimentos"],["manutencoes","Manutenções"],["hospedes","Hóspedes"],["limpeza","Limpeza"],
     ["recepcao","Recepção"],["servicogeral","Serviço Geral"],["restaurante","Restaurante"],
-    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["financeiro","Lucro e perdas"],["sugestoes","Sugestões"],["ajuda","Como usar"],["usosb","Uso do sistema"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
+    ["checklistturno","Checklist de Turno"],["escala","Equipe"],["tarefasdia","Tarefas do dia"],["financeiro","Lucro e perdas"],["sugestoes","Sugestões"],["ajuda","Como usar"],["agenda","Minha agenda"],["usosb","Uso do sistema"],["supervisao","Supervisão"],["admin","Administração"],["personalizar","Personalizar"],["configuracoes","Configurações"]
   ];
-  var HOME_FIXOS = ["admin","personalizar","configuracoes","sugestoes","ajuda","usosb"];
+  var HOME_FIXOS = ["admin","personalizar","configuracoes","sugestoes","ajuda","agenda","usosb"];
   var appConfig = {};
   var LISTAS_PADRAO = null;
   function cfgGet(k, def){ var v = appConfig[k]; return (v && typeof v === "object") ? v : def; }
@@ -2852,7 +2857,7 @@
     if(sec==="escala") return "escala_trabalho";
     if(sec==="tarefasdia") return "tarefas_dia";
     if(sec==="financeiro") return "financeiro_estoque";
-    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar" || sec==="sugestoes" || sec==="ajuda" || sec==="usosb") return null;
+    if(sec==="admin" || sec==="supervisao" || sec==="configuracoes" || sec==="personalizar" || sec==="sugestoes" || sec==="ajuda" || sec==="agenda" || sec==="usosb") return null;
     return "procedimentos";
   }
 
@@ -2860,7 +2865,7 @@
     if(scanAcomodacaoId){ renderScanLimpeza(); return; }
     if((appSection === "admin" || appSection === "personalizar") && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
     else if((appSection === "supervisao" || appSection === "usosb") && (!currentUser || currentUser.role !== "admin")){ appSection = "home"; }
-    else if(appSection !== "home" && appSection !== "admin" && appSection !== "personalizar" && appSection !== "supervisao" && appSection !== "configuracoes" && appSection !== "sugestoes" && appSection !== "ajuda" && appSection !== "usosb" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
+    else if(appSection !== "home" && appSection !== "admin" && appSection !== "personalizar" && appSection !== "supervisao" && appSection !== "configuracoes" && appSection !== "sugestoes" && appSection !== "ajuda" && appSection !== "agenda" && appSection !== "usosb" && !podeVer(moduloDaSecao(appSection))){ appSection = "home"; }
     aplicarModoEstoque();
     renderHeader();
     document.getElementById("homeView").style.display = appSection==="home" ? "block":"none";
@@ -2877,6 +2882,7 @@
     document.getElementById("tarefasDiaView").style.display = appSection==="tarefasdia" ? "block":"none";
     document.getElementById("sugestoesView").style.display = appSection==="sugestoes" ? "block":"none";
     document.getElementById("ajudaView").style.display = appSection==="ajuda" ? "block":"none";
+    document.getElementById("agendaView").style.display = appSection==="agenda" ? "block":"none";
     document.getElementById("usoSbView").style.display = appSection==="usosb" ? "block":"none";
     document.getElementById("financeiroView").style.display = appSection==="financeiro" ? "block":"none";
     document.getElementById("hospedesView").style.display = appSection==="hospedes" ? "block":"none";
@@ -2949,6 +2955,7 @@
     if(appSection === "tarefasdia") renderTarefasDia();
     if(appSection === "sugestoes") renderSugestoes();
     if(appSection === "ajuda") renderAjuda();
+    if(appSection === "agenda") renderAgendaView();
     if(appSection === "usosb") renderUsoSb();
     if(appSection === "financeiro") renderFinanceiro();
     if(appSection === "hospedes") renderHospedes();
@@ -3033,6 +3040,7 @@
       if(!usoSb.tentado){ usoSb.tentado = true; carregarUsoSb().then(function(){ if(usoSbAlertas().length) mostrarAlertaPedido("Uso do sistema perto do limite: "+usoSbAlertas().map(function(a){return a.nome+" "+a.pct+"%";}).join(", "), function(){ appSection="usosb"; renderApp(); }, "Uso do sistema"); if(appSection==="home") renderApp(); }); }
       var usoAl = usoSbAlertas();
     }
+    cards.push({section:"agenda", titulo:"Minha agenda", icon:ic("calendar"), sub:"suas demandas e lembretes por dia"});
     cards.push({section:"ajuda", titulo:"Como usar", icon:ic("doc"), sub:"passo a passo de cada função"});
     cards.push({section:"sugestoes", titulo:"Sugestões", icon:ic("pencil"), sub:"ideias para melhorar o app"});
     cards.push({section:"configuracoes", titulo:"Configurações", icon:ic("logout"), sub:"minha conta e sair"});
@@ -3110,6 +3118,14 @@
     if(!x.rep) return "";
     var t = x.rep === "dias" ? ("toda " + (x.dias||[]).map(function(n){ return AGENDA_DIAS_NOME[n]; }).join(", ")) : ({diaria:"todo dia", semanal:"toda semana", mensal:"todo mês"})[x.rep];
     return t + (x.ate ? " até " + agendaDataBr(x.ate).slice(0,5) : "");
+  }
+  // Tela própria da Minha agenda (qualquer usuário). Usa o mesmo #agendaBox da Configurações,
+  // então limpa a outra tela antes pra não repetir o id.
+  function renderAgendaView(){
+    var cfg = document.getElementById("configuracoesView"); if(cfg) cfg.innerHTML = "";
+    var main = document.getElementById("agendaView");
+    main.innerHTML = '<div id="agendaBox"></div>';
+    agendaRender();
   }
   function agendaRender(){
     var box = document.getElementById("agendaBox"); if(!box || !currentUser) return;
@@ -3356,6 +3372,7 @@
 
   // ---------- Configurações ----------
   function renderConfiguracoes(){
+    var av = document.getElementById("agendaView"); if(av) av.innerHTML = "";
     var main = document.getElementById("configuracoesView");
     main.innerHTML =
       '<div class="card" style="margin-bottom:16px;">' +
