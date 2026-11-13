@@ -1626,7 +1626,7 @@
     recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada", chuvas:"recepcao_chuvas", qr:"recepcao_qr"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{calendario:"escala_horarios", trocas:"escala_trocas", horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
-    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada"}},
+    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada", maquinas:"limpeza_maquinas"}},
     manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas", equipamentos:"equipamentos"}}
   };
   var PERM_ACOES = {
@@ -2785,7 +2785,7 @@
     recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada", chuvas:"Guarda-chuvas", qr:"QR Code"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{calendario:"Calendário", trocas:"Trocas", horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
-    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada"},
+    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada", maquinas:"Máquinas"},
     manutencao:{pendentes:"Pendentes", concluidas:"Concluídas", equipamentos:"Equipamentos"}
   };
   var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
@@ -10556,11 +10556,14 @@
       '<button data-lsub="abertos" class="'+(limpezaSubView==="abertos"?"active":"")+'">Em aberto'+(abertos.length?(' · '+abertos.length):'')+'</button>' +
       '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
       '<button data-lsub="previsao" class="'+(limpezaSubView==="previsao"?"active":"")+'">Previsão 7 dias</button>' +
+      '<button data-lsub="maquinas" class="'+(limpezaSubView==="maquinas"?"active":"")+'">Máquinas'+(maqPendentesN()?(' · '+maqPendentesN()):'')+'</button>' +
       '<button data-lsub="entrada" class="'+(limpezaSubView==="entrada"?"active":"")+'">Pendências de entrada'+(pendenciasEntradaAbertas("limpeza").length?(' · '+pendenciasEntradaAbertas("limpeza").length):'')+'</button>' +
     '</div>';
 
     if(limpezaSubView === "entrada"){
       html += renderPendenciasEntradaHtml("limpeza");
+    } else if(limpezaSubView === "maquinas"){
+      html += maqLimpezaHtml();
     } else if(limpezaSubView === "abertos"){
       // Agrupa cada tarefa aberta num dos 4 blocos.
       function grupoDe(s){
@@ -10651,6 +10654,7 @@
       }
     }
     main.innerHTML = html;
+    if(limpezaSubView === "maquinas") maqLimpezaLigar(main);
     if(limpezaSubView === "entrada") ligarPendenciasEntrada(main, renderLimpeza);
     main.querySelectorAll("[data-lsub]").forEach(function(b){
       b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza();
@@ -14530,6 +14534,7 @@
     {key:"hospedes", label:"Hóspedes/Documentos"},
     {key:"limpeza", label:"Limpeza (pedidos dos hóspedes)"},
     {key:"limpeza_abertos", label:"Limpeza — só Em aberto", sub:true},
+    {key:"limpeza_maquinas", label:"Limpeza — só Máquinas de lavar (ver e marcar as limpezas)", sub:true},
     {key:"limpeza_concluidos", label:"Limpeza — só Concluídos hoje", sub:true},
     {key:"limpeza_previsao", label:"Limpeza — só Previsão 7 dias", sub:true},
     {key:"limpeza_entrada", label:"Limpeza — só Pendências de entrada", sub:true},
@@ -14929,6 +14934,65 @@
     if(u.error){ console.error(u.error); return; }
     await carregarTarefasDia();
   }
+  function maqRerender(){ if(appSection === "limpeza") renderLimpeza(); else renderTarefasDia(); }
+  function maqEhRotina(t){ return t.criadoPorNome === "Rotina automática"; }
+  function maqPendentesN(){
+    var hoje = hojeISO();
+    return (tarefasDia.lista||[]).filter(function(t){ return maqEhRotina(t) && t.status === "pendente" && t.data <= hoje; }).length;
+  }
+  // Aba "Máquinas" da Limpeza: a equipe vê as limpezas de hoje (e as atrasadas) e marca como feitas.
+  function maqLimpezaHtml(){
+    if(!tarefasDia.carregado){
+      carregarTarefasDia().then(function(){ if(appSection==="limpeza") renderLimpeza(); });
+      return '<div class="empty">Carregando as limpezas…</div>';
+    }
+    var hoje = hojeISO();
+    var maqs = maqLista().filter(function(m){ return m.ativo !== false; });
+    var h = '';
+    if(!maqs.length) h += '<div class="empty">Nenhuma máquina cadastrada ainda.' + (podeAtribuirTarefas() ? '' : ' Peça para a supervisão cadastrar.') + '</div>';
+    maqs.forEach(function(m){
+      var tarefas = (tarefasDia.lista||[]).filter(function(t){
+        if(!maqEhRotina(t)) return false;
+        var tipo = ["diaria","quinzenal","mensal"].filter(function(k){ return t.titulo === maqTitulo(m, k); })[0];
+        if(!tipo) return false;
+        t._maqTipo = tipo;
+        return (t.status === "pendente" && t.data <= hoje) || (t.status === "feita" && t.data === hoje);
+      }).sort(function(a,b){ return a.status === b.status ? a.data.localeCompare(b.data) : (a.status === "pendente" ? -1 : 1); });
+      h += '<div class="card"><p class="item-name" style="margin:0 0 8px;">'+ic("refresh")+' '+escapeHtml(m.nome)+'</p>';
+      if(!tarefas.length) h += '<p class="item-meta" style="margin:0;">Nada pendente nesta máquina hoje. 🎉</p>';
+      tarefas.forEach(function(t){
+        var feita = t.status === "feita", atras = !feita && t.data < hoje;
+        h += '<div style="border-top:1px solid var(--line);padding:10px 0 2px;">' +
+          '<p style="margin:0 0 2px;font-weight:700;'+(feita?'text-decoration:line-through;opacity:.7;':'')+'">'+escapeHtml(MAQ_ROTINAS[t._maqTipo].acao)+' <span style="font-weight:600;color:var(--ink-600);">· '+MAQ_ROTINAS[t._maqTipo].rot+'</span></p>' +
+          '<p class="item-meta" style="margin:0 0 6px;">'+escapeHtml(t.descricao||"")+(atras?' <b style="color:var(--amber-600);">⏰ de '+dataBr(t.data)+' — ainda não foi feita</b>':'')+'</p>' +
+          (feita ? '<p class="item-meta" style="margin:0 0 6px;">'+ic("check")+' Feita'+(t.concluidaEm?(' às '+fmtDate(t.concluidaEm).split(" ")[1]):'')+(t.obs?(' — '+escapeHtml(t.obs)):'')+'</p>' : '') +
+          '<div class="item-actions">' + (feita ? '<button class="btn btn-out maqTd" data-a="reabrir" data-id="'+t.id+'">Reabrir</button>' : '<button class="btn btn-in maqTd" data-a="feita" data-id="'+t.id+'">'+ic("check")+' Feita</button>') + '</div></div>';
+      });
+      h += '</div>';
+    });
+    if(podeAtribuirTarefas()){
+      h += '<div class="section-title">Gerenciar máquinas</div>' + maqPainelHtml();
+    }
+    return h;
+  }
+  function maqLimpezaLigar(main){
+    main.querySelectorAll(".maqTd").forEach(function(b){
+      b.onclick = async function(){
+        var id = b.getAttribute("data-id"), acao = b.getAttribute("data-a");
+        var t = tarefasDia.lista.find(function(x){ return x.id === id; }); if(!t) return;
+        b.disabled = true;
+        try{
+          var obs = null;
+          if(acao === "feita"){ obs = prompt("Alguma observação? (pode deixar em branco)"); if(obs === null) obs = ""; }
+          var upd = acao === "feita" ? {status:"feita", concluida_em:new Date().toISOString(), concluida_por:currentUser.id, obs_conclusao:(obs||"").trim()||null} : {status:"pendente", concluida_em:null, concluida_por:null, obs_conclusao:null};
+          var u = await sb.from("tarefas_dia").update(upd).eq("id", id).select().single(); if(u.error) throw u.error;
+          Object.assign(t, mapTarefaDia(u.data));
+          renderLimpeza();
+        }catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
+      };
+    });
+    maqLigar(main);
+  }
   function maqPainelHtml(){
     var lista = maqLista();
     var h = '<p class="item-meta" style="margin:0 0 10px;">Cada máquina gera as limpezas sozinha em <b>Tarefas do dia</b>, para a pessoa responsável: <b>diária</b> (filtro, depois do serviço), <b>quinzenal</b> (lavar com água sanitária, a cada 15 dias) e <b>mensal</b> (tirar tudo e colocar para lavar, a cada 30 dias). A quinzenal e a mensal aparecem de novo contando a partir do dia em que foram marcadas como feitas.</p>';
@@ -14951,7 +15015,7 @@
       try{
         await sb.from("tarefas_dia").delete().eq("criado_por_nome","Rotina automática").eq("status","pendente").like("titulo","% — "+m.nome+" (%");
       }catch(e){ console.error(e); }
-      if(await cfgSalvar("maquinas_lavar", {itens:maqLista().filter(function(x){ return x.id !== m.id; })})){ await carregarTarefasDia(); renderTarefasDia(); }
+      if(await cfgSalvar("maquinas_lavar", {itens:maqLista().filter(function(x){ return x.id !== m.id; })})){ await carregarTarefasDia(); maqRerender(); }
     }; });
   }
   function maqForm(m){
@@ -14981,7 +15045,7 @@
       if(await cfgSalvar("maquinas_lavar", {itens:itens})){
         restFecharSheet();
         try{ await garantirRotinasMaquinas(); }catch(e){ console.error(e); }
-        renderTarefasDia();
+        maqRerender();
       } else this.disabled = false;
     };
   }
