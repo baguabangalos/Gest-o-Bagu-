@@ -2097,7 +2097,7 @@
     document.getElementById("userBadge").textContent = currentUser.nome + (currentUser.role==="admin" ? " · admin" : "");
     await carregarAppConfig();
     state = await loadAllFromSupabase();
-    carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
+    carregarTarefasDia().then(function(){ return garantirRotinasMaquinas(); }).catch(function(){}).then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
     carregarPendenciasEntrada().then(function(){ if(appSection==="home") renderApp(); });
     carregarTrocasEscala().then(function(){ if(appSection==="home" || appSection==="escala") renderApp(); }).catch(function(){});
     if(currentUser.role === "admin"){
@@ -14886,6 +14886,105 @@
     var hoje = hojeISO();
     return tarefasDia.lista.filter(function(t){ return t.para === currentUser.id && t.status === "pendente" && t.data <= hoje; });
   }
+
+  // ---------- Máquinas de lavar: limpezas automáticas (diária, quinzenal, mensal) ----------
+  // Cada máquina vira tarefas em "Tarefas do dia" para a pessoa responsável:
+  // diária (filtro, depois do serviço), quinzenal (água sanitária) e mensal (tirar tudo e lavar).
+  var MAQ_ROTINAS = {
+    diaria:{rot:"diária", acao:"Limpar o filtro da máquina", desc:"Todos os dias, depois de finalizar o serviço."},
+    quinzenal:{rot:"quinzenal", dias:15, acao:"Lavar com água sanitária", desc:"A cada 15 dias."},
+    mensal:{rot:"mensal", dias:30, acao:"Retirar tudo de dentro e colocar para lavar", desc:"Uma vez por mês: tirar tudo e fazer a lavagem de limpeza."}
+  };
+  function maqLista(){ var c = appConfig && appConfig.maquinas_lavar; return (c && Array.isArray(c.itens)) ? c.itens : []; }
+  function maqTitulo(m, tipo){ return MAQ_ROTINAS[tipo].acao + " — " + m.nome + " (" + MAQ_ROTINAS[tipo].rot + ")"; }
+  async function garantirRotinasMaquinas(){
+    if(!currentUser) return;
+    var maqs = maqLista().filter(function(m){ return m.ativo !== false && m.para; });
+    if(!maqs.length) return;
+    var hoje = hojeISO();
+    var r = await sb.from("tarefas_dia").select("id,titulo,data,status,concluida_em").eq("criado_por_nome","Rotina automática").order("data",{ascending:false}).limit(400);
+    if(r.error){ console.error(r.error); return; }
+    var rows = r.data || [], novos = [];
+    maqs.forEach(function(m){
+      ["diaria","quinzenal","mensal"].forEach(function(tipo){
+        if(m[tipo] === false) return;
+        var tit = maqTitulo(m, tipo);
+        var dele = rows.filter(function(x){ return x.titulo === tit; });
+        if(tipo === "diaria"){
+          if(dele.some(function(x){ return String(x.data).slice(0,10) === hoje; })) return;
+        } else {
+          if(dele.some(function(x){ return x.status === "pendente"; })) return; // ainda aberta: segue como atrasada
+          var feitas = dele.filter(function(x){ return x.status === "feita"; }).map(function(x){ return x.concluida_em ? isoLocal(new Date(x.concluida_em)) : String(x.data).slice(0,10); }).sort();
+          if(feitas.length){
+            var ult = feitas[feitas.length-1];
+            var venc = isoLocal(new Date(parseDataLocal(ult).getTime() + MAQ_ROTINAS[tipo].dias*86400000 + 3600000));
+            if(venc > hoje) return;
+          }
+        }
+        novos.push({id:"rot_"+m.id+"_"+tipo+"_"+hoje, titulo:tit, descricao:MAQ_ROTINAS[tipo].desc, atribuida_para:m.para, data:hoje, status:"pendente", criado_por:currentUser.id, criado_por_nome:"Rotina automática"});
+      });
+    });
+    if(!novos.length) return;
+    var u = await sb.from("tarefas_dia").upsert(novos, {onConflict:"id", ignoreDuplicates:true});
+    if(u.error){ console.error(u.error); return; }
+    await carregarTarefasDia();
+  }
+  function maqPainelHtml(){
+    var lista = maqLista();
+    var h = '<p class="item-meta" style="margin:0 0 10px;">Cada máquina gera as limpezas sozinha em <b>Tarefas do dia</b>, para a pessoa responsável: <b>diária</b> (filtro, depois do serviço), <b>quinzenal</b> (lavar com água sanitária, a cada 15 dias) e <b>mensal</b> (tirar tudo e colocar para lavar, a cada 30 dias). A quinzenal e a mensal aparecem de novo contando a partir do dia em que foram marcadas como feitas.</p>';
+    h += '<button type="button" class="btn btn-in" id="maqNova" style="width:100%;margin-bottom:12px;">+ Adicionar máquina</button>';
+    if(!lista.length) h += '<div class="empty">Nenhuma máquina cadastrada ainda.</div>';
+    lista.forEach(function(m){
+      var rot = ["diaria","quinzenal","mensal"].filter(function(t){ return m[t] !== false; }).map(function(t){ return MAQ_ROTINAS[t].rot; }).join(", ") || "nenhuma";
+      h += '<div class="card"' + (m.ativo === false ? ' style="opacity:.6;"' : '') + '><p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.nome)+(m.ativo===false?' · pausada':'')+'</p>' +
+        '<p class="item-meta">Responsável: '+escapeHtml(m.para ? tdNomePessoa(m.para) : "— (escolha alguém)")+' · limpezas: '+escapeHtml(rot)+'</p>' +
+        '<div class="item-actions"><button class="btn btn-out maqEd" data-id="'+m.id+'">'+ic("pencil")+' Editar</button><button class="btn btn-out maqEx" data-id="'+m.id+'">'+ic("trash")+' Excluir</button></div></div>';
+    });
+    return h;
+  }
+  function maqLigar(main){
+    var nova = main.querySelector("#maqNova"); if(nova) nova.onclick = function(){ maqForm(null); };
+    main.querySelectorAll(".maqEd").forEach(function(b){ b.onclick = function(){ maqForm(maqLista().filter(function(x){ return x.id === b.getAttribute("data-id"); })[0]); }; });
+    main.querySelectorAll(".maqEx").forEach(function(b){ b.onclick = async function(){
+      var m = maqLista().filter(function(x){ return x.id === b.getAttribute("data-id"); })[0]; if(!m) return;
+      if(!confirm("Excluir a máquina "+m.nome+"? As limpezas pendentes dela também serão apagadas.")) return;
+      try{
+        await sb.from("tarefas_dia").delete().eq("criado_por_nome","Rotina automática").eq("status","pendente").like("titulo","% — "+m.nome+" (%");
+      }catch(e){ console.error(e); }
+      if(await cfgSalvar("maquinas_lavar", {itens:maqLista().filter(function(x){ return x.id !== m.id; })})){ await carregarTarefasDia(); renderTarefasDia(); }
+    }; });
+  }
+  function maqForm(m){
+    var novo = !m;
+    m = m || {id:uid(), nome:"", para:"", diaria:true, quinzenal:true, mensal:true, ativo:true};
+    var pessoas = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; }).sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||"","pt-BR"); });
+    function chk(id, lab, on){ return '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:600;"><input type="checkbox" id="'+id+'" '+(on?'checked':'')+' style="width:auto;margin:0;"> '+lab+'</label>'; }
+    restAbrirSheet(novo ? "Nova máquina" : "Editar máquina",
+      '<label>Nome da máquina</label><input type="text" id="maqNome" value="'+escapeHtml(m.nome)+'" placeholder="Ex.: Máquina 1 (grande)" style="'+REST_INPUT+'margin-bottom:10px;">' +
+      '<label>Quem faz as limpezas</label><select id="maqPara" style="'+REST_INPUT+'margin-bottom:10px;"><option value="">Escolher…</option>'+pessoas.map(function(p){ return '<option value="'+p.id+'"'+(p.id===m.para?' selected':'')+'>'+escapeHtml(p.nome)+'</option>'; }).join("")+'</select>' +
+      chk("maqDia","Diária — limpar o filtro, depois de finalizar o serviço", m.diaria !== false) +
+      chk("maqQuin","Quinzenal — lavar com água sanitária (a cada 15 dias)", m.quinzenal !== false) +
+      chk("maqMen","Mensal — tirar tudo e colocar para lavar (a cada 30 dias)", m.mensal !== false) +
+      chk("maqAtivo","Máquina em uso (desmarque para pausar as tarefas)", m.ativo !== false) +
+      '<div class="sheet-actions"><button type="button" class="btn-secondary" id="maqCancel">Cancelar</button><button type="button" class="btn-primary" id="maqSalvar">Salvar</button></div>');
+    document.getElementById("maqCancel").onclick = restFecharSheet;
+    document.getElementById("maqSalvar").onclick = async function(){
+      var nome = document.getElementById("maqNome").value.trim(), para = document.getElementById("maqPara").value;
+      if(!nome){ showToast("Dê um nome para a máquina"); return; }
+      if(!para){ showToast("Escolha quem faz as limpezas"); return; }
+      var dup = maqLista().some(function(x){ return x.id !== m.id && normalizarBusca(x.nome) === normalizarBusca(nome); });
+      if(dup){ showToast("Já existe uma máquina com esse nome"); return; }
+      var novoM = {id:m.id, nome:nome, para:para, diaria:document.getElementById("maqDia").checked, quinzenal:document.getElementById("maqQuin").checked, mensal:document.getElementById("maqMen").checked, ativo:document.getElementById("maqAtivo").checked};
+      var itens = maqLista().filter(function(x){ return x.id !== m.id; }); itens.push(novoM);
+      itens.sort(function(a,b){ return a.nome.localeCompare(b.nome,"pt-BR"); });
+      this.disabled = true;
+      if(await cfgSalvar("maquinas_lavar", {itens:itens})){
+        restFecharSheet();
+        try{ await garantirRotinasMaquinas(); }catch(e){ console.error(e); }
+        renderTarefasDia();
+      } else this.disabled = false;
+    };
+  }
   function tdNomePessoa(id){ return (state && state.staffNames && state.staffNames[id]) || "—"; }
   function renderTarefasDia(){
     var main = document.getElementById("tarefasDiaView");
@@ -14908,7 +15007,8 @@
     if(gestor){
       html += '<div class="sub-tabs" style="display:flex;gap:8px;margin-bottom:14px;">' +
         '<button type="button" class="btn '+(tdSub==="minhas"?'btn-in':'btn-out')+'" data-tdsub="minhas" style="flex:1;">Minhas</button>' +
-        '<button type="button" class="btn '+(tdSub==="todas"?'btn-in':'btn-out')+'" data-tdsub="todas" style="flex:1;">Atribuir / todas</button></div>';
+        '<button type="button" class="btn '+(tdSub==="todas"?'btn-in':'btn-out')+'" data-tdsub="todas" style="flex:1;">Atribuir / todas</button>' +
+        '<button type="button" class="btn '+(tdSub==="maquinas"?'btn-in':'btn-out')+'" data-tdsub="maquinas" style="flex:1;">Máquinas</button></div>';
     }
     function cartaTarefa(t, mostrarPessoa, podeMarcar){
       var atrasada = t.status === "pendente" && tdVenc(t) < hoje;
@@ -14937,6 +15037,8 @@
       html += '<div class="section-title" style="margin-top:0;">Pra fazer</div>';
       html += pend.length ? pend.map(function(t){ return cartaTarefa(t,false,true); }).join("") : '<div class="empty">Nenhuma tarefa pendente pra você hoje. 🎉</div>';
       if(feitas.length) html += '<div class="section-title">Feitas hoje</div>' + feitas.map(function(t){ return cartaTarefa(t,false,true); }).join("");
+    } else if(tdSub === "maquinas"){
+      html += maqPainelHtml();
     } else {
       var pessoas = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; }).sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||"","pt-BR"); });
       html += '<div class="section-title" style="margin-top:0;">Nova tarefa</div><div class="card">' +
@@ -14957,6 +15059,7 @@
       });
     }
     main.innerHTML = html;
+    if(tdSub === "maquinas") maqLigar(main);
     main.querySelectorAll("[data-tdsub]").forEach(function(b){ b.onclick = function(){ tdSub = b.getAttribute("data-tdsub"); renderTarefasDia(); }; });
     var vd = document.getElementById("tdVerData"); if(vd) vd.onchange = function(){ tdData = vd.value || hoje; renderTarefasDia(); };
     var add = document.getElementById("tdAdd");
