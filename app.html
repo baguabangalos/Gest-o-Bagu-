@@ -2097,7 +2097,8 @@
     document.getElementById("userBadge").textContent = currentUser.nome + (currentUser.role==="admin" ? " · admin" : "");
     await carregarAppConfig();
     state = await loadAllFromSupabase();
-    carregarTarefasDia().then(function(){ return garantirRotinasMaquinas(); }).catch(function(){}).then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
+    carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
+    carregarMaqLimpezas().then(function(){ return garantirRotinasMaquinas(); }).catch(function(){}).then(function(){ if(appSection==="home" || appSection==="limpeza") renderApp(); });
     carregarPendenciasEntrada().then(function(){ if(appSection==="home") renderApp(); });
     carregarTrocasEscala().then(function(){ if(appSection==="home" || appSection==="escala") renderApp(); }).catch(function(){});
     if(currentUser.role === "admin"){
@@ -14893,28 +14894,35 @@
   }
 
   // ---------- Máquinas de lavar: limpezas automáticas (diária, quinzenal, mensal) ----------
-  // Cada máquina vira tarefas em "Tarefas do dia" para a pessoa responsável:
-  // diária (filtro, depois do serviço), quinzenal (água sanitária) e mensal (tirar tudo e lavar).
+  // Valem para a EQUIPE da Limpeza (não são de uma pessoa): qualquer pessoa da Limpeza marca como feita.
+  // Ficam na tabela limpezas_maquinas (uma linha por máquina/tipo/dia em que venceu).
   var MAQ_ROTINAS = {
     diaria:{rot:"diária", acao:"Limpar o filtro da máquina", desc:"Todos os dias, depois de finalizar o serviço."},
     quinzenal:{rot:"quinzenal", dias:15, acao:"Lavar com água sanitária", desc:"A cada 15 dias."},
     mensal:{rot:"mensal", dias:30, acao:"Retirar tudo de dentro e colocar para lavar", desc:"Uma vez por mês: tirar tudo e fazer a lavagem de limpeza."}
   };
+  var maqLimp = {lista:[], carregado:false, erro:false};
   function maqLista(){ var c = appConfig && appConfig.maquinas_lavar; return (c && Array.isArray(c.itens)) ? c.itens : []; }
-  function maqTitulo(m, tipo){ return MAQ_ROTINAS[tipo].acao + " — " + m.nome + " (" + MAQ_ROTINAS[tipo].rot + ")"; }
+  async function carregarMaqLimpezas(){
+    try{
+      var d = new Date(Date.now() - 120*86400000);
+      var r = await sb.from("limpezas_maquinas").select("*").gte("data", isoLocal(d)).order("data",{ascending:false}).limit(1500);
+      if(r.error) throw r.error;
+      maqLimp.lista = r.data || []; maqLimp.erro = false;
+    }catch(err){ maqLimp.erro = true; console.error("limpezas_maquinas:", err); }
+    maqLimp.carregado = true;
+  }
   async function garantirRotinasMaquinas(){
     if(!currentUser) return;
-    var maqs = maqLista().filter(function(m){ return m.ativo !== false && m.para; });
+    var maqs = maqLista().filter(function(m){ return m.ativo !== false; });
     if(!maqs.length) return;
-    var hoje = hojeISO();
-    var r = await sb.from("tarefas_dia").select("id,titulo,data,status,concluida_em").eq("criado_por_nome","Rotina automática").order("data",{ascending:false}).limit(400);
-    if(r.error){ console.error(r.error); return; }
-    var rows = r.data || [], novos = [];
+    if(!maqLimp.carregado) await carregarMaqLimpezas();
+    if(maqLimp.erro) return;
+    var hoje = hojeISO(), novos = [];
     maqs.forEach(function(m){
       ["diaria","quinzenal","mensal"].forEach(function(tipo){
         if(m[tipo] === false) return;
-        var tit = maqTitulo(m, tipo);
-        var dele = rows.filter(function(x){ return x.titulo === tit; });
+        var dele = maqLimp.lista.filter(function(x){ return x.maquina_id === m.id && x.tipo === tipo; });
         if(tipo === "diaria"){
           if(dele.some(function(x){ return String(x.data).slice(0,10) === hoje; })) return;
         } else {
@@ -14926,47 +14934,46 @@
             if(venc > hoje) return;
           }
         }
-        novos.push({id:"rot_"+m.id+"_"+tipo+"_"+hoje, titulo:tit, descricao:MAQ_ROTINAS[tipo].desc, atribuida_para:m.para, data:hoje, status:"pendente", criado_por:currentUser.id, criado_por_nome:"Rotina automática"});
+        novos.push({id:"rot_"+m.id+"_"+tipo+"_"+hoje, maquina_id:m.id, maquina_nome:m.nome, tipo:tipo, data:hoje, status:"pendente"});
       });
     });
     if(!novos.length) return;
-    var u = await sb.from("tarefas_dia").upsert(novos, {onConflict:"id", ignoreDuplicates:true});
+    var u = await sb.from("limpezas_maquinas").upsert(novos, {onConflict:"id", ignoreDuplicates:true});
     if(u.error){ console.error(u.error); return; }
-    await carregarTarefasDia();
+    await carregarMaqLimpezas();
   }
   function maqRerender(){ if(appSection === "limpeza") renderLimpeza(); else renderTarefasDia(); }
-  function maqEhRotina(t){ return t.criadoPorNome === "Rotina automática"; }
   function maqPendentesN(){
     var hoje = hojeISO();
-    return (tarefasDia.lista||[]).filter(function(t){ return maqEhRotina(t) && t.status === "pendente" && t.data <= hoje; }).length;
+    return maqLimp.lista.filter(function(x){ return x.status === "pendente" && String(x.data).slice(0,10) <= hoje; }).length;
   }
   // Aba "Máquinas" da Limpeza: a equipe vê as limpezas de hoje (e as atrasadas) e marca como feitas.
   function maqLimpezaHtml(){
-    if(!tarefasDia.carregado){
-      carregarTarefasDia().then(function(){ if(appSection==="limpeza") renderLimpeza(); });
+    if(!maqLimp.carregado){
+      carregarMaqLimpezas().then(function(){ return garantirRotinasMaquinas(); }).catch(function(){}).then(function(){ if(appSection==="limpeza") renderLimpeza(); });
       return '<div class="empty">Carregando as limpezas…</div>';
     }
+    if(maqLimp.erro) return '<div class="empty">Não consegui carregar as limpezas das máquinas. Confira se a tabela limpezas_maquinas existe no Supabase.</div>';
     var hoje = hojeISO();
     var maqs = maqLista().filter(function(m){ return m.ativo !== false; });
     var h = '';
     if(!maqs.length) h += '<div class="empty">Nenhuma máquina cadastrada ainda.' + (podeAtribuirTarefas() ? '' : ' Peça para a supervisão cadastrar.') + '</div>';
     maqs.forEach(function(m){
-      var tarefas = (tarefasDia.lista||[]).filter(function(t){
-        if(!maqEhRotina(t)) return false;
-        var tipo = ["diaria","quinzenal","mensal"].filter(function(k){ return t.titulo === maqTitulo(m, k); })[0];
-        if(!tipo) return false;
-        t._maqTipo = tipo;
-        return (t.status === "pendente" && t.data <= hoje) || (t.status === "feita" && t.data === hoje);
-      }).sort(function(a,b){ return a.status === b.status ? a.data.localeCompare(b.data) : (a.status === "pendente" ? -1 : 1); });
+      var tarefas = maqLimp.lista.filter(function(x){
+        if(x.maquina_id !== m.id) return false;
+        var d = String(x.data).slice(0,10);
+        return (x.status === "pendente" && d <= hoje) || (x.status === "feita" && d === hoje);
+      }).sort(function(a,b){ return a.status === b.status ? String(a.data).localeCompare(String(b.data)) : (a.status === "pendente" ? -1 : 1); });
       h += '<div class="card"><p class="item-name" style="margin:0 0 8px;">'+ic("refresh")+' '+escapeHtml(m.nome)+'</p>';
       if(!tarefas.length) h += '<p class="item-meta" style="margin:0;">Nada pendente nesta máquina hoje. 🎉</p>';
-      tarefas.forEach(function(t){
-        var feita = t.status === "feita", atras = !feita && t.data < hoje;
+      tarefas.forEach(function(x){
+        var info = MAQ_ROTINAS[x.tipo]; if(!info) return;
+        var feita = x.status === "feita", d = String(x.data).slice(0,10), atras = !feita && d < hoje;
         h += '<div style="border-top:1px solid var(--line);padding:10px 0 2px;">' +
-          '<p style="margin:0 0 2px;font-weight:700;'+(feita?'text-decoration:line-through;opacity:.7;':'')+'">'+escapeHtml(MAQ_ROTINAS[t._maqTipo].acao)+' <span style="font-weight:600;color:var(--ink-600);">· '+MAQ_ROTINAS[t._maqTipo].rot+'</span></p>' +
-          '<p class="item-meta" style="margin:0 0 6px;">'+escapeHtml(t.descricao||"")+(atras?' <b style="color:var(--amber-600);">⏰ de '+dataBr(t.data)+' — ainda não foi feita</b>':'')+'</p>' +
-          (feita ? '<p class="item-meta" style="margin:0 0 6px;">'+ic("check")+' Feita'+(t.concluidaEm?(' às '+fmtDate(t.concluidaEm).split(" ")[1]):'')+(t.obs?(' — '+escapeHtml(t.obs)):'')+'</p>' : '') +
-          '<div class="item-actions">' + (feita ? '<button class="btn btn-out maqTd" data-a="reabrir" data-id="'+t.id+'">Reabrir</button>' : '<button class="btn btn-in maqTd" data-a="feita" data-id="'+t.id+'">'+ic("check")+' Feita</button>') + '</div></div>';
+          '<p style="margin:0 0 2px;font-weight:700;'+(feita?'text-decoration:line-through;opacity:.7;':'')+'">'+escapeHtml(info.acao)+' <span style="font-weight:600;color:var(--ink-600);">· '+info.rot+'</span></p>' +
+          '<p class="item-meta" style="margin:0 0 6px;">'+escapeHtml(info.desc)+(atras?' <b style="color:var(--amber-600);">⏰ de '+dataBr(d)+' — ainda não foi feita</b>':'')+'</p>' +
+          (feita ? '<p class="item-meta" style="margin:0 0 6px;">'+ic("check")+' Feita'+(x.concluida_por_nome?(' por '+escapeHtml(x.concluida_por_nome)):'')+(x.concluida_em?(' às '+fmtDate(new Date(x.concluida_em).getTime()).split(" ")[1]):'')+(x.obs?(' — '+escapeHtml(x.obs)):'')+'</p>' : '') +
+          '<div class="item-actions">' + (feita ? '<button class="btn btn-out maqTd" data-a="reabrir" data-id="'+x.id+'">Reabrir</button>' : '<button class="btn btn-in maqTd" data-a="feita" data-id="'+x.id+'">'+ic("check")+' Feita</button>') + '</div></div>';
       });
       h += '</div>';
     });
@@ -14979,14 +14986,14 @@
     main.querySelectorAll(".maqTd").forEach(function(b){
       b.onclick = async function(){
         var id = b.getAttribute("data-id"), acao = b.getAttribute("data-a");
-        var t = tarefasDia.lista.find(function(x){ return x.id === id; }); if(!t) return;
+        var x = maqLimp.lista.find(function(y){ return y.id === id; }); if(!x) return;
         b.disabled = true;
         try{
           var obs = null;
           if(acao === "feita"){ obs = prompt("Alguma observação? (pode deixar em branco)"); if(obs === null) obs = ""; }
-          var upd = acao === "feita" ? {status:"feita", concluida_em:new Date().toISOString(), concluida_por:currentUser.id, obs_conclusao:(obs||"").trim()||null} : {status:"pendente", concluida_em:null, concluida_por:null, obs_conclusao:null};
-          var u = await sb.from("tarefas_dia").update(upd).eq("id", id).select().single(); if(u.error) throw u.error;
-          Object.assign(t, mapTarefaDia(u.data));
+          var upd = acao === "feita" ? {status:"feita", concluida_em:new Date().toISOString(), concluida_por:currentUser.id, concluida_por_nome:currentUser.nome, obs:(obs||"").trim()||null} : {status:"pendente", concluida_em:null, concluida_por:null, concluida_por_nome:null, obs:null};
+          var u = await sb.from("limpezas_maquinas").update(upd).eq("id", id).select().single(); if(u.error) throw u.error;
+          Object.assign(x, u.data);
           renderLimpeza();
         }catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
       };
@@ -14995,13 +15002,13 @@
   }
   function maqPainelHtml(){
     var lista = maqLista();
-    var h = '<p class="item-meta" style="margin:0 0 10px;">Cada máquina gera as limpezas sozinha em <b>Tarefas do dia</b>, para a pessoa responsável: <b>diária</b> (filtro, depois do serviço), <b>quinzenal</b> (lavar com água sanitária, a cada 15 dias) e <b>mensal</b> (tirar tudo e colocar para lavar, a cada 30 dias). A quinzenal e a mensal aparecem de novo contando a partir do dia em que foram marcadas como feitas.</p>';
+    var h = '<p class="item-meta" style="margin:0 0 10px;">Cada máquina gera as limpezas sozinha na aba <b>Máquinas</b> da Limpeza, para a equipe toda (quem fizer marca como feita): <b>diária</b> (filtro, depois do serviço), <b>quinzenal</b> (lavar com água sanitária, a cada 15 dias) e <b>mensal</b> (tirar tudo e colocar para lavar, a cada 30 dias). A quinzenal e a mensal aparecem de novo contando a partir do dia em que foram marcadas como feitas.</p>';
     h += '<button type="button" class="btn btn-in" id="maqNova" style="width:100%;margin-bottom:12px;">+ Adicionar máquina</button>';
     if(!lista.length) h += '<div class="empty">Nenhuma máquina cadastrada ainda.</div>';
     lista.forEach(function(m){
       var rot = ["diaria","quinzenal","mensal"].filter(function(t){ return m[t] !== false; }).map(function(t){ return MAQ_ROTINAS[t].rot; }).join(", ") || "nenhuma";
       h += '<div class="card"' + (m.ativo === false ? ' style="opacity:.6;"' : '') + '><p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.nome)+(m.ativo===false?' · pausada':'')+'</p>' +
-        '<p class="item-meta">Responsável: '+escapeHtml(m.para ? tdNomePessoa(m.para) : "— (escolha alguém)")+' · limpezas: '+escapeHtml(rot)+'</p>' +
+        '<p class="item-meta">Limpezas: '+escapeHtml(rot)+'</p>' +
         '<div class="item-actions"><button class="btn btn-out maqEd" data-id="'+m.id+'">'+ic("pencil")+' Editar</button><button class="btn btn-out maqEx" data-id="'+m.id+'">'+ic("trash")+' Excluir</button></div></div>';
     });
     return h;
@@ -15013,19 +15020,18 @@
       var m = maqLista().filter(function(x){ return x.id === b.getAttribute("data-id"); })[0]; if(!m) return;
       if(!confirm("Excluir a máquina "+m.nome+"? As limpezas pendentes dela também serão apagadas.")) return;
       try{
-        await sb.from("tarefas_dia").delete().eq("criado_por_nome","Rotina automática").eq("status","pendente").like("titulo","% — "+m.nome+" (%");
+        await sb.from("limpezas_maquinas").delete().eq("maquina_id", m.id).eq("status","pendente");
       }catch(e){ console.error(e); }
-      if(await cfgSalvar("maquinas_lavar", {itens:maqLista().filter(function(x){ return x.id !== m.id; })})){ await carregarTarefasDia(); maqRerender(); }
+      if(await cfgSalvar("maquinas_lavar", {itens:maqLista().filter(function(x){ return x.id !== m.id; })})){ await carregarMaqLimpezas(); maqRerender(); }
     }; });
   }
   function maqForm(m){
     var novo = !m;
-    m = m || {id:uid(), nome:"", para:"", diaria:true, quinzenal:true, mensal:true, ativo:true};
-    var pessoas = (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; }).sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||"","pt-BR"); });
+    m = m || {id:uid(), nome:"", diaria:true, quinzenal:true, mensal:true, ativo:true};
     function chk(id, lab, on){ return '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:600;"><input type="checkbox" id="'+id+'" '+(on?'checked':'')+' style="width:auto;margin:0;"> '+lab+'</label>'; }
     restAbrirSheet(novo ? "Nova máquina" : "Editar máquina",
       '<label>Nome da máquina</label><input type="text" id="maqNome" value="'+escapeHtml(m.nome)+'" placeholder="Ex.: Máquina 1 (grande)" style="'+REST_INPUT+'margin-bottom:10px;">' +
-      '<label>Quem faz as limpezas</label><select id="maqPara" style="'+REST_INPUT+'margin-bottom:10px;"><option value="">Escolher…</option>'+pessoas.map(function(p){ return '<option value="'+p.id+'"'+(p.id===m.para?' selected':'')+'>'+escapeHtml(p.nome)+'</option>'; }).join("")+'</select>' +
+      '<p class="item-meta" style="margin:0 0 8px;">As limpezas valem para a equipe da Limpeza: quem fizer marca como feita.</p>' +
       chk("maqDia","Diária — limpar o filtro, depois de finalizar o serviço", m.diaria !== false) +
       chk("maqQuin","Quinzenal — lavar com água sanitária (a cada 15 dias)", m.quinzenal !== false) +
       chk("maqMen","Mensal — tirar tudo e colocar para lavar (a cada 30 dias)", m.mensal !== false) +
@@ -15033,12 +15039,11 @@
       '<div class="sheet-actions"><button type="button" class="btn-secondary" id="maqCancel">Cancelar</button><button type="button" class="btn-primary" id="maqSalvar">Salvar</button></div>');
     document.getElementById("maqCancel").onclick = restFecharSheet;
     document.getElementById("maqSalvar").onclick = async function(){
-      var nome = document.getElementById("maqNome").value.trim(), para = document.getElementById("maqPara").value;
+      var nome = document.getElementById("maqNome").value.trim();
       if(!nome){ showToast("Dê um nome para a máquina"); return; }
-      if(!para){ showToast("Escolha quem faz as limpezas"); return; }
       var dup = maqLista().some(function(x){ return x.id !== m.id && normalizarBusca(x.nome) === normalizarBusca(nome); });
       if(dup){ showToast("Já existe uma máquina com esse nome"); return; }
-      var novoM = {id:m.id, nome:nome, para:para, diaria:document.getElementById("maqDia").checked, quinzenal:document.getElementById("maqQuin").checked, mensal:document.getElementById("maqMen").checked, ativo:document.getElementById("maqAtivo").checked};
+      var novoM = {id:m.id, nome:nome, diaria:document.getElementById("maqDia").checked, quinzenal:document.getElementById("maqQuin").checked, mensal:document.getElementById("maqMen").checked, ativo:document.getElementById("maqAtivo").checked};
       var itens = maqLista().filter(function(x){ return x.id !== m.id; }); itens.push(novoM);
       itens.sort(function(a,b){ return a.nome.localeCompare(b.nome,"pt-BR"); });
       this.disabled = true;
