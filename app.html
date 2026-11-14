@@ -666,7 +666,7 @@
 <div class="sheet-overlay" id="abastecerSheetOverlay">
   <div class="sheet">
     <h2>Abastecer — <span id="abastecerAcomodacaoNome"></span></h2>
-    <p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Confira a quantidade de cada item antes de confirmar. Marque "Faltando" se não tinha em estoque para repor — isso vai avisar na hora do checkout.</p>
+    <p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Confira a quantidade de cada item antes de confirmar. Marque "Não abasteci" se não tinha em estoque para repor — o item fica aguardando e só vira abastecimento quando você lançar a entrada dele no Estoque.</p>
     <div id="abastecerItensLista"></div>
     <div style="display:flex;gap:8px;margin:4px 0 14px;">
       <select id="abastecerExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);"></select>
@@ -2099,6 +2099,7 @@
     state = await loadAllFromSupabase();
     carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
     carregarValidades().then(function(){ if(appSection==="limpeza" || appSection==="recepcao") renderApp(); });
+    carregarAguardando().then(function(){ if(appSection==="abastecimento") renderApp(); });
     carregarRevEntrada().then(function(){ if(appSection==="limpeza" || appSection==="recepcao") renderApp(); });
     carregarMaqLimpezas().then(function(){ return garantirRotinasMaquinas(); }).catch(function(){}).then(function(){ if(appSection==="home" || appSection==="limpeza") renderApp(); });
     carregarPendenciasEntrada().then(function(){ if(appSection==="home") renderApp(); });
@@ -5598,7 +5599,7 @@
         '<input type="number" class="abastecerQty" data-idx="'+idx+'" step="1" min="0" value="'+qtyInicial+'">' +
         '<button type="button" class="abastecerPlus" data-idx="'+idx+'">+</button>' +
       '</div>' +
-      '<label class="checkbox-row"><input type="checkbox" class="abastecerFaltando" data-idx="'+idx+'"> Não abasteci este item (criar novo pedido só com ele)</label>' +
+      '<label class="checkbox-row"><input type="checkbox" class="abastecerFaltando" data-idx="'+idx+'"> Não abasteci — sem estoque (fica aguardando chegar, sem criar pedido)</label>' +
     '</div>';
   }
 
@@ -5712,9 +5713,8 @@
       if(faltando.length){
         // Itens que não foram abastecidos viram um novo pedido, só com eles.
         try{
-          var rf = await somarAoPedidoPendente(s.acomodacaoId, faltando.map(function(f){ return {nome:f.nome, quantidade:f.quantidade||1}; }), "Itens que faltaram no abastecimento anterior");
-          faltouSomou = rf.somou;
-        }catch(e3){ console.error(e3); showToast("Abastecido, mas não consegui criar o novo pedido dos itens que faltaram"); }
+          await registrarAguardando(s.acomodacaoId, faltando.map(function(f){ return {nome:f.nome, quantidade:f.quantidade||1}; }), s.id);
+        }catch(e3){ console.error(e3); showToast("Abastecido, mas não consegui guardar os itens que faltaram para quando chegarem"); }
       }
       if(abastecerFotosPendentes.length > 0){
         // Só agora, com a foto nova de fato tirada e salva, as fotos antigas
@@ -5722,7 +5722,7 @@
         await limparFotosFrigobarAntigas(s.acomodacaoId, s.id);
       }
       closeAbastecerSheet();
-      showToast(faltando.length ? ("Abastecido — "+faltando.length+" item(ns) que faltaram "+(faltouSomou ? "somado(s) ao pedido pendente dessa acomodação" : "viraram um novo pedido")) : "Abastecimento registrado");
+      showToast(faltando.length ? ("Abastecido — "+faltando.length+" item(ns) sem estoque ficam aguardando a chegada (não viram pedido agora)") : "Abastecimento registrado");
       renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao registrar abastecimento");
@@ -5832,6 +5832,12 @@
       var msgToast = toastMap[typeForToast] || "Registrado";
       if(typeForToast === "saida" && destino === "Recepção") msgToast = "Movido pra recepção — ainda não descontado do estoque";
       showToast(msgToast);
+      if(typeForToast === "entrada"){
+        try{
+          var nLib = await liberarAguardando(item.name);
+          if(nLib) showToast("Entrada registrada — abastecimento criado para "+nLib+" acomodação(ões) que aguardavam esse item");
+        }catch(eLib){ console.error(eLib); }
+      }
       renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao registrar — tente novamente");
@@ -11092,11 +11098,14 @@
     html += '<div class="seg-toggle">' +
       '<button data-asub="pendentes" class="'+(abastecimentoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
       '<button data-asub="feitos" class="'+(abastecimentoSubView==="feitos"?"active":"")+'">Abastecidos hoje</button>' +
+      '<button data-asub="aguardando" class="'+(abastecimentoSubView==="aguardando"?"active":"")+'">Aguardando estoque'+(aguardN()?(' · '+aguardN()):'')+'</button>' +
       '<button data-asub="padrao" class="'+(abastecimentoSubView==="padrao"?"active":"")+'">Itens por acomodação</button>' +
     '</div>';
     var list = abastecimentoSubView === "feitos" ? feitos : pend;
     if(abastecimentoSubView === "padrao"){
       html += renderItensPorAcomodacaoHtml();
+    } else if(abastecimentoSubView === "aguardando"){
+      html += aguardHtml();
     } else if(list.length === 0){
       html += '<div class="empty">'+(abastecimentoSubView==="pendentes" ? "Nenhum pedido de frigobar em aberto." : "Nenhum abastecimento feito hoje ainda.")+'</div>';
     } else {
@@ -11110,6 +11119,7 @@
     });
     wireSolicitacaoActions(main);
     if(abastecimentoSubView === "padrao") ligarItensPorAcomodacao(main);
+    if(abastecimentoSubView === "aguardando") aguardLigar(main);
     document.getElementById("importarExtratoBtn").onclick = function(){
       document.getElementById("importarExtratoInput").click();
     };
@@ -14942,6 +14952,99 @@
     await carregarMaqLimpezas();
   }
   // ---------- Retirada de item da acomodação (núcleo) + pedido de reposição ----------
+  // ---------- Itens sem estoque: ficam "aguardando chegada" e só viram abastecimento quando o item entra ----------
+  var aguard = {lista:[], carregado:false, erro:false};
+  async function carregarAguardando(){
+    try{
+      var r = await sb.from("itens_aguardando").select("*").order("criado_em",{ascending:false}).limit(600);
+      if(r.error) throw r.error;
+      aguard.lista = r.data || []; aguard.erro = false;
+    }catch(err){ aguard.erro = true; console.error("itens_aguardando:", err); }
+    aguard.carregado = true;
+  }
+  function aguardAbertos(){ return aguard.lista.filter(function(x){ return x.status === "aguardando"; }); }
+  function aguardN(){ return (aguard.carregado && !aguard.erro) ? aguardAbertos().length : 0; }
+  // Guarda os itens que não puderam ser abastecidos por falta de estoque (soma se já esperava o mesmo item na acomodação).
+  async function registrarAguardando(acId, itens, solicitacaoId){
+    if(!aguard.carregado) await carregarAguardando();
+    for(var i=0;i<itens.length;i++){
+      var it = itens[i], alvo = normalizarBusca(it.nome), qtd = Number(it.quantidade)||1;
+      var ex = aguardAbertos().find(function(x){ return x.acomodacao_id === acId && normalizarBusca(x.item_nome) === alvo; });
+      if(ex){
+        var u = await sb.from("itens_aguardando").update({quantidade:(Number(ex.quantidade)||0)+qtd}).eq("id", ex.id); if(u.error) throw u.error;
+      } else {
+        var n = await sb.from("itens_aguardando").insert({id:uid(), acomodacao_id:acId, item_nome:it.nome, quantidade:qtd, status:"aguardando", origem_solicitacao:solicitacaoId||null, criado_por_nome:(currentUser?currentUser.nome:null)}); if(n.error) throw n.error;
+      }
+    }
+    await carregarAguardando();
+  }
+  // Chamado quando um item dá entrada no estoque: cria (ou soma) o abastecimento das acomodações que esperavam.
+  // linhas: itens aguardando já filtrados. Devolve quantas acomodações receberam abastecimento.
+  async function liberarLinhasAguardando(linhas, textoObs){
+    var porAc = {};
+    linhas.forEach(function(x){ (porAc[x.acomodacao_id] = porAc[x.acomodacao_id] || []).push(x); });
+    var n = 0;
+    for(var acId in porAc){
+      await somarAoPedidoPendente(acId, porAc[acId].map(function(x){ return {nome:x.item_nome, quantidade:Number(x.quantidade)||1}; }), textoObs);
+      var ids = porAc[acId].map(function(x){ return x.id; });
+      var u = await sb.from("itens_aguardando").update({status:"liberado", liberado_em:new Date().toISOString()}).in("id", ids); if(u.error) throw u.error;
+      n++;
+    }
+    await carregarAguardando();
+    return n;
+  }
+  async function liberarAguardando(nomeItem){
+    if(!aguard.carregado) await carregarAguardando();
+    var alvo = normalizarBusca(nomeItem);
+    var linhas = aguardAbertos().filter(function(x){ return normalizarBusca(x.item_nome) === alvo; });
+    if(!linhas.length) return 0;
+    return await liberarLinhasAguardando(linhas, "Reposição: "+nomeItem+" chegou no estoque");
+  }
+  function aguardHtml(){
+    if(!aguard.carregado){
+      carregarAguardando().then(function(){ if(appSection==="abastecimento") renderApp(); });
+      return '<div class="empty">Carregando…</div>';
+    }
+    if(aguard.erro) return '<div class="empty">Não consegui carregar. Confira se a tabela itens_aguardando existe no Supabase.</div>';
+    var ab = aguardAbertos();
+    var h = '<p class="item-meta" style="margin:0 0 10px;">Itens que ficaram sem abastecer porque <b>não tinham no estoque</b>. Eles não aparecem em Pendentes: quando você lançar a <b>entrada</b> do produto no Estoque, o abastecimento dessas acomodações é criado sozinho (somado ao pedido pendente da acomodação, se já houver).</p>';
+    if(!ab.length) return h + '<div class="empty">Nenhum item aguardando chegada.</div>';
+    var porAc = {};
+    ab.forEach(function(x){ (porAc[x.acomodacao_id] = porAc[x.acomodacao_id] || []).push(x); });
+    Object.keys(porAc).sort(function(a,b){ return acomodacaoNome(a).localeCompare(acomodacaoNome(b),"pt-BR"); }).forEach(function(acId){
+      h += '<div class="card"><p class="item-name" style="margin:0 0 6px;">'+escapeHtml(acomodacaoNome(acId))+'</p>';
+      porAc[acId].forEach(function(x){
+        h += '<div style="border-top:1px solid var(--line);padding:8px 0 2px;"><p style="margin:0 0 6px;font-weight:700;">'+escapeHtml(x.item_nome)+' ('+(Number(x.quantidade)||1)+') <span class="item-meta" style="font-weight:500;">· desde '+dataBr(isoLocal(new Date(x.criado_em)))+'</span></p>' +
+          '<div class="item-actions"><button class="btn btn-in agLib" data-id="'+x.id+'">Chegou — criar abastecimento</button><button class="btn btn-out agEd" data-id="'+x.id+'">'+ic("pencil")+' Qtd</button><button class="btn btn-out agEx" data-id="'+x.id+'">'+ic("trash")+' Excluir</button></div></div>';
+      });
+      h += '</div>';
+    });
+    return h;
+  }
+  function aguardLigar(main){
+    main.querySelectorAll(".agLib").forEach(function(b){ b.onclick = async function(){
+      var x = aguard.lista.find(function(y){ return y.id === b.getAttribute("data-id"); }); if(!x) return;
+      if(!confirm("Criar o abastecimento de "+x.item_nome+" para "+acomodacaoNome(x.acomodacao_id)+" agora?")) return;
+      b.disabled = true;
+      try{ await liberarLinhasAguardando([x], "Reposição: "+x.item_nome+" (liberado manualmente)"); showToast("Abastecimento criado"); renderApp(); }
+      catch(err){ console.error(err); showToast("Não consegui criar o abastecimento"); b.disabled = false; }
+    }; });
+    main.querySelectorAll(".agEd").forEach(function(b){ b.onclick = async function(){
+      var x = aguard.lista.find(function(y){ return y.id === b.getAttribute("data-id"); }); if(!x) return;
+      var v = prompt("Quantidade de "+x.item_nome+":", String(Number(x.quantidade)||1)); if(v === null) return;
+      var q = parseFloat(String(v).replace(",", ".")); if(!(q > 0)){ showToast("Quantidade inválida"); return; }
+      b.disabled = true;
+      try{ var u = await sb.from("itens_aguardando").update({quantidade:q}).eq("id", x.id); if(u.error) throw u.error; await carregarAguardando(); renderApp(); }
+      catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
+    }; });
+    main.querySelectorAll(".agEx").forEach(function(b){ b.onclick = async function(){
+      if(!confirm("Excluir este item da espera? Ele não vai virar abastecimento.")) return;
+      b.disabled = true;
+      try{ var d = await sb.from("itens_aguardando").delete().eq("id", b.getAttribute("data-id")); if(d.error) throw d.error; await carregarAguardando(); renderApp(); }
+      catch(err){ console.error(err); showToast("Não consegui excluir"); b.disabled = false; }
+    }; });
+  }
+
   function rerenderSecao(){ if(appSection === "limpeza") renderLimpeza(); else if(appSection === "recepcao") renderRecepcao(); else renderApp(); }
   // Soma itens ao abastecimento PENDENTE da acomodação (ou cria um novo se não houver).
   async function somarAoPedidoPendente(acId, itensNovos, obsTxt){
