@@ -1623,10 +1623,10 @@
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
     restaurante:   {view:"restauranteView", attr:"data-rsub", abas:{abertas:"restaurante_comandas", contas:"restaurante_acomodacoes", historico:"restaurante_historico", cardapio:"restaurante_cardapio", relatorio:"restaurante_relatorio", "estoque-itens":"estoque_restaurante", "estoque-count":"estoque_restaurante", "estoque-report":"estoque_restaurante", restricoes:"restaurante_restricoes", louca:"restaurante_louca", cafe:"restaurante_cafe"}},
-    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada", chuvas:"recepcao_chuvas", qr:"recepcao_qr"}},
+    recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada", chuvas:"recepcao_chuvas", qr:"recepcao_qr", validades:"recepcao_validades", revisao:"recepcao_revisao"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{calendario:"escala_horarios", trocas:"escala_trocas", horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
-    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada", maquinas:"limpeza_maquinas"}},
+    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada", maquinas:"limpeza_maquinas", validades:"limpeza_validades", revisao:"limpeza_revisao"}},
     manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas", equipamentos:"equipamentos"}}
   };
   var PERM_ACOES = {
@@ -2098,6 +2098,8 @@
     await carregarAppConfig();
     state = await loadAllFromSupabase();
     carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
+    carregarValidades().then(function(){ if(appSection==="limpeza" || appSection==="recepcao") renderApp(); });
+    carregarRevEntrada().then(function(){ if(appSection==="limpeza" || appSection==="recepcao") renderApp(); });
     carregarMaqLimpezas().then(function(){ return garantirRotinasMaquinas(); }).catch(function(){}).then(function(){ if(appSection==="home" || appSection==="limpeza") renderApp(); });
     carregarPendenciasEntrada().then(function(){ if(appSection==="home") renderApp(); });
     carregarTrocasEscala().then(function(){ if(appSection==="home" || appSection==="escala") renderApp(); }).catch(function(){});
@@ -2783,10 +2785,10 @@
   // ---------- Personalização feita pelo administrador (tabela app_config) ----------
   var ABAS_ROTULOS = {
     restaurante:{abertas:"Comandas", contas:"Acomodações", historico:"Histórico", cardapio:"Cardápio", relatorio:"Relatório", restricoes:"Restrições", louca:"Serviço do dia", cafe:"Café da manhã"},
-    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada", chuvas:"Guarda-chuvas", qr:"QR Code"},
+    recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada", chuvas:"Guarda-chuvas", qr:"QR Code", validades:"Validades", revisao:"Revisão p/ entrada"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{calendario:"Calendário", trocas:"Trocas", horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
-    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada", maquinas:"Máquinas"},
+    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada", maquinas:"Máquinas", validades:"Validades", revisao:"Revisão p/ entrada"},
     manutencao:{pendentes:"Pendentes", concluidas:"Concluídas", equipamentos:"Equipamentos"}
   };
   var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
@@ -5196,7 +5198,7 @@
   document.getElementById("moveUniformeLimparBtn").onclick = iniciarQuadroAssinatura;
   var NAO_INF_TAG = "Consumido, mas não informado pelo hóspede";
   var RETIRADA_TAG = "Retirado da acomodação";
-  var RETIRADA_MOTIVOS = ["Vencido","Danificado","Acomodação com problema/defeito","Outro"];
+  var RETIRADA_MOTIVOS = ["Vencido","Próximo do vencimento","Danificado","Acomodação com problema/defeito","Outro"];
   // Item que SAIU da acomodação (vencido, danificado, quarto com defeito…).
   // Não desconta do estoque (ele já foi descontado quando foi levado pro quarto);
   // cria o pedido de reposição, ou soma no pedido pendente que já existe pra essa acomodação.
@@ -5250,41 +5252,14 @@
       lista.querySelectorAll("[data-item-id]").forEach(function(d){
         var it = state.estoque.items.find(function(x){ return x.id===d.getAttribute("data-item-id"); });
         var q = parseFloat(d.querySelector(".rq").value)||0;
-        if(it && q>0) linhas.push({item:it, qty:q});
+        if(it && q>0) linhas.push({item:it, nome:it.name, qty:q});
       });
       if(!acId){ showToast("Escolha a acomodação"); return; }
       if(!linhas.length){ showToast("Adicione pelo menos um item"); return; }
       var ac = state.acomodacoes.find(function(a){ return a.id===acId; });
       var btn = ov.querySelector("#retOk"); btn.disabled = true;
       try{
-        var nota = RETIRADA_TAG+" — "+motivo+(obs?" — "+obs:"")+" (não desconta do estoque)";
-        for(var i=0;i<linhas.length;i++){
-          var mov = await dbInsert("movements", {id:uid(), item_id:linhas[i].item.id, type:"ajuste", qty:linhas[i].qty, delta:0, note:nota, destino:ac.nome, date:new Date().toISOString()}, mapMovementFromRow);
-          state.estoque.movements.unshift(mov);
-        }
-        var msg = "Retirada registrada";
-        if(repor){
-          var pend = state.solicitacoes.find(function(x){ return x.tipo==="frigobar" && x.acomodacaoId===acId && x.status==="pendente"; });
-          var nomes = linhas.map(function(l){ return l.item.name; }).join(", ");
-          var obsRep = "Reposição: "+nomes+" retirado(s) ("+motivo.toLowerCase()+")";
-          if(pend){
-            var itens = (pend.itens||[]).map(function(i){ return {nome:i.nome, quantidade:i.quantidade}; });
-            linhas.forEach(function(l){
-              var alvo = normalizarBusca(l.item.name);
-              var ex = itens.find(function(i){ return normalizarBusca(i.nome)===alvo; });
-              if(ex) ex.quantidade = (Number(ex.quantidade)||0) + l.qty; else itens.push({nome:l.item.name, quantidade:l.qty});
-            });
-            var novaObs = (pend.observacao ? pend.observacao+" | " : "") + obsRep;
-            var up = await dbUpdate("solicitacoes_acomodacao", pend.id, {itens:itens, observacao:novaObs}, mapSolicitacaoFromRow);
-            var ix = state.solicitacoes.findIndex(function(x){ return x.id===pend.id; });
-            if(ix>-1) state.solicitacoes[ix] = up;
-            msg = "Retirada registrada — somada ao abastecimento pendente de "+ac.nome;
-          } else {
-            var novo = await dbInsert("solicitacoes_acomodacao", {id:uid(), acomodacao_id:acId, tipo:"frigobar", origem:"equipe", criado_por:(currentUser?currentUser.id:null), status:"pendente", itens:linhas.map(function(l){ return {nome:l.item.name, quantidade:l.qty}; }), observacao:obsRep}, mapSolicitacaoFromRow);
-            state.solicitacoes.unshift(novo);
-            msg = "Retirada registrada — abastecimento criado para "+ac.nome;
-          }
-        }
+        var msg = await registrarRetiradas(ac, linhas, motivo, obs, repor);
         ov.remove(); showToast(msg); renderApp();
       }catch(err){ console.error(err); showToast("Erro ao registrar a retirada"); btn.disabled = false; }
     };
@@ -5682,6 +5657,7 @@
     var linhas = lista.querySelectorAll("[data-idx]");
     var destino = acomodacaoNome(s.acomodacaoId);
     var faltando = [];
+    var faltouSomou = false;
     var itensFinais = [];
     var btn = document.getElementById("abastecerConfirm"); btn.disabled = true;
     try{
@@ -5736,11 +5712,8 @@
       if(faltando.length){
         // Itens que não foram abastecidos viram um novo pedido, só com eles.
         try{
-          var pedidoFalta = await dbInsert("solicitacoes_acomodacao", {id:uid(), acomodacao_id:s.acomodacaoId, tipo:"frigobar", origem:"equipe",
-            criado_por:(currentUser?currentUser.id:null), status:"pendente",
-            itens: faltando.map(function(f){ return {nome:f.nome, quantidade:f.quantidade||1}; }),
-            observacao:"Itens que faltaram no abastecimento anterior"}, mapSolicitacaoFromRow);
-          state.solicitacoes.unshift(pedidoFalta);
+          var rf = await somarAoPedidoPendente(s.acomodacaoId, faltando.map(function(f){ return {nome:f.nome, quantidade:f.quantidade||1}; }), "Itens que faltaram no abastecimento anterior");
+          faltouSomou = rf.somou;
         }catch(e3){ console.error(e3); showToast("Abastecido, mas não consegui criar o novo pedido dos itens que faltaram"); }
       }
       if(abastecerFotosPendentes.length > 0){
@@ -5749,7 +5722,7 @@
         await limparFotosFrigobarAntigas(s.acomodacaoId, s.id);
       }
       closeAbastecerSheet();
-      showToast(faltando.length ? "Abastecido — novo pedido criado com "+faltando.length+" item(ns) que faltaram" : "Abastecimento registrado");
+      showToast(faltando.length ? ("Abastecido — "+faltando.length+" item(ns) que faltaram "+(faltouSomou ? "somado(s) ao pedido pendente dessa acomodação" : "viraram um novo pedido")) : "Abastecimento registrado");
       renderApp();
     }catch(err){
       console.error(err); showToast("Erro ao registrar abastecimento");
@@ -7771,7 +7744,7 @@
         historico.forEach(function(e, i){
           html += '<button type="button" data-ver-turno-dia data-turno-id="'+t.id+'" data-execucao-id="'+e.id+'" style="display:block;width:100%;text-align:left;background:none;border:none;padding:0;'+(i>0?'margin-top:6px;':'')+'cursor:pointer;color:inherit;font:inherit;">' +
             '<span class="item-meta" style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;">'+escapeHtml(fmtDateOnly(dateAtLocalTime(e.data,"00:00").getTime()))+' — '+
-            (e.concluidoEm ? (''+ic('check')+' concluído por '+escapeHtml(e.concluidoPor||"—")+(e.observacaoPendencias?(' · pendência: '+escapeHtml(e.observacaoPendencias)):'')) : (''+ic('close')+' não foi concluído')) +
+            (e.concluidoEm ? (''+ic('check')+' concluído por '+escapeHtml(e.concluidoPor||"—")+(e.observacaoPendencias?(' · obs: '+escapeHtml(e.observacaoPendencias)):'')) : (''+ic('close')+' não foi concluído')) +
             '</span>' +
           '</button>';
         });
@@ -8046,16 +8019,15 @@
     html += '<div class="card" style="margin-top:14px;background:var(--sand-50);">';
     if(jaConcluido){
       html += '<p style="margin:0;font-size:14px;font-weight:700;">'+ic("check")+' Turno concluído às '+fmtDate(execucao.concluidoEm).split(" ")[1]+(execucao.concluidoPor?(' por '+escapeHtml(execucao.concluidoPor)):'')+'</p>';
-      if(execucao.observacaoPendencias) html += '<p class="item-meta" style="margin-top:6px;">'+escapeHtml(execucao.observacaoPendencias)+'</p>';
+      html += '<p class="item-meta" style="margin:10px 0 6px;font-weight:700;">Observações do turno</p>' +
+        '<textarea id="turnoObsEdit" placeholder="Algo que o próximo turno ou a supervisão precisa saber…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;">'+escapeHtml(execucao.observacaoPendencias||"")+'</textarea>' +
+        '<button type="button" id="turnoObsSalvar" class="btn-primary" style="margin-top:8px;">Salvar observação</button>';
     } else {
       var bloqueadoPorHerdadas = pendenciasHerdadas.length > 0;
       html += '<button type="button" id="concluirTurnoBtn" '+(bloqueadoPorHerdadas?"disabled":"")+' style="display:block;width:100%;background:'+(bloqueadoPorHerdadas?"var(--ink-400)":"var(--teal-900)")+';color:#fff;border:none;border-radius:10px;padding:13px;font-family:inherit;font-size:14.5px;font-weight:700;">'+ic("flag")+' Concluir turno</button>';
       if(bloqueadoPorHerdadas) html += '<p class="item-meta" style="margin-top:6px;">Resolva as pendências do turno anterior antes de concluir o seu.</p>';
-      html += '<div id="concluirTurnoObsWrap" style="display:none;margin-top:10px;">' +
-        '<p class="item-meta" style="margin-bottom:6px;">Atividades ainda pendentes — descreva o que falta pro próximo turno:</p>' +
-        '<textarea id="concluirTurnoObs" placeholder="Observação sobre as pendências…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>' +
-        '<button type="button" id="concluirTurnoConfirmarBtn" class="btn-primary" style="margin-top:8px;">Confirmar conclusão</button>' +
-      '</div>';
+      html += '<p class="item-meta" style="margin:12px 0 6px;font-weight:700;">Observações do turno <span style="font-weight:500;">(opcional — obrigatório só se ficou atividade pendente)</span></p>' +
+        '<textarea id="concluirTurnoObs" placeholder="Comentários sobre o turno, ocorrências, o que falta pro próximo turno…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>';
     }
     html += '</div>';
 
@@ -8157,19 +8129,24 @@
           var item = oc.slot ? itemExecucaoSlot(execucao.id, oc.atividade.id, oc.slot) : atividadeExecucaoFor(execucao.id, oc.atividade.id);
           return !item || item.status === "pendente";
         });
-        if(temPendentesProprias){
-          document.getElementById("concluirTurnoObsWrap").style.display = "block";
-        } else if(confirm("Concluir este turno?")){
-          concluirTurno(turno, execucao, "");
-        }
+        var obs = document.getElementById("concluirTurnoObs").value.trim();
+        if(temPendentesProprias && !obs){ showToast("Ficou atividade pendente — descreva o que falta nas observações"); return; }
+        if(confirm("Concluir este turno?")) concluirTurno(turno, execucao, obs);
       };
     }
-    var concluirConfirmarBtn = document.getElementById("concluirTurnoConfirmarBtn");
-    if(concluirConfirmarBtn){
-      concluirConfirmarBtn.onclick = function(){
-        var obs = document.getElementById("concluirTurnoObs").value.trim();
-        if(!obs){ showToast("Descreva o que ainda está pendente"); return; }
-        concluirTurno(turno, execucao, obs);
+    var obsSalvarBtn = document.getElementById("turnoObsSalvar");
+    if(obsSalvarBtn){
+      obsSalvarBtn.onclick = async function(){
+        if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para editar o turno"); return; }
+        obsSalvarBtn.disabled = true;
+        try{
+          var txt = document.getElementById("turnoObsEdit").value.trim();
+          var up = await dbUpdate("turno_execucoes", execucao.id, {observacao_pendencias: txt||null}, mapTurnoExecucaoFromRow);
+          var ix = state.turnoExecucoes.findIndex(function(x){ return x.id===execucao.id; });
+          if(ix>-1) state.turnoExecucoes[ix] = up;
+          showToast("Observação salva");
+        }catch(err){ console.error(err); showToast("Erro ao salvar a observação"); }
+        obsSalvarBtn.disabled = false;
       };
     }
   }
@@ -10557,12 +10534,18 @@
       '<button data-lsub="abertos" class="'+(limpezaSubView==="abertos"?"active":"")+'">Em aberto'+(abertos.length?(' · '+abertos.length):'')+'</button>' +
       '<button data-lsub="concluidos" class="'+(limpezaSubView==="concluidos"?"active":"")+'">Concluídos hoje</button>' +
       '<button data-lsub="previsao" class="'+(limpezaSubView==="previsao"?"active":"")+'">Previsão 7 dias</button>' +
+      '<button data-lsub="validades" class="'+(limpezaSubView==="validades"?"active":"")+'">Validades'+(vldPendentesN()?(' · '+vldPendentesN()):'')+'</button>' +
+      '<button data-lsub="revisao" class="'+(limpezaSubView==="revisao"?"active":"")+'">Revisão p/ entrada'+(revEntradaN()?(' · '+revEntradaN()):'')+'</button>' +
       '<button data-lsub="maquinas" class="'+(limpezaSubView==="maquinas"?"active":"")+'">Máquinas'+(maqPendentesN()?(' · '+maqPendentesN()):'')+'</button>' +
       '<button data-lsub="entrada" class="'+(limpezaSubView==="entrada"?"active":"")+'">Pendências de entrada'+(pendenciasEntradaAbertas("limpeza").length?(' · '+pendenciasEntradaAbertas("limpeza").length):'')+'</button>' +
     '</div>';
 
     if(limpezaSubView === "entrada"){
       html += renderPendenciasEntradaHtml("limpeza");
+    } else if(limpezaSubView === "validades"){
+      html += vldHtml();
+    } else if(limpezaSubView === "revisao"){
+      html += revEntradaHtml();
     } else if(limpezaSubView === "maquinas"){
       html += maqLimpezaHtml();
     } else if(limpezaSubView === "abertos"){
@@ -10656,6 +10639,8 @@
     }
     main.innerHTML = html;
     if(limpezaSubView === "maquinas") maqLimpezaLigar(main);
+    if(limpezaSubView === "validades") vldLigar(main);
+    if(limpezaSubView === "revisao") revEntradaLigar(main);
     if(limpezaSubView === "entrada") ligarPendenciasEntrada(main, renderLimpeza);
     main.querySelectorAll("[data-lsub]").forEach(function(b){
       b.onclick = function(){ limpezaSubView = b.getAttribute("data-lsub"); renderLimpeza();
@@ -13525,6 +13510,8 @@
       '<button data-rsub="chegadas" class="'+(recepcaoSubView==="chegadas"?"active":"")+'">'+ic("bed")+' Chegadas'+(preCheckinsNaoVistos().length?' ('+preCheckinsNaoVistos().length+')':'')+'</button>' +
       '<button data-rsub="entrada" class="'+(recepcaoSubView==="entrada"?"active":"")+'">'+ic("bed")+' Pendências de entrada'+(pendenciasEntradaAbertas().length?(' ('+pendenciasEntradaAbertas().length+')'):'')+'</button>' +
       '<button data-rsub="chuvas" class="'+(recepcaoSubView==="chuvas"?"active":"")+'">'+ic("box")+' Guarda-chuvas'+(umb.carregado && !umb.erro && umbEmprestados().length?' ('+umbEmprestados().length+')':'')+'</button>' +
+      '<button data-rsub="revisao" class="'+(recepcaoSubView==="revisao"?"active":"")+'">'+ic("check")+' Revisão p/ entrada'+(revEntradaN()?(' ('+revEntradaN()+')'):'')+'</button>' +
+      '<button data-rsub="validades" class="'+(recepcaoSubView==="validades"?"active":"")+'">'+ic("warning")+' Validades'+(vldPendentesN()?(' ('+vldPendentesN()+')'):'')+'</button>' +
       '<button data-rsub="qr" class="'+(recepcaoSubView==="qr"?"active":"")+'">'+ic("camera")+' QR Code</button>' +
     '</div>';
     if(recepcaoMenu){
@@ -13783,11 +13770,19 @@
     else if(recepcaoSubView === "qr"){
       html += renderQrAcomodacoesHtml();
     }
+    else if(recepcaoSubView === "revisao"){
+      html += revEntradaHtml();
+    }
+    else if(recepcaoSubView === "validades"){
+      html += vldHtml();
+    }
 
     main.innerHTML = html;
     if(recepcaoSubView === "entrada" || recepcaoSubView === "limpeza") ligarPendenciasEntrada(main, renderRecepcao);
     if(recepcaoSubView === "chuvas") ligarChuvas(main);
     if(recepcaoSubView === "qr") ligarQrAcomodacoes(main);
+    if(recepcaoSubView === "revisao") revEntradaLigar(main);
+    if(recepcaoSubView === "validades") vldLigar(main);
     if(!umb.tentado && recepcaoSubView !== "chuvas" && podeVerAba("recepcao","chuvas")){ umb.tentado = true; carregarChuvas().then(function(){ if(appSection==="recepcao") renderRecepcao(); }); }
     wireSolicitacaoActions(main);
 
@@ -14535,6 +14530,10 @@
     {key:"hospedes", label:"Hóspedes/Documentos"},
     {key:"limpeza", label:"Limpeza (pedidos dos hóspedes)"},
     {key:"limpeza_abertos", label:"Limpeza — só Em aberto", sub:true},
+    {key:"limpeza_validades", label:"Limpeza — só Validades dos itens", sub:true},
+    {key:"limpeza_revisao", label:"Limpeza — só Revisão para entrada", sub:true},
+    {key:"recepcao_validades", label:"Recepção — só Validades dos itens", sub:true},
+    {key:"recepcao_revisao", label:"Recepção — só Revisão para entrada", sub:true},
     {key:"limpeza_maquinas", label:"Limpeza — só Máquinas de lavar (ver e marcar as limpezas)", sub:true},
     {key:"limpeza_concluidos", label:"Limpeza — só Concluídos hoje", sub:true},
     {key:"limpeza_previsao", label:"Limpeza — só Previsão 7 dias", sub:true},
@@ -14942,6 +14941,231 @@
     if(u.error){ console.error(u.error); return; }
     await carregarMaqLimpezas();
   }
+  // ---------- Retirada de item da acomodação (núcleo) + pedido de reposição ----------
+  function rerenderSecao(){ if(appSection === "limpeza") renderLimpeza(); else if(appSection === "recepcao") renderRecepcao(); else renderApp(); }
+  // Soma itens ao abastecimento PENDENTE da acomodação (ou cria um novo se não houver).
+  async function somarAoPedidoPendente(acId, itensNovos, obsTxt){
+    var pend = state.solicitacoes.find(function(x){ return x.tipo==="frigobar" && x.acomodacaoId===acId && x.status==="pendente"; });
+    if(pend){
+      var itens = (pend.itens||[]).map(function(i){ return {nome:i.nome, quantidade:i.quantidade}; });
+      itensNovos.forEach(function(n){
+        var alvo = normalizarBusca(n.nome);
+        var ex = itens.find(function(i){ return normalizarBusca(i.nome)===alvo; });
+        if(ex) ex.quantidade = (Number(ex.quantidade)||0) + (Number(n.quantidade)||1); else itens.push({nome:n.nome, quantidade:Number(n.quantidade)||1});
+      });
+      var novaObs = (pend.observacao ? pend.observacao+" | " : "") + obsTxt;
+      var up = await dbUpdate("solicitacoes_acomodacao", pend.id, {itens:itens, observacao:novaObs}, mapSolicitacaoFromRow);
+      var ix = state.solicitacoes.findIndex(function(x){ return x.id===pend.id; });
+      if(ix>-1) state.solicitacoes[ix] = up;
+      return {somou:true};
+    }
+    var novo = await dbInsert("solicitacoes_acomodacao", {id:uid(), acomodacao_id:acId, tipo:"frigobar", origem:"equipe", criado_por:(currentUser?currentUser.id:null), status:"pendente", itens:itensNovos.map(function(n){ return {nome:n.nome, quantidade:Number(n.quantidade)||1}; }), observacao:obsTxt}, mapSolicitacaoFromRow);
+    state.solicitacoes.unshift(novo);
+    return {somou:false};
+  }
+  // linhas: [{item (do estoque, pode ser null), nome, qty}]. Não mexe no saldo do estoque.
+  async function registrarRetiradas(ac, linhas, motivo, obs, repor){
+    var nota = RETIRADA_TAG+" — "+motivo+(obs?" — "+obs:"")+" (não desconta do estoque)";
+    for(var i=0;i<linhas.length;i++){
+      if(!linhas[i].item) continue;
+      var mov = await dbInsert("movements", {id:uid(), item_id:linhas[i].item.id, type:"ajuste", qty:linhas[i].qty, delta:0, note:nota, destino:ac.nome, date:new Date().toISOString()}, mapMovementFromRow);
+      state.estoque.movements.unshift(mov);
+    }
+    var msg = "Retirada registrada";
+    if(repor){
+      var obsRep = "Reposição: "+linhas.map(function(l){ return l.nome; }).join(", ")+" retirado(s) ("+motivo.toLowerCase()+")";
+      var r = await somarAoPedidoPendente(ac.id, linhas.map(function(l){ return {nome:l.nome, quantidade:l.qty}; }), obsRep);
+      msg = r.somou ? "Retirada registrada — somada ao abastecimento pendente de "+ac.nome : "Retirada registrada — abastecimento criado para "+ac.nome;
+    }
+    return msg;
+  }
+
+  // ---------- Revisão para entrada (acomodações prontas para entrada de última hora) ----------
+  var revEnt = {lista:[], carregado:false, erro:false, dia:""};
+  async function carregarRevEntrada(){
+    var hoje = hojeISO();
+    try{
+      var r = await sb.from("revisoes_entrada").select("*").eq("data", hoje);
+      if(r.error) throw r.error;
+      revEnt.lista = r.data || []; revEnt.erro = false; revEnt.dia = hoje;
+    }catch(err){ revEnt.erro = true; console.error("revisoes_entrada:", err); }
+    revEnt.carregado = true;
+  }
+  function revEntradaN(){ return (revEnt.carregado && !revEnt.erro && revEnt.dia === hojeISO()) ? revEnt.lista.length : 0; }
+  function revEntradaHtml(){
+    if(!revEnt.carregado || revEnt.dia !== hojeISO()){
+      carregarRevEntrada().then(rerenderSecao);
+      return '<div class="empty">Carregando…</div>';
+    }
+    if(revEnt.erro) return '<div class="empty">Não consegui carregar. Confira se a tabela revisoes_entrada existe no Supabase.</div>';
+    var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var prontas = {}; revEnt.lista.forEach(function(r){ prontas[r.acomodacao_id] = r; });
+    var nPront = acs.filter(function(a){ return prontas[a.id]; });
+    var h = '<p class="item-meta" style="margin:0 0 10px;">Marque as acomodações que já ficaram <b>revisadas e prontas</b> para uma entrada de última hora, como se fosse um check-in. A lista vale só para hoje e zera sozinha à meia-noite.</p>';
+    h += '<div class="card" style="background:var(--sand-50);"><p class="item-name" style="margin:0 0 4px;">Prontas para entrada hoje ('+nPront.length+')</p>' +
+      '<p class="item-meta" style="margin:0;">'+(nPront.length ? nPront.map(function(a){ return escapeHtml(a.nome); }).join(", ") : 'Nenhuma acomodação marcada ainda.')+'</p></div>';
+    acs.forEach(function(a){
+      var r = prontas[a.id];
+      h += '<div class="card" style="border-left:4px solid '+(r?'var(--teal-700)':'var(--line)')+';"><p class="item-name" style="margin:0 0 3px;">'+escapeHtml(a.nome)+'</p>';
+      if(r){
+        h += '<p class="item-meta" style="margin:0 0 6px;">'+ic("check")+' Pronta'+(r.por_nome?(' — revisada por '+escapeHtml(r.por_nome)):'')+(r.criado_em?(' às '+fmtDate(new Date(r.criado_em).getTime()).split(" ")[1]):'')+(r.obs?('<br>'+escapeHtml(r.obs)):'')+'</p>' +
+          '<div class="item-actions"><button class="btn btn-out revObs" data-id="'+r.id+'">'+ic("pencil")+' Editar obs</button><button class="btn btn-out revDes" data-id="'+r.id+'">Desmarcar</button></div>';
+      } else {
+        h += '<div class="item-actions"><button class="btn btn-in revMarcar" data-ac="'+a.id+'">'+ic("check")+' Marcar como pronta</button></div>';
+      }
+      h += '</div>';
+    });
+    return h;
+  }
+  function revEntradaLigar(main){
+    main.querySelectorAll(".revMarcar").forEach(function(b){ b.onclick = async function(){
+      var acId = b.getAttribute("data-ac");
+      var obs = prompt("Alguma observação sobre a acomodação? (pode deixar em branco)"); if(obs === null) return;
+      b.disabled = true;
+      try{
+        var hoje = hojeISO();
+        var row = {id:"rev_"+acId+"_"+hoje, acomodacao_id:acId, data:hoje, por_id:(currentUser?currentUser.id:null), por_nome:(currentUser?currentUser.nome:null), obs:(obs||"").trim()||null};
+        var u = await sb.from("revisoes_entrada").upsert(row, {onConflict:"id"}); if(u.error) throw u.error;
+        await carregarRevEntrada(); rerenderSecao();
+      }catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
+    }; });
+    main.querySelectorAll(".revDes").forEach(function(b){ b.onclick = async function(){
+      if(!confirm("Desmarcar esta acomodação como pronta?")) return;
+      b.disabled = true;
+      try{ var d = await sb.from("revisoes_entrada").delete().eq("id", b.getAttribute("data-id")); if(d.error) throw d.error; await carregarRevEntrada(); rerenderSecao(); }
+      catch(err){ console.error(err); showToast("Não consegui desmarcar"); b.disabled = false; }
+    }; });
+    main.querySelectorAll(".revObs").forEach(function(b){ b.onclick = async function(){
+      var r = revEnt.lista.find(function(x){ return x.id === b.getAttribute("data-id"); }); if(!r) return;
+      var obs = prompt("Observação:", r.obs || ""); if(obs === null) return;
+      b.disabled = true;
+      try{ var u = await sb.from("revisoes_entrada").update({obs:(obs||"").trim()||null}).eq("id", r.id); if(u.error) throw u.error; await carregarRevEntrada(); rerenderSecao(); }
+      catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
+    }; });
+  }
+
+  // ---------- Validades: itens próximos de vencer nas acomodações ----------
+  // Avisa 1 dia antes da validade (retirar antes de vencer) e, ao retirar, já cria/soma o abastecimento.
+  var vld = {lista:[], carregado:false, erro:false};
+  async function carregarValidades(){
+    try{
+      var r = await sb.from("validades_itens").select("*").order("validade",{ascending:true}).limit(600);
+      if(r.error) throw r.error;
+      vld.lista = r.data || []; vld.erro = false;
+    }catch(err){ vld.erro = true; console.error("validades_itens:", err); }
+    vld.carregado = true;
+  }
+  function vldDia(v){ return String(v.validade).slice(0,10); }
+  function vldRetirarEm(v){ return isoLocal(new Date(parseDataLocal(vldDia(v)).getTime() - 86400000 + 3600000)); }
+  function vldPendentesN(){
+    if(!vld.carregado || vld.erro) return 0;
+    var hoje = hojeISO();
+    return vld.lista.filter(function(v){ return v.status === "pendente" && vldRetirarEm(v) <= hoje; }).length;
+  }
+  function vldHtml(){
+    if(!vld.carregado){
+      carregarValidades().then(rerenderSecao);
+      return '<div class="empty">Carregando…</div>';
+    }
+    if(vld.erro) return '<div class="empty">Não consegui carregar. Confira se a tabela validades_itens existe no Supabase.</div>';
+    var hoje = hojeISO();
+    var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var catalogo = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Lojinha"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    var inp = 'padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);width:100%;box-sizing:border-box;margin-bottom:8px;';
+    var h = '<p class="item-meta" style="margin:0 0 10px;">Lance o item que está perto de vencer em uma acomodação. O app avisa <b>1 dia antes</b> da validade para retirar; ao confirmar a retirada, já cria (ou soma) o abastecimento de reposição.</p>';
+    h += '<div class="card"><p class="item-name" style="margin:0 0 8px;">Lançar item próximo de vencer</p>' +
+      '<select id="vldAc" style="'+inp+'"><option value="">Acomodação…</option>'+acs.map(function(a){ return '<option value="'+a.id+'">'+escapeHtml(a.nome)+'</option>'; }).join("")+'</select>' +
+      '<select id="vldItem" style="'+inp+'"><option value="">Item…</option>'+catalogo.map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("")+'<option value="__outro">Outro item (digitar)…</option></select>' +
+      '<input type="text" id="vldItemOutro" placeholder="Nome do item" style="'+inp+'display:none;">' +
+      '<div style="display:flex;gap:8px;"><input type="number" id="vldQtd" min="1" step="1" value="1" style="'+inp+'flex:0 0 90px;" aria-label="Quantidade"><input type="date" id="vldData" style="'+inp+'flex:1;" aria-label="Validade"></div>' +
+      '<p class="item-meta" style="margin:-2px 0 8px;">Quantidade e data de validade do item.</p>' +
+      '<input type="text" id="vldObs" placeholder="Observação (opcional)" style="'+inp+'">' +
+      '<div class="item-actions"><button class="btn btn-in" id="vldAdd" style="flex:1;">+ Lançar</button></div></div>';
+    var pend = vld.lista.filter(function(v){ return v.status === "pendente"; }).sort(function(a,b){ return vldDia(a).localeCompare(vldDia(b)); });
+    h += '<div class="section-title">A retirar ('+pend.length+')</div>';
+    if(!pend.length) h += '<div class="empty">Nenhum item lançado para retirar.</div>';
+    pend.forEach(function(v){
+      var re = vldRetirarEm(v), venc = vldDia(v) < hoje, agora = re <= hoje;
+      var cor = venc ? 'var(--red-600)' : agora ? 'var(--amber-600)' : 'var(--line)';
+      var etiqueta = venc ? 'VENCIDO em '+dataBr(vldDia(v)) : agora ? 'Retirar hoje (vence '+dataBr(vldDia(v))+')' : 'Retirar em '+dataBr(re)+' (vence '+dataBr(vldDia(v))+')';
+      h += '<div class="card" style="border-left:4px solid '+cor+';"><p class="item-name" style="margin:0 0 3px;">'+escapeHtml(v.item_nome)+' ('+(Number(v.quantidade)||1)+') — '+escapeHtml(acomodacaoNome(v.acomodacao_id))+'</p>' +
+        '<p class="item-meta" style="margin:0 0 6px;'+(agora?'color:'+cor+';font-weight:700;':'')+'">'+(agora?ic("warning")+' ':'')+etiqueta+(v.obs?('<br>'+escapeHtml(v.obs)):'')+'</p>' +
+        '<div class="item-actions"><button class="btn btn-in vldRet" data-id="'+v.id+'">Retirado</button><button class="btn btn-out vldEd" data-id="'+v.id+'">'+ic("pencil")+' Editar</button><button class="btn btn-out vldEx" data-id="'+v.id+'">'+ic("trash")+' Excluir</button></div></div>';
+    });
+    var ret = vld.lista.filter(function(v){ return v.status === "retirado"; }).sort(function(a,b){ return String(b.retirado_em||"").localeCompare(String(a.retirado_em||"")); }).slice(0,10);
+    if(ret.length){
+      h += '<div class="section-title">Retirados recentemente</div>';
+      ret.forEach(function(v){
+        h += '<div class="card" style="opacity:.85;"><p class="item-name" style="margin:0 0 3px;">'+escapeHtml(v.item_nome)+' ('+(Number(v.quantidade)||1)+') — '+escapeHtml(acomodacaoNome(v.acomodacao_id))+'</p>' +
+          '<p class="item-meta" style="margin:0 0 6px;">'+ic("check")+' Retirado'+(v.retirado_por_nome?(' por '+escapeHtml(v.retirado_por_nome)):'')+(v.retirado_em?(' em '+dataBr(isoLocal(new Date(v.retirado_em)))):'')+' · validade '+dataBr(vldDia(v))+'</p>' +
+          '<div class="item-actions"><button class="btn btn-out vldEx" data-id="'+v.id+'">'+ic("trash")+' Excluir</button></div></div>';
+      });
+    }
+    return h;
+  }
+  function vldLigar(main){
+    var sel = main.querySelector("#vldItem");
+    if(sel) sel.onchange = function(){ main.querySelector("#vldItemOutro").style.display = sel.value === "__outro" ? "block" : "none"; };
+    var add = main.querySelector("#vldAdd");
+    if(add) add.onclick = async function(){
+      var acId = main.querySelector("#vldAc").value;
+      var nome = sel.value === "__outro" ? main.querySelector("#vldItemOutro").value.trim() : sel.value;
+      var qtd = parseFloat(main.querySelector("#vldQtd").value) || 0, data = main.querySelector("#vldData").value;
+      if(!acId){ showToast("Escolha a acomodação"); return; }
+      if(!nome){ showToast("Escolha o item"); return; }
+      if(qtd <= 0){ showToast("Informe a quantidade"); return; }
+      if(!data){ showToast("Informe a data de validade"); return; }
+      add.disabled = true;
+      try{
+        var r = await sb.from("validades_itens").insert({id:uid(), acomodacao_id:acId, item_nome:nome, quantidade:qtd, validade:data, status:"pendente", obs:(main.querySelector("#vldObs").value.trim()||null), criado_por_nome:(currentUser?currentUser.nome:null)});
+        if(r.error) throw r.error;
+        await carregarValidades(); showToast("Lançado — aviso 1 dia antes da validade"); rerenderSecao();
+      }catch(err){ console.error(err); showToast("Não consegui salvar"); add.disabled = false; }
+    };
+    main.querySelectorAll(".vldRet").forEach(function(b){ b.onclick = async function(){
+      var v = vld.lista.find(function(x){ return x.id === b.getAttribute("data-id"); }); if(!v) return;
+      var ac = state.acomodacoes.find(function(a){ return a.id === v.acomodacao_id; });
+      if(!ac){ showToast("Acomodação não encontrada"); return; }
+      if(!podeEditar("estoque") && !podeEditar("limpeza") && !podeEditar("recepcao") && !(currentUser && currentUser.role === "admin")){ /* segue: quem vê a aba pode retirar */ }
+      if(!confirm("Confirmar que "+v.item_nome+" foi retirado de "+ac.nome+"? Será criado (ou somado) um abastecimento de reposição.")) return;
+      b.disabled = true;
+      try{
+        var item = itemEstoquePorNome(v.item_nome) || null;
+        var motivo = vldDia(v) < hojeISO() ? "Vencido" : "Próximo do vencimento";
+        var msg = await registrarRetiradas(ac, [{item:item, nome:v.item_nome, qty:Number(v.quantidade)||1}], motivo, "validade "+dataBr(vldDia(v)), true);
+        var u = await sb.from("validades_itens").update({status:"retirado", retirado_em:new Date().toISOString(), retirado_por_nome:(currentUser?currentUser.nome:null)}).eq("id", v.id); if(u.error) throw u.error;
+        await carregarValidades(); showToast(msg); rerenderSecao();
+      }catch(err){ console.error(err); showToast("Erro ao registrar a retirada"); b.disabled = false; }
+    }; });
+    main.querySelectorAll(".vldEx").forEach(function(b){ b.onclick = async function(){
+      if(!confirm("Excluir este lançamento?")) return;
+      b.disabled = true;
+      try{ var d = await sb.from("validades_itens").delete().eq("id", b.getAttribute("data-id")); if(d.error) throw d.error; await carregarValidades(); rerenderSecao(); }
+      catch(err){ console.error(err); showToast("Não consegui excluir"); b.disabled = false; }
+    }; });
+    main.querySelectorAll(".vldEd").forEach(function(b){ b.onclick = function(){
+      var v = vld.lista.find(function(x){ return x.id === b.getAttribute("data-id"); }); if(!v) return;
+      var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b2){ return (a.ordem||0)-(b2.ordem||0); });
+      restAbrirSheet("Editar lançamento",
+        '<label>Acomodação</label><select id="veAc" style="'+REST_INPUT+'margin-bottom:10px;">'+acs.map(function(a){ return '<option value="'+a.id+'"'+(a.id===v.acomodacao_id?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("")+'</select>' +
+        '<label>Item</label><input type="text" id="veItem" value="'+escapeHtml(v.item_nome)+'" style="'+REST_INPUT+'margin-bottom:10px;">' +
+        '<label>Quantidade</label><input type="number" id="veQtd" min="1" step="1" value="'+(Number(v.quantidade)||1)+'" style="'+REST_INPUT+'margin-bottom:10px;">' +
+        '<label>Validade</label><input type="date" id="veData" value="'+vldDia(v)+'" style="'+REST_INPUT+'margin-bottom:10px;">' +
+        '<label>Observação</label><input type="text" id="veObs" value="'+escapeHtml(v.obs||"")+'" style="'+REST_INPUT+'margin-bottom:10px;">' +
+        '<div class="sheet-actions"><button type="button" class="btn-secondary" id="veCancel">Cancelar</button><button type="button" class="btn-primary" id="veSalvar">Salvar</button></div>');
+      document.getElementById("veCancel").onclick = restFecharSheet;
+      document.getElementById("veSalvar").onclick = async function(){
+        var nome = document.getElementById("veItem").value.trim(), qtd = parseFloat(document.getElementById("veQtd").value) || 0, data = document.getElementById("veData").value;
+        if(!nome || qtd <= 0 || !data){ showToast("Preencha item, quantidade e validade"); return; }
+        this.disabled = true;
+        try{
+          var u = await sb.from("validades_itens").update({acomodacao_id:document.getElementById("veAc").value, item_nome:nome, quantidade:qtd, validade:data, obs:(document.getElementById("veObs").value.trim()||null)}).eq("id", v.id); if(u.error) throw u.error;
+          restFecharSheet(); await carregarValidades(); rerenderSecao();
+        }catch(err){ console.error(err); showToast("Não consegui salvar"); this.disabled = false; }
+      };
+    }; });
+  }
+
   function maqRerender(){ if(appSection === "limpeza") renderLimpeza(); else renderTarefasDia(); }
   function maqPendentesN(){
     var hoje = hojeISO();
