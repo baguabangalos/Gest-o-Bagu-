@@ -900,8 +900,14 @@
         <option value="media" selected>Média</option>
         <option value="baixa">Baixa</option>
       </select>
+      <label>Tipo</label>
+      <select id="mn_categoria">
+        <option value="predial">Prédio (estrutura, áreas comuns, externo)</option>
+        <option value="acomodacao">Acomodação — reparo ou troca de móvel</option>
+      </select>
       <label>Local (opcional)</label>
-      <input type="text" id="mn_local" placeholder="Ex: Bangalô 3">
+      <input type="text" id="mn_local" placeholder="Ex: Bangalô 3" list="mn_localLista">
+      <datalist id="mn_localLista"></datalist>
       <label>Responsável (opcional)</label>
       <input type="text" id="mn_responsavel" placeholder="Ex: João (equipe) ou nome do prestador">
       <label>Descrição (opcional)</label>
@@ -1168,7 +1174,7 @@
       hospedePresenca:r.hospede_presenca||null, hospedeEntrada:r.hospede_entrada||null, hospedeHorario:r.hospede_horario||null, hospedeRecado:r.hospede_recado||null,
       confPresenca:r.conf_presenca||null, confPode:r.conf_pode||null, confHorario:r.conf_horario||null, confAutoriza:!!r.conf_autoriza, confRecado:r.conf_recado||null,
       confEm:(r.conf_em?new Date(r.conf_em).getTime():null), confPorNome:r.conf_por_nome||null, pausadoEm:(r.pausado_em?new Date(r.pausado_em).getTime():null),
-      criadoPor:r.criado_por||null, criadoPorNome:r.criado_por_nome||null,
+      criadoPor:r.criado_por||null, criadoPorNome:r.criado_por_nome||null, categoria:r.categoria||null,
       atualizadoPor:r.atualizado_por||null, atualizadoPorNome:r.atualizado_por_nome||null,
       atualizadoEm:(r.atualizado_em?new Date(r.atualizado_em).getTime():null)};
   }
@@ -6529,6 +6535,14 @@
   var equipTipoSel = "__todos";
   function equipTipoKey(t){ return (t||"").trim().toLowerCase(); }
   function equipTipoLabel(k){ var f = state.equipamentos.find(function(e){ return equipTipoKey(e.tipo)===k; }); return f ? f.tipo.trim() : k; }
+  var manutCat = "todas"; // filtro: todas | predial | acomodacao
+  function manutCategoria(m){
+    if(m.categoria === "predial" || m.categoria === "acomodacao") return m.categoria;
+    if(m.origem === "hospede" || m.origem === "limpeza") return "acomodacao";
+    var l = normalizarBusca(m.local||"");
+    if(l && state.acomodacoes.some(function(a){ return normalizarBusca(a.nome) === l; })) return "acomodacao";
+    return "predial";
+  }
   var manutencaoBusca = ""; // texto digitado na busca de manutenções (serviço, local, responsável)
 
   // Painel simples "onde posso ir agora" — pensado especificamente pra quem
@@ -6708,6 +6722,8 @@
       return b.createdAt-a.createdAt;
     });
     var done = state.manutencoes.filter(function(m){ return m.status==="concluida"; }).sort(function(a,b){ return (b.resolvedAt||0)-(a.resolvedAt||0); });
+    var nPendPred = pend.filter(function(m){ return manutCategoria(m)==="predial"; }).length;
+    var nPendAc = pend.length - nPendPred;
     var equipAtencao = podeVer("equipamentos") ? state.equipamentos.filter(function(e){ return e.status==="em_conserto" || isEquipamentoVencido(e); }).length : 0;
     var html = '<div class="seg-toggle">' +
       '<button data-msub="pendentes" class="'+(manutencaoSubView==="pendentes"?"active":"")+'">Pendentes'+(pend.length?(' · '+pend.length):'')+'</button>' +
@@ -6734,15 +6750,18 @@
     if(manutencaoSubView === "equipamentos") manutencaoSubView = "pendentes";
     html += '<input type="text" id="manutBusca" placeholder="Buscar por serviço, local ou responsável…" value="'+escapeHtml(manutencaoBusca)+'" style="width:100%;padding:11px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;background:var(--sand-50);font-family:inherit;">';
     var list = manutencaoSubView === "pendentes" ? pend : done;
+    if(manutCat !== "todas") list = list.filter(function(m){ return manutCategoria(m) === manutCat; });
+    var catChip = function(k, lbl, n){ var on = manutCat===k; return '<button type="button" data-mcat="'+k+'" style="flex:1;padding:10px 6px;border-radius:10px;border:1px solid '+(on?'var(--teal-700)':'var(--line)')+';background:'+(on?'var(--teal-700)':'var(--sand-50)')+';color:'+(on?'#fff':'var(--ink-900)')+';font-family:inherit;font-size:13px;font-weight:700;">'+lbl+(n?(' · '+n):'')+'</button>'; };
+    html += '<div style="display:flex;gap:6px;margin-bottom:10px;">' + catChip("todas","Todas",manutencaoSubView==="pendentes"?pend.length:0) + catChip("predial","Prédio",manutencaoSubView==="pendentes"?nPendPred:0) + catChip("acomodacao","Acomodações / móveis",manutencaoSubView==="pendentes"?nPendAc:0) + '</div>';
     if(list.length === 0){
-      html += '<div class="empty">'+(manutencaoSubView==="pendentes" ? 'Nenhuma pendência. Toque em "+" para registrar uma.' : 'Nenhuma manutenção concluída ainda.')+'</div>';
+      html += '<div class="empty">'+(manutencaoSubView==="pendentes" ? 'Nenhuma pendência'+(manutCat==="predial"?' do prédio':manutCat==="acomodacao"?' de acomodações':'')+'. Toque em "+" para registrar uma.' : 'Nenhuma manutenção concluída ainda.')+'</div>';
     } else {
       var lixoManut = podeExcluir("manutencao") ? '<button class="btn-edit" data-act="excluir" data-id="{ID}" title="Excluir">'+ic("trash")+'</button>' : '';
       list.forEach(function(m){
         var pInfo = PRIORIDADE_INFO[m.prioridade] || PRIORIDADE_INFO.media;
         var textoBusca = normalizarBusca([m.title, m.local, m.responsavel, m.description].join(" "));
         html += '<div class="card manut-card" data-id="'+m.id+'" data-busca="'+escapeHtml(textoBusca)+'" style="border-left:4px solid '+pInfo.cor+';">' +
-          '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+pInfo.cor+';margin-bottom:4px;">'+pInfo.label+'</span>' +
+          '<span style="display:inline-block;font-size:11px;font-weight:800;color:'+pInfo.cor+';margin-bottom:4px;">'+pInfo.label+'</span> <span style="display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--sand-200);color:var(--ink-600,#555);margin-left:4px;">'+(manutCategoria(m)==="predial"?"Prédio":"Acomodação / móvel")+'</span>' +
           '<p class="item-name" style="margin:0 0 3px;">'+escapeHtml(m.title)+(m.local?' <span style="color:var(--ink-400);font-weight:600;font-size:12px;">— '+escapeHtml(m.local)+'</span>':'')+'</p>';
         if(m.responsavel) html += '<p class="item-meta" style="color:var(--teal-700);font-weight:700;">'+ic("user")+' '+escapeHtml(m.responsavel)+'</p>';
         if(m.description) html += '<p class="item-meta" style="white-space:pre-wrap;margin-bottom:6px;">'+escapeHtml(m.description)+'</p>';
@@ -6769,6 +6788,9 @@
     });
     // Busca: só esconde/mostra os cards já desenhados (não redesenha a tela,
     // pra não perder o foco do campo enquanto a pessoa digita).
+    main.querySelectorAll("[data-mcat]").forEach(function(b){
+      b.onclick = function(){ manutCat = b.getAttribute("data-mcat"); renderManutencoes(); };
+    });
     var buscaInp = document.getElementById("manutBusca");
     function aplicarFiltroManutencoes(){
       var q = normalizarBusca(manutencaoBusca.trim());
@@ -16558,6 +16580,8 @@
     document.getElementById("mn_responsavel").value = m ? (m.responsavel||"") : "";
     document.getElementById("mn_desc").value = m ? (m.description||"") : "";
     document.getElementById("mn_prioridade").value = m ? (m.prioridade||"media") : "media";
+    document.getElementById("mn_categoria").value = m ? manutCategoria(m) : (manutCat==="acomodacao" ? "acomodacao" : "predial");
+    document.getElementById("mn_localLista").innerHTML = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); }).map(function(a){ return '<option value="'+escapeHtml(a.nome)+'"></option>'; }).join("");
     document.getElementById("mn_resolutionNote").value = m ? (m.resolutionNote||"") : "";
     document.getElementById("mn_resolveWrap").style.display = (m && m.status==="concluida") ? "block" : "none";
     document.getElementById("manutencaoIniciarBtn").style.display = (m && m.status==="pendente") ? "block" : "none";
@@ -16594,17 +16618,18 @@
     var description = document.getElementById("mn_desc").value.trim();
     var resolutionNote = document.getElementById("mn_resolutionNote").value.trim();
     var prioridade = document.getElementById("mn_prioridade").value;
+    var categoria = document.getElementById("mn_categoria").value;
     try{
       if(editingManutencaoId){
         var mCur = state.manutencoes.find(function(x){ return x.id===editingManutencaoId; });
-        var payload = {title:title, local:local, responsavel:responsavel, description:description, prioridade:prioridade};
+        var payload = {title:title, local:local, responsavel:responsavel, description:description, prioridade:prioridade, categoria:categoria};
         if(mCur && mCur.status === "concluida") payload.resolution_note = resolutionNote;
         var m1 = await dbUpdate("manutencoes", editingManutencaoId, payload, mapManutencaoFromRow);
         var idx1 = state.manutencoes.findIndex(function(x){ return x.id===editingManutencaoId; });
         if(idx1>-1) state.manutencoes[idx1] = m1;
         showToast("Manutenção atualizada");
       } else {
-        var m2 = await dbInsert("manutencoes", {id:uid(), title:title, local:local, responsavel:responsavel, description:description, status:"pendente", origem:"manual", prioridade:prioridade}, mapManutencaoFromRow);
+        var m2 = await dbInsert("manutencoes", {id:uid(), title:title, local:local, responsavel:responsavel, description:description, status:"pendente", origem:"manual", prioridade:prioridade, categoria:categoria}, mapManutencaoFromRow);
         state.manutencoes.push(m2);
         showToast("Manutenção registrada");
       }
