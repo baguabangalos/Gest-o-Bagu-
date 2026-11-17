@@ -4199,6 +4199,7 @@
           '<div style="display:flex;gap:8px;">' +
           '<button type="button" class="pedidoChegouBtn" data-id="'+p.id+'" style="flex:1;background:var(--teal-700);color:#fff;border:none;border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("check")+' Chegou</button>' +
           (podeEditar("estoque") ? '<button type="button" class="pedidoEditarBtn" data-id="'+p.id+'" style="background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px 16px;font-family:inherit;font-size:13.5px;font-weight:700;">Editar</button>' : '') +
+          (podeExcluir("estoque") ? '<button type="button" class="pedidoExcluirBtn" data-id="'+p.id+'" style="background:var(--sand-100);color:var(--red-600);border:1px solid var(--line);border-radius:9px;padding:10px 16px;font-family:inherit;font-size:13.5px;font-weight:700;">'+ic("trash")+' Excluir</button>' : '') +
           '</div>' +
         '</div>';
       });
@@ -4211,8 +4212,11 @@
         var itensTxt = p.itens.map(function(it){ return escapeHtml(it.nome)+" ("+it.quantidade+")"; }).join(", ");
         html += '<div style="'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
           '<p style="margin:0 0 4px;font-size:13.5px;font-weight:700;">'+itensTxt+'</p>' +
-          '<p class="item-meta" style="margin-bottom:'+(podeEditar("estoque")?'8px':'0')+';">pedido em '+fmtDateOnly(p.criadoEm)+' · chegou em '+(p.recebidoEm?fmtDateOnly(p.recebidoEm):'—')+'</p>' +
+          '<p class="item-meta" style="margin-bottom:'+((podeEditar("estoque")||podeExcluir("estoque"))?'8px':'0')+';">pedido em '+fmtDateOnly(p.criadoEm)+' · chegou em '+(p.recebidoEm?fmtDateOnly(p.recebidoEm):'—')+'</p>' +
+          '<div style="display:flex;gap:8px;">' +
           (podeEditar("estoque") ? '<button type="button" class="pedidoEditarBtn" data-id="'+p.id+'" style="background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:7px 14px;font-family:inherit;font-size:12.5px;font-weight:700;">Editar datas</button>' : '') +
+          (podeExcluir("estoque") ? '<button type="button" class="pedidoExcluirBtn" data-id="'+p.id+'" style="background:var(--sand-100);color:var(--red-600);border:1px solid var(--line);border-radius:9px;padding:7px 14px;font-family:inherit;font-size:12.5px;font-weight:700;">'+ic("trash")+' Excluir</button>' : '') +
+          '</div>' +
         '</div>';
       });
       html += '</div>';
@@ -4229,6 +4233,22 @@
       btn.onclick = function(){
         var p = (state.estoque.pedidosCompra||[]).find(function(x){ return x.id === btn.getAttribute("data-id"); });
         if(p) abrirEditarPedidoSheet(p);
+      };
+    });
+    el.querySelectorAll(".pedidoExcluirBtn").forEach(function(btn){
+      btn.onclick = async function(){
+        var p = (state.estoque.pedidosCompra||[]).find(function(x){ return x.id === btn.getAttribute("data-id"); });
+        if(!p) return;
+        if(!podeExcluir("estoque")){ showToast("Você não tem permissão para excluir"); return; }
+        var msg = p.status === "recebido" ? "Excluir este pedido que já chegou? O estoque NÃO volta atrás: só o registro do pedido é apagado." : "Excluir este pedido de compra? Não dá para desfazer.";
+        if(!confirm(msg)) return;
+        btn.disabled = true;
+        try{
+          await dbDelete("pedidos_compra", p.id);
+          state.estoque.pedidosCompra = state.estoque.pedidosCompra.filter(function(x){ return x.id !== p.id; });
+          showToast("Pedido excluído");
+          renderPedidosCompraSection();
+        }catch(err){ console.error(err); showToast("Não consegui excluir o pedido"); btn.disabled = false; }
       };
     });
     document.getElementById("novoPedidoCompraBtn").onclick = abrirNovoPedidoCompraSheet;
