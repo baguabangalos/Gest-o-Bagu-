@@ -4438,10 +4438,10 @@
     var itens = [];
     linhas.forEach(function(cel){
       if(cel.length < 4) return;
-      if(!/^\d+$/.test(cel[0])) return;
+      var temCod = /^\d+$/.test(cel[0]);
       // descrição: a maior célula com letras, que não seja rótulo
       var iDesc = -1, melhor = 0;
-      cel.forEach(function(c, i){ if(i>0 && /[A-Za-zÀ-ú]{3,}/.test(c) && !/:\s*$/.test(c) && !UNID.test(c) && c.length > melhor){ melhor = c.length; iDesc = i; } });
+      cel.forEach(function(c, i){ if((i>0 || !temCod) && /[A-Za-zÀ-ú]{3,}/.test(c) && !/:\s*$/.test(c) && !UNID.test(c) && c.length > melhor){ melhor = c.length; iDesc = i; } });
       if(iDesc < 0) return;
       var desc = cel[iDesc].replace(/\s+/g," ").trim();
       var iBar = -1, iUn = -1;
@@ -4591,7 +4591,7 @@
     function mostrarRevisaoDoc(linhasDoc){
       var rev = document.getElementById("pedidoDocRevisao");
         var itensOrdenados = todosItens;
-        var h = '<p style="margin:0 0 8px;font-size:13px;font-weight:700;">Conferir '+linhasDoc.length+' item(ns) do documento</p>';
+        var h = '<p style="margin:0 0 4px;font-size:13px;font-weight:700;">Conferir '+linhasDoc.length+' item(ns) do documento</p><p class="item-meta" style="margin:0 0 8px;color:var(--amber-600);font-weight:700;">Confira se o número de itens bate com o do seu pedido. Se faltar algum, adicione em "Itens pedidos" logo abaixo.</p>';
         linhasDoc.forEach(function(l, i){
           var m = itemPorLinhaFornecedor(l);
           h += '<div class="card" style="margin-bottom:8px;padding:10px 12px;" data-doc-idx="'+i+'">' +
