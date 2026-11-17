@@ -1632,7 +1632,7 @@
     recepcao:      {view:"recepcaoView", attr:"data-rsub", abas:{abastecimento:"recepcao_solicitacoes", limpeza:"recepcao_limpeza", avulsos:"recepcao_avulsos", chegadas:"recepcao_chegadas", entrada:"recepcao_entrada", chuvas:"recepcao_chuvas", qr:"recepcao_qr", validades:"recepcao_validades", revisao:"recepcao_revisao"}},
     servico_geral: {view:"servicoGeralView", attr:"data-sgsub", abas:{jacuzzi:"servico_geral_jacuzzi", predial:"servico_geral_predial"}},
     escala_trabalho:{view:"escalaView", attr:"data-eqsub", abas:{calendario:"escala_horarios", trocas:"escala_trocas", horarios:"escala_horarios", folga:"escala_folga", guarda:"escala_guarda", feriados:"escala_feriados", setor:"escala_setor"}},
-    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada", maquinas:"limpeza_maquinas", validades:"limpeza_validades", revisao:"limpeza_revisao"}},
+    limpeza:       {view:"limpezaView", attr:"data-lsub", abas:{abertos:"limpeza_abertos", concluidos:"limpeza_concluidos", previsao:"limpeza_previsao", entrada:"limpeza_entrada", maquinas:"limpeza_maquinas", lavgeral:"limpeza_lavgeral", validades:"limpeza_validades", revisao:"limpeza_revisao"}},
     manutencao:    {view:"manutencoesView", attr:"data-msub", abas:{pendentes:"manutencao_pendentes", concluidas:"manutencao_concluidas", equipamentos:"equipamentos"}}
   };
   var PERM_ACOES = {
@@ -2105,6 +2105,7 @@
     state = await loadAllFromSupabase();
     carregarTarefasDia().then(function(){ if(appSection==="home" || appSection==="tarefasdia") renderApp(); });
     carregarValidades().then(function(){ if(appSection==="limpeza" || appSection==="recepcao") renderApp(); });
+    carregarLavGeral().then(function(){ if(appSection==="limpeza") renderApp(); });
     carregarAguardando().then(function(){ if(appSection==="abastecimento") renderApp(); });
     carregarRevEntrada().then(function(){ if(appSection==="limpeza" || appSection==="recepcao") renderApp(); });
     carregarMaqLimpezas().then(function(){ return garantirRotinasMaquinas(); }).catch(function(){}).then(function(){ if(appSection==="home" || appSection==="limpeza") renderApp(); });
@@ -2795,7 +2796,7 @@
     recepcao:{abastecimento:"Solicitações", limpeza:"Limpeza", avulsos:"Avulsos", chegadas:"Chegadas", entrada:"Pendências de entrada", chuvas:"Guarda-chuvas", qr:"QR Code", validades:"Validades", revisao:"Revisão p/ entrada"},
     servico_geral:{jacuzzi:"Jacuzzi", predial:"Manutenção Predial"},
     escala_trabalho:{calendario:"Calendário", trocas:"Trocas", horarios:"Horários", folga:"Folga", guarda:"Guarda", feriados:"Feriados", setor:"Setor"},
-    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada", maquinas:"Máquinas", validades:"Validades", revisao:"Revisão p/ entrada"},
+    limpeza:{abertos:"Em aberto", concluidos:"Concluídos hoje", previsao:"Previsão 7 dias", entrada:"Pendências de entrada", maquinas:"Máquinas", lavgeral:"Lavagem geral", validades:"Validades", revisao:"Revisão p/ entrada"},
     manutencao:{pendentes:"Pendentes", concluidas:"Concluídas", equipamentos:"Equipamentos"}
   };
   var ABAS_MODULO_NOME = {restaurante:"Restaurante", recepcao:"Recepção", servico_geral:"Serviço Geral", escala_trabalho:"Equipe", limpeza:"Limpeza", manutencao:"Manutenções"};
@@ -10565,6 +10566,7 @@
       '<button data-lsub="validades" class="'+(limpezaSubView==="validades"?"active":"")+'">Validades'+(vldPendentesN()?(' · '+vldPendentesN()):'')+'</button>' +
       '<button data-lsub="revisao" class="'+(limpezaSubView==="revisao"?"active":"")+'">Revisão p/ entrada'+(revEntradaN()?(' · '+revEntradaN()):'')+'</button>' +
       '<button data-lsub="maquinas" class="'+(limpezaSubView==="maquinas"?"active":"")+'">Máquinas'+(maqPendentesN()?(' · '+maqPendentesN()):'')+'</button>' +
+      '<button data-lsub="lavgeral" class="'+(limpezaSubView==="lavgeral"?"active":"")+'">Lavagem geral'+(lavgPendentesN()?(' · '+lavgPendentesN()):'')+'</button>' +
       '<button data-lsub="entrada" class="'+(limpezaSubView==="entrada"?"active":"")+'">Pendências de entrada'+(pendenciasEntradaAbertas("limpeza").length?(' · '+pendenciasEntradaAbertas("limpeza").length):'')+'</button>' +
     '</div>';
 
@@ -10574,6 +10576,8 @@
       html += vldHtml();
     } else if(limpezaSubView === "revisao"){
       html += revEntradaHtml();
+    } else if(limpezaSubView === "lavgeral"){
+      html += lavgHtml();
     } else if(limpezaSubView === "maquinas"){
       html += maqLimpezaHtml();
     } else if(limpezaSubView === "abertos"){
@@ -10667,6 +10671,7 @@
     }
     main.innerHTML = html;
     if(limpezaSubView === "maquinas") maqLimpezaLigar(main);
+    if(limpezaSubView === "lavgeral") lavgLigar(main);
     if(limpezaSubView === "validades") vldLigar(main);
     if(limpezaSubView === "revisao") revEntradaLigar(main);
     if(limpezaSubView === "entrada") ligarPendenciasEntrada(main, renderLimpeza);
@@ -14563,6 +14568,7 @@
     {key:"limpeza", label:"Limpeza (pedidos dos hóspedes)"},
     {key:"limpeza_abertos", label:"Limpeza — só Em aberto", sub:true},
     {key:"limpeza_validades", label:"Limpeza — só Validades dos itens", sub:true},
+    {key:"limpeza_lavgeral", label:"Limpeza — só Lavagem geral", sub:true},
     {key:"limpeza_revisao", label:"Limpeza — só Revisão para entrada", sub:true},
     {key:"recepcao_validades", label:"Recepção — só Validades dos itens", sub:true},
     {key:"recepcao_revisao", label:"Recepção — só Revisão para entrada", sub:true},
@@ -15288,6 +15294,119 @@
           restFecharSheet(); await carregarValidades(); rerenderSecao();
         }catch(err){ console.error(err); showToast("Não consegui salvar"); this.disabled = false; }
       };
+    }; });
+  }
+
+  // ---------- Lavagem geral: lavagens pesadas, a cada 1 ou 2 meses ----------
+  var lavg = {lista:[], carregado:false, erro:false};
+  async function carregarLavGeral(){
+    try{
+      var r = await sb.from("lavagens_gerais").select("*").order("proxima_em",{ascending:true}).limit(500);
+      if(r.error) throw r.error;
+      lavg.lista = r.data || []; lavg.erro = false;
+    }catch(err){ lavg.erro = true; console.error("lavagens_gerais:", err); }
+    lavg.carregado = true;
+  }
+  function lavgSomaMeses(iso, n){
+    var d = parseDataLocal(String(iso).slice(0,10)); var dia = d.getDate();
+    d.setDate(1); d.setMonth(d.getMonth() + n);
+    var ult = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+    d.setDate(Math.min(dia, ult));
+    return isoLocal(d);
+  }
+  function lavgPendentesN(){
+    if(!lavg.carregado || lavg.erro) return 0;
+    var hoje = hojeISO();
+    return lavg.lista.filter(function(x){ return x.ativo !== false && String(x.proxima_em).slice(0,10) <= hoje; }).length;
+  }
+  function lavgDiasAte(iso){ return Math.round((parseDataLocal(String(iso).slice(0,10)).getTime() - parseDataLocal(hojeISO()).getTime())/86400000); }
+  function lavgHtml(){
+    if(!lavg.carregado){ carregarLavGeral().then(rerenderSecao); return '<div class="empty">Carregando…</div>'; }
+    if(lavg.erro) return '<div class="empty">Não consegui carregar. Confira se a tabela lavagens_gerais existe no Supabase.</div>';
+    var hoje = hojeISO();
+    var h = '<p class="item-meta" style="margin:0 0 10px;">Lavagens pesadas que se repetem a cada <b>1 ou 2 meses</b>. Ao marcar como feita, o app já calcula a próxima.</p>';
+    h += '<button class="btn btn-in" id="lavgNova" style="width:100%;margin-bottom:12px;">+ Criar lavagem geral</button>';
+    var itens = lavg.lista.filter(function(x){ return x.ativo !== false; }).sort(function(a,b){ return String(a.proxima_em).localeCompare(String(b.proxima_em)); });
+    if(!itens.length) return h + '<div class="empty">Nenhuma lavagem geral cadastrada. Toque em "Criar lavagem geral".</div>';
+    var atras = itens.filter(function(x){ return String(x.proxima_em).slice(0,10) < hoje; });
+    var hojeL = itens.filter(function(x){ return String(x.proxima_em).slice(0,10) === hoje; });
+    var prox = itens.filter(function(x){ return String(x.proxima_em).slice(0,10) > hoje; });
+    function card(x){
+      var d = lavgDiasAte(x.proxima_em);
+      var cor = d < 0 ? 'var(--red-600)' : d === 0 ? 'var(--amber-600)' : 'var(--line)';
+      var st = d < 0 ? ('Atrasada há '+(-d)+' dia'+(d===-1?'':'s')+' (era para '+dataBr(x.proxima_em)+')') : d === 0 ? 'Fazer hoje' : ('Próxima em '+dataBr(x.proxima_em)+' (em '+d+' dia'+(d===1?'':'s')+')');
+      return '<div class="card" style="border-left:4px solid '+cor+';"><p class="item-name" style="margin:0 0 3px;">'+escapeHtml(x.nome)+(x.acomodacao_id?(' — '+escapeHtml(acomodacaoNome(x.acomodacao_id))):'')+'</p>' +
+        '<p class="item-meta" style="margin:0 0 4px;'+(d<=0?'color:'+cor+';font-weight:700;':'')+'">'+(d<=0?ic("warning")+' ':'')+st+'</p>' +
+        '<p class="item-meta" style="margin:0 0 6px;">A cada '+(x.frequencia_meses===2?'2 meses':'1 mês')+(x.ultima_em?(' · última vez em '+dataBr(x.ultima_em)+(x.ultima_por_nome?(' por '+escapeHtml(x.ultima_por_nome)):'')):' · ainda não feita')+(x.obs?('<br>'+escapeHtml(x.obs)):'')+'</p>' +
+        '<div class="item-actions"><button class="btn btn-in lavgFeita" data-id="'+x.id+'">'+ic("check")+' Feita</button><button class="btn btn-out lavgEd" data-id="'+x.id+'">'+ic("pencil")+' Editar</button><button class="btn btn-out lavgEx" data-id="'+x.id+'">'+ic("trash")+' Excluir</button></div></div>';
+    }
+    if(atras.length){ h += '<div class="section-title">Atrasadas ('+atras.length+')</div>'; atras.forEach(function(x){ h += card(x); }); }
+    if(hojeL.length){ h += '<div class="section-title">Para hoje ('+hojeL.length+')</div>'; hojeL.forEach(function(x){ h += card(x); }); }
+    if(prox.length){ h += '<div class="section-title">Próximas ('+prox.length+')</div>'; prox.forEach(function(x){ h += card(x); }); }
+    return h;
+  }
+  function lavgFormSheet(x){
+    var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var novo = !x;
+    var html = '<label>O que lavar</label><input type="text" id="lgNome" value="'+escapeHtml(x?x.nome:"")+'" placeholder="Ex: Lavagem geral (cortinas, colchão, tapetes)" style="'+REST_INPUT+'margin-bottom:10px;">';
+    if(novo){
+      html += '<label>Acomodações</label><div style="max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:8px;margin-bottom:6px;background:var(--sand-50);">' +
+        '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;font-weight:700;margin-bottom:6px;"><input type="checkbox" id="lgTodas"> Todas</label>' +
+        acs.map(function(a){ return '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:4px;"><input type="checkbox" class="lgAc" value="'+a.id+'"> '+escapeHtml(a.nome)+'</label>'; }).join("") + '</div>' +
+        '<p class="item-meta" style="margin:0 0 10px;">Marque uma ou várias: é criada uma lavagem para cada acomodação. Sem marcar nenhuma, vale como lavagem de área geral.</p>';
+    } else {
+      html += '<label>Acomodação</label><select id="lgAc1" style="'+REST_INPUT+'margin-bottom:10px;"><option value="">Área geral (sem acomodação)</option>'+acs.map(function(a){ return '<option value="'+a.id+'"'+(a.id===x.acomodacao_id?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("")+'</select>';
+    }
+    html += '<label>Repetir a cada</label><select id="lgFreq" style="'+REST_INPUT+'margin-bottom:10px;"><option value="1"'+((x&&x.frequencia_meses===2)?'':' selected')+'>1 mês</option><option value="2"'+((x&&x.frequencia_meses===2)?' selected':'')+'>2 meses</option></select>' +
+      '<label>Última vez que foi feita (opcional)</label><input type="date" id="lgUlt" value="'+(x&&x.ultima_em?String(x.ultima_em).slice(0,10):"")+'" style="'+REST_INPUT+'margin-bottom:6px;">' +
+      '<p class="item-meta" style="margin:0 0 10px;">Se não informar, a lavagem aparece para fazer hoje.</p>' +
+      '<label>Observação (opcional)</label><input type="text" id="lgObs" value="'+escapeHtml(x?(x.obs||""):"")+'" style="'+REST_INPUT+'margin-bottom:10px;">' +
+      '<div class="sheet-actions"><button type="button" class="btn-secondary" id="lgCancel">Cancelar</button><button type="button" class="btn-primary" id="lgSalvar">Salvar</button></div>';
+    restAbrirSheet(novo ? "Criar lavagem geral" : "Editar lavagem geral", html);
+    document.getElementById("lgCancel").onclick = restFecharSheet;
+    var todas = document.getElementById("lgTodas");
+    if(todas) todas.onchange = function(){ document.querySelectorAll(".lgAc").forEach(function(c){ c.checked = todas.checked; }); };
+    document.getElementById("lgSalvar").onclick = async function(){
+      var nome = document.getElementById("lgNome").value.trim();
+      var freq = parseInt(document.getElementById("lgFreq").value,10) === 2 ? 2 : 1;
+      var ult = document.getElementById("lgUlt").value || null;
+      var obs = document.getElementById("lgObs").value.trim() || null;
+      if(!nome){ showToast("Escreva o que será lavado"); return; }
+      var prox = ult ? lavgSomaMeses(ult, freq) : hojeISO();
+      this.disabled = true;
+      try{
+        if(novo){
+          var ids = Array.prototype.map.call(document.querySelectorAll(".lgAc:checked"), function(c){ return c.value; });
+          if(!ids.length) ids = [null];
+          var rows = ids.map(function(id){ return {id:uid(), nome:nome, acomodacao_id:id, frequencia_meses:freq, ultima_em:ult, proxima_em:prox, obs:obs, ativo:true, criado_por_nome:(currentUser?currentUser.nome:null)}; });
+          var r = await sb.from("lavagens_gerais").insert(rows); if(r.error) throw r.error;
+          showToast(rows.length > 1 ? (rows.length+" lavagens criadas") : "Lavagem criada");
+        } else {
+          var u = await sb.from("lavagens_gerais").update({nome:nome, acomodacao_id:(document.getElementById("lgAc1").value||null), frequencia_meses:freq, ultima_em:ult, proxima_em:prox, obs:obs}).eq("id", x.id); if(u.error) throw u.error;
+        }
+        restFecharSheet(); await carregarLavGeral(); rerenderSecao();
+      }catch(err){ console.error(err); showToast("Não consegui salvar"); this.disabled = false; }
+    };
+  }
+  function lavgLigar(main){
+    var nv = main.querySelector("#lavgNova"); if(nv) nv.onclick = function(){ lavgFormSheet(null); };
+    main.querySelectorAll(".lavgFeita").forEach(function(b){ b.onclick = async function(){
+      var x = lavg.lista.find(function(y){ return y.id === b.getAttribute("data-id"); }); if(!x) return;
+      b.disabled = true;
+      try{
+        var hoje = hojeISO();
+        var u = await sb.from("lavagens_gerais").update({ultima_em:hoje, ultima_por_nome:(currentUser?currentUser.nome:null), proxima_em:lavgSomaMeses(hoje, x.frequencia_meses===2?2:1)}).eq("id", x.id); if(u.error) throw u.error;
+        await carregarLavGeral(); showToast("Lavagem feita — próxima em "+dataBr(lavgSomaMeses(hoje, x.frequencia_meses===2?2:1))); rerenderSecao();
+      }catch(err){ console.error(err); showToast("Não consegui salvar"); b.disabled = false; }
+    }; });
+    main.querySelectorAll(".lavgEd").forEach(function(b){ b.onclick = function(){
+      var x = lavg.lista.find(function(y){ return y.id === b.getAttribute("data-id"); }); if(x) lavgFormSheet(x);
+    }; });
+    main.querySelectorAll(".lavgEx").forEach(function(b){ b.onclick = async function(){
+      if(!confirm("Excluir esta lavagem geral?")) return;
+      b.disabled = true;
+      try{ var d = await sb.from("lavagens_gerais").delete().eq("id", b.getAttribute("data-id")); if(d.error) throw d.error; await carregarLavGeral(); rerenderSecao(); }
+      catch(err){ console.error(err); showToast("Não consegui excluir"); b.disabled = false; }
     }; });
   }
 
