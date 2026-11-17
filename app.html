@@ -4354,27 +4354,37 @@
     });
   }
   function parsearTextoNota(texto){
-    var MONEY = /^\d{1,3}(\.\d{3})*,\d{2}$/;
+    var MONEY = /^(R\$)?\d{1,3}([.,]\d{3})*[.,]\d{2}$/;
     var EMBR = /^\d+\s*[xX]\s*\w+$/;
-    function num(t){ return parseFloat(String(t).replace(/\./g,"").replace(",",".")); }
+    var UN = /^(UN|UND|DP|CX|PC|PCT|FD|PT|KG|LT|SC|FR|DZ|BD|GF|PAR|KIT|CJ|RL|PCS|CXA)$/i;
+    function num(t){ t = String(t).replace(/^R\$/,""); var k = Math.max(t.lastIndexOf(","), t.lastIndexOf(".")); return parseFloat(t.slice(0,k).replace(/[.,]/g,"") + "." + t.slice(k+1)); }
     var itens = [];
     String(texto||"").split(/\r?\n/).forEach(function(linha){
-      var tk = linha.replace(/[|_]/g," ").trim().split(/\s+/).filter(Boolean);
-      if(tk.length < 4) return;
+      var tk = linha.replace(/[|_©®°'"`]/g," ").trim().split(/\s+/).filter(Boolean);
+      // tira "lixo" no fim da linha (letras/símbolos soltos, ex.: borda da tabela)
+      while(tk.length && !/[0-9]/.test(tk[tk.length-1]) ) tk.pop();
+      if(tk.length < 3) return;
       var fim = tk.length - 1, dinheiro = [];
       while(fim >= 0 && MONEY.test(tk[fim])){ dinheiro.unshift(num(tk[fim])); fim--; }
-      if(dinheiro.length < 2) return;
-      var total = dinheiro[dinheiro.length-1], preco = dinheiro[dinheiro.length-2];
-      if(!(preco > 0) || !(total > 0)) return;
-      var iq = fim, qtd = NaN;
-      if(iq >= 1 && /^\d{1,4}$/.test(tk[iq])){ qtd = parseInt(tk[iq],10); } else iq = fim + 1;
-      var razao = total / preco, inteiro = Math.round(razao);
-      if(Math.abs(razao - inteiro) < 0.03 && inteiro > 0){ if(!(qtd === inteiro)) qtd = inteiro; }
-      if(!(qtd > 0)) return;
-      var ini = 0;
-      if(/^\d{3,8}$/.test(tk[0])) ini = 1;
+      var qtd = NaN, iq = -1;
+      if(dinheiro.length >= 2){
+        var total = dinheiro[dinheiro.length-1], preco = dinheiro[dinheiro.length-2];
+        if(preco > 0 && total > 0){
+          if(fim >= 1 && /^\d{1,4}$/.test(tk[fim])){ qtd = parseInt(tk[fim],10); iq = fim; } else iq = fim + 1;
+          var razao = total / preco, inteiro = Math.round(razao);
+          if(Math.abs(razao - inteiro) < 0.03 && inteiro > 0 && qtd !== inteiro) qtd = inteiro;
+        }
+      }
+      if(!(qtd > 0)){
+        // plano B: "... UN 10 ..." (unidade seguida da quantidade)
+        for(var u = 1; u < tk.length - 1; u++){
+          if(UN.test(tk[u]) && /^\d{1,4}$/.test(tk[u+1])){ qtd = parseInt(tk[u+1],10); iq = u + 1; break; }
+        }
+      }
+      if(!(qtd > 0) || iq < 1) return;
+      var ini = /^\d{3,8}$/.test(tk[0]) ? 1 : 0;
       var corte = iq;
-      for(var i = ini; i < iq; i++){ if(EMBR.test(tk[i])){ corte = i; break; } }
+      for(var i2 = ini; i2 < iq; i2++){ if(EMBR.test(tk[i2])){ corte = i2; break; } }
       if(corte === iq && iq - 1 > ini && /^[A-Za-zÀ-ú]{1,4}$/.test(tk[iq-1])) corte = iq - 1;
       var desc = tk.slice(ini, corte).join(" ").trim();
       if(!/[A-Za-zÀ-ú]{3,}/.test(desc)) return;
@@ -4387,7 +4397,7 @@
     var worker = await T.createWorker("por", 1, {logger:function(m){ if(m && m.status === "recognizing text" && onProgress) onProgress(Math.round((m.progress||0)*100)); }});
     try{
       var r = await worker.recognize(file);
-      return parsearTextoNota(r.data.text);
+      return {itens:parsearTextoNota(r.data.text), texto:r.data.text};
     } finally { try{ await worker.terminate(); }catch(e){} }
   }
 
@@ -4504,9 +4514,12 @@
       });
       var revF = document.getElementById("pedidoDocRevisao");
       revF.innerHTML = '<p class="item-meta">Lendo os itens da foto… (a primeira vez pode demorar um pouco)</p>';
-      lerFotoNota(file, function(pc){ revF.innerHTML = '<p class="item-meta">Lendo os itens da foto… '+pc+'%</p>'; }).then(function(linhasFoto){
-        if(!linhasFoto.length){ revF.innerHTML = '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Não consegui identificar os itens nessa foto. Tente uma foto mais reta e nítida, importe o PDF do fornecedor ou adicione os itens manualmente.</p>'; return; }
+      lerFotoNota(file, function(pc){ revF.innerHTML = '<p class="item-meta">Lendo os itens da foto… '+pc+'%</p>'; }).then(function(resFoto){
+        var linhasFoto = resFoto.itens;
+        var verTexto = '<details style="margin:0 0 12px;"><summary class="item-meta" style="cursor:pointer;">Ver o texto que o app leu na foto</summary><pre style="white-space:pre-wrap;font-size:11.5px;background:var(--sand-100);padding:8px;border-radius:8px;">'+escapeHtml(resFoto.texto||"(nada)")+'</pre></details>';
+        if(!linhasFoto.length){ revF.innerHTML = '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Não consegui identificar os itens nessa foto. Tente uma foto mais reta e nítida, importe o PDF do fornecedor ou adicione os itens manualmente.</p>' + verTexto; return; }
         mostrarRevisaoDoc(linhasFoto);
+        document.getElementById("pedidoDocRevisao").insertAdjacentHTML("beforeend", verTexto);
       }).catch(function(err){
         console.error(err);
         revF.innerHTML = '<p class="item-meta" style="color:var(--amber-600);font-weight:700;">Não consegui ler a foto agora (precisa de internet). Adicione os itens manualmente ou importe o PDF.</p>';
