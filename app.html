@@ -990,6 +990,9 @@
   var SUPABASE_URL = "https://pxfyhttjngsjqupyihso.supabase.co";
   var SUPABASE_ANON_KEY = "sb_publishable_ZGq87qAHkD7uYT3TcpeQIQ_F7flOvWq"; // Publishable key (Settings > API Keys) — projeto novo (gerencia.baguapousada@gmail.com)
   var VAPID_PUBLIC_KEY = "BJ1OIs--jI_ZGOxHKSIi8YIiOskVT6mdJQfJffTNsA-fk8gfeQKxJDM0Ke1MZ2pJ56_mhczMQsjCVz0r85FU4Pg"; // par com a VAPID_PRIVATE_KEY guardada como segredo na Edge Function (nunca no app)
+  // Link de "esqueci a senha": guarda já no carregamento (antes de qualquer outra coisa limpar o endereço)
+  var RECUP_URL = /type=recovery/.test(window.location.hash) || /type=recovery/.test(window.location.search);
+  var RECUP_ERRO = /error_code=|error_description=/.test(window.location.hash) && !RECUP_URL;
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // ---------- Storage de fotos/anexos (evita guardar base64 nas tabelas) ----------
@@ -1093,6 +1096,8 @@
   // Detecta quando a pessoa clica no link de "esqueci minha senha" do e-mail
   sb.auth.onAuthStateChange(function(event, session){
     if(event === "PASSWORD_RECOVERY"){
+      RECUP_URL = true;
+      try{ document.getElementById("loginOverlay").classList.remove("open"); }catch(e){}
       document.getElementById("novaSenhaRecuperacaoOverlay").classList.add("open");
     }
   });
@@ -2018,6 +2023,8 @@
       var res = await sb.auth.updateUser({password: senha});
       if(res.error) throw res.error;
       document.getElementById("novaSenhaRecuperacaoOverlay").classList.remove("open");
+      RECUP_URL = false;
+      try{ history.replaceState(null, "", window.location.pathname); }catch(e){}
       showToast("Senha atualizada! Você já está conectado.");
       await bootApp();
     }catch(err){
@@ -2087,6 +2094,13 @@
   async function bootApp(){
     var sess = await sb.auth.getSession();
     var session = sess.data && sess.data.session;
+    if(RECUP_URL && session){
+      // veio pelo link do e-mail: pede a nova senha (2 vezes) antes de entrar no app
+      hideLogin();
+      document.getElementById("novaSenhaRecuperacaoOverlay").classList.add("open");
+      return;
+    }
+    if(!session && RECUP_ERRO){ showLogin("Esse link de recuperação expirou ou já foi usado. Toque em \u201cEsqueci minha senha\u201d para receber um novo."); return; }
     if(!session){ showLogin(); return; }
     try{
       currentUser = await carregarPerfil(session.user.id);
