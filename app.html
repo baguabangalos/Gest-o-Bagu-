@@ -1924,7 +1924,7 @@
     var textoOriginal = link.textContent;
     link.textContent = "Enviando…";
     try{
-      var res = await sb.auth.resetPasswordForEmail(email, {redirectTo: window.location.href.split("#")[0]});
+      var res = await sb.auth.resetPasswordForEmail(email, {redirectTo: window.location.origin + window.location.pathname.replace(/[^\/]*$/, "app.html")});
       if(res.error) throw res.error;
       showLoginInfo("Link enviado! Confira seu e-mail (" + email + ") pra criar uma nova senha.");
     }catch(err){
