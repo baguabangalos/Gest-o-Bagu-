@@ -2134,6 +2134,8 @@
       checarNotificacoesTurnoAtrasado();
       setInterval(checarNotificacoesTurnoAtrasado, 60000);
     }
+    setTimeout(checarLembreteFinalizarTurno, 4000);
+    setInterval(checarLembreteFinalizarTurno, 30000);
   }
 
   // Recarregar tudo do zero (inclusive fotos em base64 de procedimentos,
@@ -7348,6 +7350,53 @@
           tag: "turno-atrasado-"+item.execucao.id
         });
       }catch(e){ console.error(e); }
+    });
+  }
+
+  // ---------- Lembrete para finalizar o turno (de 5 em 5 minutos, com o som de pedido de hóspede) ----------
+  // Depois do horário de término do turno, quem está preenchendo o checklist
+  // (marcou alguma atividade ou está na escala desse turno hoje) recebe o
+  // alarme a cada 5 min até concluir (limite de 4 horas depois do fim).
+  var LEMBRETE_TURNO_INTERVALO_MIN = 5;
+  var LEMBRETE_TURNO_LIMITE_MIN = 240;
+  var lembreteTurnoUltimo = {}; // execucaoId -> número do último lembrete tocado
+  function souResponsavelPeloTurno(turno, exec){
+    if(!currentUser) return false;
+    var marcou = (state.turnoAtividadeExecucoes||[]).some(function(a){ return a.turnoExecucaoId === exec.id && a.marcadoPor === currentUser.id; });
+    if(marcou) return true;
+    // ninguém marcou nada ainda por esta pessoa: só avisa quem é admin se ela mesma marcou; os demais, se a escala de hoje bate com o turno
+    if(currentUser.role === "admin") return false;
+    if(!podeEditar("checklist_turno")) return false;
+    if((turno.empresa||"pousada") !== ((currentUser.empresa)||"pousada")) return false;
+    var esc = null;
+    try{ esc = escalaEfetiva(currentUser.id, exec.data); }catch(e){ esc = null; }
+    if(!esc || esc.tipo === "folga") return false;
+    if(esc.horaFim && turno.horaFim) return esc.horaFim === turno.horaFim;
+    return true;
+  }
+  function checarLembreteFinalizarTurno(){
+    if(!currentUser || !state || !state.turnos) return;
+    var agora = Date.now();
+    (state.turnoExecucoes||[]).forEach(function(exec){
+      if(exec.concluidoEm) return;
+      var turno = state.turnos.find(function(t){ return t.id === exec.turnoId; });
+      if(!turno || !turno.horaFim) return;
+      var fim = dateAtLocalTime(dataEfetivaNoCiclo(exec.data, turno, turno.horaFim), turno.horaFim).getTime();
+      var passou = (agora - fim) / 60000;
+      if(passou < 0 || passou > LEMBRETE_TURNO_LIMITE_MIN) return;
+      if(!souResponsavelPeloTurno(turno, exec)) return;
+      var n = Math.floor(passou / LEMBRETE_TURNO_INTERVALO_MIN);
+      if(lembreteTurnoUltimo[exec.id] !== undefined && lembreteTurnoUltimo[exec.id] >= n) return;
+      lembreteTurnoUltimo[exec.id] = n;
+      var min = Math.floor(passou);
+      var msg = turno.nome + " terminou às " + turno.horaFim + (min > 0 ? (" — já faz " + min + " min") : "") + ". Finalize o turno no checklist.";
+      playNotifySound();
+      mostrarAlertaPedido(msg, function(){ appSection = "checklistturno"; renderApp(); }, "Finalize o turno");
+      try{
+        if(typeof Notification !== "undefined" && Notification.permission === "granted"){
+          new Notification("Finalize o turno", {body: msg, tag: "lembrete-turno-" + exec.id, renotify: true});
+        }
+      }catch(e){}
     });
   }
 
