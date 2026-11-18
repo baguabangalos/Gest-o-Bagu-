@@ -2092,6 +2092,21 @@
   };
 
   async function bootApp(){
+    // Link novo do e-mail de recuperação: ?token_hash=...&type=recovery (o código vem direto no endereço)
+    try{
+      var qp = new URLSearchParams(window.location.search);
+      if(qp.get("token_hash") && qp.get("type") === "recovery"){
+        RECUP_URL = true;
+        var vr = await sb.auth.verifyOtp({token_hash: qp.get("token_hash"), type: "recovery"});
+        try{ history.replaceState(null, "", window.location.pathname); }catch(e){}
+        if(vr.error){
+          RECUP_URL = false;
+          try{ await sb.auth.signOut(); }catch(e){}
+          showLogin("Esse link de recuperação expirou ou já foi usado. Toque em \u201cEsqueci minha senha\u201d para receber um novo.");
+          return;
+        }
+      }
+    }catch(e){ console.error(e); }
     var sess = await sb.auth.getSession();
     var session = sess.data && sess.data.session;
     if(RECUP_URL && session){
