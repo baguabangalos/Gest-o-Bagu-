@@ -3015,6 +3015,123 @@
 
   // ---------- Home ----------
   var homeSearchQuery = "";
+  // ---------- Panorama de hoje (tudo do dia num lugar só, na tela inicial) ----------
+  function panoramaHojeDados(){
+    var h0 = new Date(); h0.setHours(0,0,0,0); h0 = h0.getTime();
+    var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    function acDoCodigo(cod){ return acs.filter(function(a){ return a.codigoHospedin === cod; })[0] || null; }
+    function solsDe(acId, tipo, ctx){
+      return state.solicitacoes.filter(function(x){ return !x.excluidoEm && x.acomodacaoId === acId && x.tipo === tipo && (!ctx || (x.contexto && x.contexto.indexOf(ctx) > -1)); })
+        .sort(function(a,b){ return b.criadoEm - a.criadoEm; });
+    }
+    var entradas = [], saidas = [], ocupadas = 0;
+    (state.estoque.hospedinOcupacao||[]).forEach(function(r){
+      if(!hospedinLinhaValida(r)) return;
+      var ci = parseDataLocal(r.checkin), co = parseDataLocal(r.checkout);
+      if(!ci || !co) return;
+      var ac = acDoCodigo(r.acomodacao);
+      var base = {acId: ac ? ac.id : null, nome: ac ? ac.nome : (r.acomodacao || "Acomodação"), hospede: r.hospede || "", pessoas: (Number(r.adultos)||0) + (Number(r.criancas)||0)};
+      if(ci.getTime() === h0) entradas.push(base);
+      if(co.getTime() === h0) saidas.push(base);
+      if(ci.getTime() <= h0 && co.getTime() > h0) ocupadas++;
+    });
+    entradas.forEach(function(e){
+      var prep = e.acId ? solsDe(e.acId, "lavagem", "checkin")[0] : null;
+      var abast = e.acId ? state.solicitacoes.filter(function(x){ return !x.excluidoEm && x.acomodacaoId === e.acId && x.tipo === "frigobar" && x.status !== "concluido"; }).length : 0;
+      if(prep && prep.status === "concluido"){ e.estado = abast ? "Preparo feito · falta abastecer" : "Pronta"; e.cor = abast ? "amber" : "green"; }
+      else if(prep && prep.status !== "bloqueada" && prep.iniciadoEm){ e.estado = "Preparo em andamento"; e.cor = "amber"; }
+      else if(prep){ e.estado = "Preparo ainda não feito"; e.cor = "red"; }
+      else { e.estado = "Sem preparo registrado"; e.cor = "red"; }
+    });
+    saidas.forEach(function(e){
+      var lav = e.acId ? solsDe(e.acId, "lavagem", "checkout")[0] : null;
+      if(lav && lav.status === "concluido"){ e.estado = "Limpeza de saída feita"; e.cor = "green"; }
+      else if(lav && lav.iniciadoEm){ e.estado = "Limpando agora"; e.cor = "amber"; }
+      else { e.estado = "Aguardando saída / limpeza"; e.cor = "amber"; }
+    });
+    // Abastecimento: frigobar/cesta pendente por acomodação
+    var abMap = {};
+    state.solicitacoes.forEach(function(x){
+      if(x.excluidoEm || x.tipo !== "frigobar" || x.status === "concluido") return;
+      if(!abMap[x.acomodacaoId]) abMap[x.acomodacaoId] = 0;
+      abMap[x.acomodacaoId]++;
+    });
+    var abastecer = Object.keys(abMap).map(function(id){ return {acId:id, nome:acomodacaoNome(id), n:abMap[id]}; });
+    // Problemas: manutenções abertas (alta prioridade primeiro) + pendências de entrada
+    var ordP = {alta:0, media:1, baixa:2};
+    var problemas = state.manutencoes.filter(function(m){ return m.status === "pendente" || m.status === "em_andamento"; })
+      .sort(function(a,b){ return (ordP[a.prioridade]==null?1:ordP[a.prioridade]) - (ordP[b.prioridade]==null?1:ordP[b.prioridade]) || b.createdAt - a.createdAt; });
+    var pendEntrada = pendenciasEntradaAbertas();
+    // Pedidos dos hóspedes em aberto (sauna, lenha, arrumação…)
+    var pedidos = state.solicitacoes.filter(function(x){
+      return !x.excluidoEm && x.status !== "concluido" && (x.tipo === "sauna" || x.tipo === "lenha" || x.tipo === "limpeza" || x.tipo === "roupa_cama") && x.origem !== "equipe";
+    }).sort(function(a,b){ return a.criadoEm - b.criadoEm; });
+    var bloqueadas = state.solicitacoes.filter(function(x){ return !x.excluidoEm && x.status === "bloqueada"; });
+    var atrasados = (currentUser && currentUser.role === "admin") ? turnosAtrasados() : [];
+    return {entradas:entradas, saidas:saidas, ocupadas:ocupadas, totalAcs:acs.length, abastecer:abastecer, problemas:problemas, pendEntrada:pendEntrada, pedidos:pedidos, bloqueadas:bloqueadas, atrasados:atrasados};
+  }
+  function panoramaHojeHtml(){
+    if(!state || !currentUser) return "";
+    if(!(currentUser.role === "admin" || podeVer("recepcao") || podeVer("limpeza"))) return "";
+    var d;
+    try{ d = panoramaHojeDados(); }catch(err){ console.error("panorama:", err); return ""; }
+    var cores = {green:"#1f7a4d", amber:"#b26a00", red:"#c0392b"};
+    var hojeTxt = new Date().toLocaleDateString("pt-BR", {weekday:"long", day:"2-digit", month:"2-digit"});
+    function chip(n, rot, cor, alvo){
+      return '<div data-pano-go="'+alvo+'" style="flex:1 1 30%;min-width:96px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 10px;cursor:pointer;">' +
+        '<div style="font-size:22px;font-weight:900;line-height:1;color:'+(n>0 && cor ? cor : 'var(--ink-900)')+';">'+n+'</div>' +
+        '<div style="font-size:11.5px;color:var(--ink-600);margin-top:3px;font-weight:700;">'+rot+'</div></div>';
+    }
+    var nProb = d.problemas.length + d.pendEntrada.length;
+    var chips = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">' +
+      chip(d.entradas.length, "Entradas", "", "recepcao") + chip(d.saidas.length, "Saídas", "", "recepcao") +
+      chip(d.ocupadas + "/" + d.totalAcs, "Ocupadas", "", "recepcao").replace(/color:var\(--ink-900\)/, 'color:var(--ink-900)') +
+      chip(d.abastecer.length, "A abastecer", cores.amber, "recepcao") + chip(nProb, "Problemas", cores.red, "manutencoes") + chip(d.pedidos.length, "Pedidos abertos", cores.amber, "recepcao") + '</div>';
+    function linha(tit, sub, cor, alvo){
+      return '<div data-pano-go="'+(alvo||'')+'" style="padding:8px 0;border-top:1px solid var(--line);cursor:'+(alvo?'pointer':'default')+';">' +
+        '<p style="margin:0;font-size:14px;font-weight:800;color:var(--ink-900);">'+tit+'</p>' +
+        (sub ? '<p style="margin:2px 0 0;font-size:12.5px;font-weight:700;color:'+(cores[cor]||'var(--ink-600)')+';">'+sub+'</p>' : '') + '</div>';
+    }
+    function bloco(titulo, n, corpo, aberto){
+      return '<details'+(aberto?' open':'')+' style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">' +
+        '<summary style="cursor:pointer;font-weight:900;font-size:14.5px;color:var(--ink-900);list-style:none;display:flex;justify-content:space-between;">' +
+        '<span>'+titulo+'</span><span style="color:var(--ink-600);">'+n+'</span></summary>' +
+        '<div style="margin-top:6px;">'+(corpo || '<p class="item-meta" style="margin:6px 0 0;">Nada por aqui hoje.</p>')+'</div></details>';
+    }
+    var corpoEnt = d.entradas.map(function(e){
+      return linha(escapeHtml(e.nome)+(e.hospede?' — '+escapeHtml(e.hospede):''), e.estado+(e.pessoas?' · '+e.pessoas+(e.pessoas===1?' pessoa':' pessoas'):''), e.cor, "recepcao");
+    }).join("");
+    var corpoSai = d.saidas.map(function(e){
+      return linha(escapeHtml(e.nome)+(e.hospede?' — '+escapeHtml(e.hospede):''), e.estado, e.cor, "recepcao");
+    }).join("");
+    var corpoAb = d.abastecer.map(function(a){
+      return linha(escapeHtml(a.nome), a.n+(a.n===1?' reposição pendente':' reposições pendentes'), "amber", "recepcao");
+    }).join("");
+    var corpoProb = d.problemas.slice(0, 12).map(function(m){
+      var alta = m.prioridade === "alta";
+      return linha(escapeHtml(m.title || m.local || "Problema"), escapeHtml((m.local||"")+(m.local?' · ':'')+(m.status==="em_andamento"?'em andamento':'pendente')+(alta?' · URGENTE':'')), alta ? "red" : "amber", "manutencoes");
+    }).join("") + (d.problemas.length > 12 ? '<p class="item-meta" style="margin:6px 0 0;">+ '+(d.problemas.length-12)+' outros em Manutenções</p>' : "") +
+      d.pendEntrada.slice(0, 8).map(function(pe){
+        return linha('Pendência de entrada — '+escapeHtml(acomodacaoNome(pe.acomodacao_id)), escapeHtml(pe.descricao||""), "amber", "recepcao");
+      }).join("");
+    var corpoPed = d.pedidos.slice(0, 12).map(function(x){
+      var min = Math.max(0, Math.round((Date.now() - x.criadoEm)/60000));
+      var quando = min < 60 ? ('há '+min+' min') : (min < 1440 ? ('há '+Math.round(min/60)+' h') : ('há '+Math.round(min/1440)+' d'));
+      return linha(escapeHtml(acomodacaoNome(x.acomodacaoId))+' — '+escapeHtml(tipoLabelCompleto(x)), (x.status==="bloqueada"?'aguardando liberação · ':'')+quando, min > 60 ? "red" : "amber", "recepcao");
+    }).join("");
+    var extra = "";
+    if(d.atrasados.length) extra = '<div data-pano-go="checklistturno" style="background:#fdecea;border:1px solid #f5c6c0;color:#c0392b;border-radius:12px;padding:9px 12px;margin-bottom:8px;font-weight:800;font-size:13.5px;cursor:pointer;">'+d.atrasados.length+' turno(s) atrasado(s) pra concluir</div>';
+    return '<div id="panoramaHoje" style="margin-bottom:14px;">' +
+      '<p style="margin:0 0 8px;font-size:12px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-600);">Hoje · '+escapeHtml(hojeTxt)+'</p>' +
+      chips + extra +
+      bloco('Entradas de hoje', d.entradas.length, corpoEnt, d.entradas.length>0) +
+      bloco('Saídas de hoje', d.saidas.length, corpoSai, false) +
+      bloco('Para abastecer', d.abastecer.length, corpoAb, d.abastecer.length>0) +
+      bloco('Problemas e pendências', nProb, corpoProb, nProb>0) +
+      bloco('Pedidos dos hóspedes em aberto', d.pedidos.length, corpoPed, d.pedidos.length>0) +
+      '</div>';
+  }
+
   function renderHome(){
     var main = document.getElementById("homeView");
     var lowCount = allLowItems().length;
@@ -3106,7 +3223,17 @@
       ? cardsHtml
       : (q ? '<div class="empty">Nenhuma área encontrada com "'+escapeHtml(homeSearchQuery.trim())+'".</div>' : '<div class="empty">Você ainda não tem acesso liberado a nenhuma área. Peça para o administrador liberar seu acesso.</div>');
 
-    main.innerHTML = buscaHtml + '<div id="homeCardsList">' + listaHtml + '</div>';
+    main.innerHTML = (q ? '' : panoramaHojeHtml()) + buscaHtml + '<div id="homeCardsList">' + listaHtml + '</div>';
+    main.querySelectorAll("[data-pano-go]").forEach(function(el){
+      el.onclick = function(ev){
+        var sec = el.getAttribute("data-pano-go");
+        if(!sec) return;
+        var mapa = {recepcao:"recepcao", manutencoes:"manutencao", checklistturno:"checklist_turno"};
+        if(mapa[sec] && !podeVer(mapa[sec]) && !(currentUser && currentUser.role==="admin")) return;
+        appSection = sec; recepcaoMenu = true; manutMenu = true; estMenu = true; adminMenu = true; navOrigem = null;
+        renderApp();
+      };
+    });
 
     var searchInput = document.getElementById("homeSearchInput");
     if(searchInput){
