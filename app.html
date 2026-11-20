@@ -3072,7 +3072,8 @@
   }
   function panoramaHojeHtml(){
     if(!state || !currentUser) return "";
-    if(!(currentUser.role === "admin" || podeVer("recepcao") || podeVer("limpeza"))) return "";
+    // Painel só para a Yara (supervisora)
+    if(currentUser.id !== "167a37e9-eddd-4ae2-af1e-68f9fbd9eaf1") return "";
     var d;
     try{ d = panoramaHojeDados(); }catch(err){ console.error("panorama:", err); return ""; }
     var cores = {green:"#1f7a4d", amber:"#b26a00", red:"#c0392b"};
