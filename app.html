@@ -9071,7 +9071,7 @@
 
     if(podeEd && excFuncionarios.length > 0){
       html += '<div class="card" style="margin-top:16px;">';
-      html += '<p class="section-title" style="margin:0 0 10px;">Registrar folga extra, falta, atestado ou troca de setor do dia</p>';
+      html += '<p class="section-title" style="margin:0 0 10px;">Registrar horário diferente, folga extra, falta, atestado ou troca de setor do dia</p>';
       html += '<p class="item-meta" style="margin:0 0 10px;">Vale pra qualquer pessoa, inclusive guardas — a escala 12×36 dos guardas se edita em Equipe → Guarda. "Trabalho (outro setor)" é pra quando alguém que varia entre Recepção e Manutenção (ex: um dia decidido por necessidade) trabalha normalmente, só que num setor diferente do de costume naquele dia.</p>';
       html += '<label style="display:block;font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:4px;">Funcionário</label>';
       html += '<select id="folgaExcFuncionario" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:10px;">' +
@@ -9080,6 +9080,7 @@
       html += '<div style="display:flex;gap:8px;margin-bottom:10px;">';
       html += '<input type="date" id="folgaExcData" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">';
       html += '<select id="folgaExcTipo" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+        '<option value="trabalho">Horário diferente neste dia</option>' +
         '<option value="folga_extra">Folga extra (compensação)</option>' +
         '<option value="falta">Falta</option>' +
         '<option value="atestado">Atestado</option>' +
@@ -9089,6 +9090,11 @@
       html += '<select id="folgaExcSetor" style="display:none;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);margin-bottom:10px;">' +
         SETORES_ALTERNAVEIS.map(function(s){ return '<option value="'+s+'">'+EQUIPE_LABEL[s]+'</option>'; }).join("") +
       '</select>';
+      html += '<div id="folgaExcHoras" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">' +
+        '<input type="time" id="folgaExcHi" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+        '<span style="color:var(--ink-400);">–</span>' +
+        '<input type="time" id="folgaExcHf" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
+      '</div>';
       html += '<textarea id="folgaExcObs" placeholder="Observação (opcional)" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;margin-bottom:10px;"></textarea>';
       html += '<button type="button" id="folgaExcRegistrarBtn" class="btn-primary" style="width:100%;">Registrar</button>';
       html += '</div>';
@@ -9101,9 +9107,12 @@
           var f = funcionarios.find(function(x){ return x.id===e.userId; }) || (state.staffProfiles||[]).find(function(x){ return x.id===e.userId; });
           var rotuloTipo = ESCALA_TIPO_LABEL[e.tipo]||e.tipo;
           if(e.tipo === "trabalho_outro_setor" && e.setor) rotuloTipo += " — " + EQUIPE_LABEL[e.setor];
+          if(e.tipo === "trabalho") rotuloTipo = "Horário diferente " + (e.horaInicio||"?") + "–" + (e.horaFim||"?");
+          else if(e.tipo === "trabalho_outro_setor" && e.horaInicio) rotuloTipo += " " + e.horaInicio + "–" + (e.horaFim||"?");
           html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:'+(idx===0?'0 0 10px':'10px 0')+';'+(idx>0?'border-top:1px solid var(--line);':'')+'">' +
             '<span style="font-size:13px;"><strong>'+escapeHtml(f?f.nome:"?")+'</strong> — '+rotuloTipo+' em '+e.data.slice(8,10)+'/'+e.data.slice(5,7)+'</span>' +
-            '<button type="button" class="folga-exc-remover" data-uid="'+e.userId+'" data-data="'+e.data+'" style="background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12px;font-weight:700;">Remover</button>' +
+            '<span style="white-space:nowrap;"><button type="button" class="folga-exc-editar" data-uid="'+e.userId+'" data-data="'+e.data+'" style="background:none;border:none;color:var(--teal-700);font-family:inherit;font-size:12px;font-weight:700;">Editar</button>' +
+            '<button type="button" class="folga-exc-remover" data-uid="'+e.userId+'" data-data="'+e.data+'" style="background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12px;font-weight:700;">Excluir</button></span>' +
           '</div>';
         });
         html += '</div>';
@@ -9124,9 +9133,25 @@
       var tipoSelExc = document.getElementById("folgaExcTipo");
       var setorSelExc = document.getElementById("folgaExcSetor");
       if(tipoSelExc && setorSelExc){
-        tipoSelExc.addEventListener("change", function(){
+        var horasBox = document.getElementById("folgaExcHoras");
+        var atualizaCamposExc = function(){
           setorSelExc.style.display = tipoSelExc.value === "trabalho_outro_setor" ? "block" : "none";
-        });
+          if(horasBox) horasBox.style.display = (tipoSelExc.value === "trabalho" || tipoSelExc.value === "trabalho_outro_setor") ? "flex" : "none";
+        };
+        tipoSelExc.addEventListener("change", atualizaCamposExc);
+        atualizaCamposExc();
+        // ao escolher funcionário/data, já mostra o horário normal dele nesse dia (pra só ajustar)
+        var preencherHorasPadrao = function(){
+          if(tipoSelExc.value !== "trabalho" && tipoSelExc.value !== "trabalho_outro_setor") return;
+          var u = document.getElementById("folgaExcFuncionario").value, d = document.getElementById("folgaExcData").value;
+          if(!u || !d) return;
+          var ef = escalaEfetiva(u, d);
+          var hi = document.getElementById("folgaExcHi"), hf = document.getElementById("folgaExcHf");
+          if(ef && ef.horaInicio && !hi.value) hi.value = ef.horaInicio;
+          if(ef && ef.horaFim && !hf.value) hf.value = ef.horaFim;
+        };
+        document.getElementById("folgaExcData").addEventListener("change", preencherHorasPadrao);
+        tipoSelExc.addEventListener("change", preencherHorasPadrao);
       }
       var regBtn = document.getElementById("folgaExcRegistrarBtn");
       if(regBtn) regBtn.onclick = function(){
@@ -9136,10 +9161,30 @@
         var obs = document.getElementById("folgaExcObs").value.trim() || null;
         var setor = tipo === "trabalho_outro_setor" ? document.getElementById("folgaExcSetor").value : null;
         if(!userId || !dataStr){ showToast("Escolha funcionário e data"); return; }
-        salvarEscalaExcecao(userId, dataStr, tipo, null, null, obs, setor);
+        var hi = document.getElementById("folgaExcHi").value || null, hf = document.getElementById("folgaExcHf").value || null;
+        if(tipo === "trabalho" && (!hi || !hf)){ showToast("Preencha o horário de início e fim"); return; }
+        if(tipo !== "trabalho" && tipo !== "trabalho_outro_setor"){ hi = null; hf = null; }
+        salvarEscalaExcecao(userId, dataStr, tipo, hi, hf, obs, setor);
       };
       body.querySelectorAll(".folga-exc-remover").forEach(function(btn){
-        btn.onclick = function(){ removerEscalaExcecao(btn.getAttribute("data-uid"), btn.getAttribute("data-data")); };
+        btn.onclick = function(){ if(confirm("Excluir esta exceção?")) removerEscalaExcecao(btn.getAttribute("data-uid"), btn.getAttribute("data-data")); };
+      });
+      body.querySelectorAll(".folga-exc-editar").forEach(function(btn){
+        btn.onclick = function(){
+          var u = btn.getAttribute("data-uid"), d = btn.getAttribute("data-data");
+          var ex = (state.escalaExcecoes||[]).find(function(x){ return x.userId===u && x.data===d; });
+          if(!ex) return;
+          document.getElementById("folgaExcFuncionario").value = u;
+          document.getElementById("folgaExcData").value = d;
+          document.getElementById("folgaExcTipo").value = ex.tipo;
+          document.getElementById("folgaExcTipo").dispatchEvent(new Event("change"));
+          document.getElementById("folgaExcHi").value = ex.horaInicio || "";
+          document.getElementById("folgaExcHf").value = ex.horaFim || "";
+          if(ex.setor) document.getElementById("folgaExcSetor").value = ex.setor;
+          document.getElementById("folgaExcObs").value = ex.observacao || "";
+          document.getElementById("folgaExcRegistrarBtn").scrollIntoView({behavior:"smooth", block:"center"});
+          showToast("Ajuste os dados e toque em Registrar para salvar");
+        };
       });
     }
   }
