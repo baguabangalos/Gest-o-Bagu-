@@ -10141,26 +10141,38 @@
     if(!ehConferenciaSaida(t) || t.status !== "pendente" || t.consumoVerificadoEm || ENRIQ_EM_CURSO[t.id]) return null;
     ENRIQ_EM_CURSO[t.id] = true;
     try{
-      var itens = [];
+      var itens = [], semCadastro = {};
       var ac = state.acomodacoes.find(function(a){ return a.id === t.acomodacaoId; });
-      if(t.contexto === "conferencia_checkout" && ac && ac.codigoHospedin){
-        var hoje = isoLocal(new Date());
-        var rows = (state.estoque.hospedinOcupacao||[]).filter(function(r){
-          return r.acomodacao === ac.codigoHospedin && r.status === "check_out" && String(r.checkout).slice(0,10) === hoje && r.hospedin_id;
-        });
+      if(ac && ac.codigoHospedin){
+        // Consulta o banco direto (a cópia local pode ser anterior ao check-out).
+        var hojeD = new Date(), amanhaD = new Date(hojeD.getTime() + 86400000);
+        var qr = await sb.from("hospedin_ocupacao").select("hospedin_id,searchable_code").eq("acomodacao", ac.codigoHospedin).eq("status", "check_out").gte("checkout", isoLocal(hojeD)).lt("checkout", isoLocal(amanhaD));
+        if(qr.error) throw qr.error;
+        var rows = qr.data || [];
         if(t.searchableCode){ var iguais = rows.filter(function(r){ return r.searchable_code === t.searchableCode; }); if(iguais.length) rows = iguais; }
+        rows = rows.filter(function(r){ return r.hospedin_id; });
         if(rows.length){
           var res = await sb.functions.invoke("consumo-hospedin", {body:{ids:rows.map(function(r){ return Number(r.hospedin_id); }).slice(0,10)}});
           if(res.error || !res.data || !res.data.ok) throw new Error("consumo-hospedin falhou");
           var tot = {};
           (res.data.reservas||[]).forEach(function(rv){
             if(rv.erro) throw new Error("reserva sem dados");
-            (rv.vendas||[]).forEach(function(v){ var info = HOSP_CONSUMO[v.item]; if(!info) return; tot[info[0]] = (tot[info[0]]||0) + (Number(v.qtd)||0); });
+            (rv.vendas||[]).forEach(function(v){
+              var info = HOSP_CONSUMO[v.item];
+              if(!info){ semCadastro[v.item] = (semCadastro[v.item]||0) + (Number(v.qtd)||0); return; }
+              tot[info[0]] = (tot[info[0]]||0) + (Number(v.qtd)||0);
+            });
           });
           itens = Object.keys(tot).filter(function(n){ return tot[n] > 0; }).sort().map(function(n){ return {nome:n, quantidade:tot[n]}; });
         }
       }
-      var r2 = await sb.from("solicitacoes_acomodacao").update({itens:itens, consumo_verificado_em:new Date().toISOString()}).eq("id", t.id).is("consumo_verificado_em", null).select();
+      var upd = {itens:itens, consumo_verificado_em:new Date().toISOString()};
+      var semKeys = Object.keys(semCadastro);
+      if(semKeys.length){
+        var avisoSem = "Hospedin tem item(ns) sem cadastro no app: " + semKeys.map(function(k){ return "cód. "+k+" (qtd "+semCadastro[k]+")"; }).join(", ") + " — confira na acomodação.";
+        upd.observacao = (t.observacao ? t.observacao + " | " : "") + avisoSem;
+      }
+      var r2 = await sb.from("solicitacoes_acomodacao").update(upd).eq("id", t.id).is("consumo_verificado_em", null).select();
       if(r2.error) throw r2.error;
       if(!r2.data || !r2.data.length) return null;
       var novo = mapSolicitacaoFromRow(r2.data[0]);
