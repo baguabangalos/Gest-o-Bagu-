@@ -13709,6 +13709,7 @@
   // ================= Guarda-chuvas (empréstimo aos hóspedes) =================
   var umb = {chuvas:[], emp:[], carregado:false, carregando:false, erro:false, tentado:false};
   var umbId = function(r){ return r; };
+  var umbSub = "emprestados"; // emprestados | devolvidos | conferencia | cadastrados
   async function carregarChuvas(){
     umb.carregando = true;
     try{
@@ -13750,6 +13751,12 @@
       '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--teal-700);">'+disp.length+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">disponíveis</p></div>' +
       '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;color:'+(fora.length?'var(--red-600)':'var(--ink-900)')+';">'+fora.length+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">emprestados</p></div>' +
       '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;">'+umb.chuvas.length+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">cadastrados</p></div></div></div>';
+    var umbSubs = [["emprestados","Emprestados"+(fora.length?" ("+fora.length+")":"")],["devolvidos","Devolvidos"],["conferencia","Na recepção"],["cadastrados","Cadastrados"]];
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;">' + umbSubs.map(function(t){
+      var at = umbSub === t[0];
+      return '<button type="button" class="umbSubBtn" data-usub="'+t[0]+'" style="padding:8px 13px;border-radius:999px;font-family:inherit;font-size:13px;font-weight:700;border:1px solid '+(at?'var(--teal-700)':'var(--line)')+';background:'+(at?'var(--teal-700)':'#fff')+';color:'+(at?'#fff':'var(--ink-900)')+';">'+t[1]+'</button>';
+    }).join("") + '</div>';
+    if(umbSub === "emprestados"){
     if(pe) h += '<button type="button" id="umbEmprestar" class="btn-primary" style="width:100%;margin-bottom:14px;"'+(disp.length?'':' disabled')+'>'+ic("plus")+' Emprestar guarda-chuva</button>';
     h += '<div class="section-title" style="margin-top:0;">Emprestados agora</div>';
     if(!fora.length) h += '<div class="empty">Nenhum guarda-chuva emprestado.</div>';
@@ -13769,8 +13776,10 @@
       });
       h += '</div>';
     }
+    }
+    if(umbSub === "devolvidos"){
     var hist = umb.emp.filter(function(e){ return !!e.devolvido_em; }).slice(0, 30);
-    h += '<div class="section-title">Devolvidos (últimos 30)</div>';
+    h += '<div class="section-title" style="margin-top:0;">Devolvidos (últimos 30)</div>';
     if(!hist.length) h += '<div class="empty">Nenhuma devolução registrada ainda.</div>';
     else {
       h += '<div class="card">';
@@ -13783,7 +13792,37 @@
       });
       h += '</div>';
     }
-    h += '<div class="section-title">Guarda-chuvas cadastrados</div>';
+    }
+    if(umbSub === "conferencia"){
+      var ocupC = {}; fora.forEach(function(e){ if(e.chuva_id) ocupC[e.chuva_id] = e; });
+      var ativosC = umb.chuvas.filter(function(c){ return c.ativo !== false; });
+      var naRecN = ativosC.filter(function(c){ return !ocupC[c.id] && c.na_recepcao === true; }).length;
+      var foraLugarN = ativosC.filter(function(c){ return !ocupC[c.id] && c.na_recepcao !== true; }).length;
+      h += '<div class="section-title" style="margin-top:0;">Quais guarda-chuvas estão na recepção</div>';
+      h += '<p class="item-meta" style="margin:0 0 10px;">Marque os que você está vendo na recepção agora. Os emprestados aparecem sozinhos como fora; quando um volta, ele volta marcado.</p>';
+      h += '<div class="card"><div style="display:flex;gap:14px;text-align:center;">' +
+        '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;color:var(--teal-700);">'+naRecN+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">na recepção</p></div>' +
+        '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;">'+fora.length+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">emprestados</p></div>' +
+        '<div style="flex:1;"><p style="font-size:22px;font-weight:800;margin:0;color:'+(foraLugarN?'var(--red-600)':'var(--ink-900)')+';">'+foraLugarN+'</p><p style="font-size:11.5px;margin:0;color:var(--ink-600);">não encontrados</p></div></div></div>';
+      if(pe && foraLugarN) h += '<button type="button" id="umbConfTodos" class="btn-secondary" style="width:100%;margin-bottom:12px;">Marcar todos os disponíveis como "na recepção"</button>';
+      if(!ativosC.length) h += '<div class="empty">Nenhum guarda-chuva cadastrado ainda.</div>';
+      else {
+        h += '<div class="card">';
+        ativosC.forEach(function(c, i){
+          var emp = ocupC[c.id], marcado = !emp && c.na_recepcao === true;
+          var meta = emp ? ('<span style="color:var(--red-600);font-weight:700;">emprestado → '+escapeHtml(emp.destino||"—")+' ('+umbHa(emp.saiu_em)+')</span>')
+            : (marcado ? '<span style="color:var(--teal-700);font-weight:700;">na recepção</span>' : '<span style="color:var(--red-600);font-weight:700;">não encontrado na recepção</span>');
+          var conf = (!emp && c.conferido_em) ? ('<span style="color:var(--ink-600);"> · conferido '+umbFmt(c.conferido_em)+(c.conferido_por_nome?' por '+escapeHtml(c.conferido_por_nome):'')+'</span>') : '';
+          h += '<label style="display:flex;align-items:center;gap:12px;'+(i>0?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px;':'')+'">' +
+            '<input type="checkbox" class="umbConfChk" data-id="'+c.id+'" '+(marcado?'checked':'')+' '+((emp||!pe)?'disabled':'')+' style="width:22px;height:22px;flex:none;">' +
+            '<span style="flex:1;"><span style="display:block;font-size:14.5px;font-weight:800;">'+escapeHtml(c.codigo)+(c.descricao?' <span style="font-weight:400;color:var(--ink-600);font-size:12.5px;">'+escapeHtml(c.descricao)+'</span>':'')+'</span>' +
+            '<span style="display:block;font-size:12.5px;margin-top:2px;">'+meta+conf+'</span></span></label>';
+        });
+        h += '</div>';
+      }
+    }
+    if(umbSub === "cadastrados"){
+    h += '<div class="section-title" style="margin-top:0;">Guarda-chuvas cadastrados</div>';
     if(pe) h += '<div class="card"><label style="display:block;margin-bottom:6px;font-size:13px;">Cadastrar códigos (vários de uma vez: separe por vírgula, espaço ou linha)</label>' +
       '<textarea id="umbNovosCodigos" rows="2" placeholder="Ex: GC01, GC02, GC03" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--sand-50);"></textarea>' +
       '<button type="button" id="umbAddCodigos" class="btn-primary" style="width:100%;margin-top:8px;">Cadastrar</button></div>';
@@ -13798,6 +13837,7 @@
           (pe ? umbBtn("umbEditChuva", c.id, "Editar") : '') + (px ? umbBtn("umbDelChuva", c.id, "Excluir", 'background:none;color:var(--red-600);border:1px solid var(--line);') : '') + '</div>';
       });
       h += '</div>';
+    }
     }
     h += '<button type="button" id="umbAtualizar" style="display:block;width:100%;margin-top:6px;background:transparent;border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:14px;">Atualizar</button>';
     return h;
@@ -13836,6 +13876,7 @@
       var novo = await dbInsert("emprestimos_chuva", {id:uid(), chuva_id:chuvaId, codigo:c?c.codigo:"?", destino:destino,
         hospede:(document.getElementById("umbHospede").value.trim()||null), observacao:(document.getElementById("umbObs").value.trim()||null),
         saiu_em:(umbHoraValida(hora)?dtLocalIso(hora):new Date().toISOString()), saiu_por:(currentUser?currentUser.id:null), saiu_por_nome:(currentUser?currentUser.nome:null)}, umbId);
+      try{ var upC = await dbUpdate("guarda_chuvas", chuvaId, {na_recepcao:false, conferido_em:new Date().toISOString(), conferido_por_nome:(currentUser?currentUser.nome:null)}, umbId); var ixC = umb.chuvas.findIndex(function(x){ return x.id === chuvaId; }); if(ixC > -1) umb.chuvas[ixC] = upC; }catch(e2){ console.error(e2); }
       umb.emp.unshift(novo); ov.remove(); showToast("Saída registrada: "+(c?c.codigo:"")+" → "+destino); renderRecepcao();
     });
     document.getElementById("umbDestino").onchange = function(){ document.getElementById("umbDestinoOutro").style.display = this.value === "__outro" ? "block" : "none"; };
@@ -13881,6 +13922,25 @@
     var rt = q("#umbRetry"); if(rt) rt.onclick = function(){ umb.carregado = false; umb.erro = false; renderRecepcao(); };
     var at = q("#umbAtualizar"); if(at) at.onclick = function(){ umb.carregado = false; renderRecepcao(); };
     var em = q("#umbEmprestar"); if(em) em.onclick = abrirEmprestarChuva;
+    main.querySelectorAll(".umbSubBtn").forEach(function(b){ b.onclick = function(){ umbSub = b.getAttribute("data-usub"); renderRecepcao(); }; });
+    async function umbMarcar(id, presente){
+      var up = await dbUpdate("guarda_chuvas", id, {na_recepcao:presente, conferido_em:new Date().toISOString(), conferido_por_nome:(currentUser?currentUser.nome:null)}, umbId);
+      var ix = umb.chuvas.findIndex(function(x){ return x.id === id; }); if(ix > -1) umb.chuvas[ix] = up;
+    }
+    main.querySelectorAll(".umbConfChk").forEach(function(cb){ cb.onchange = async function(){
+      cb.disabled = true;
+      try{ await umbMarcar(cb.getAttribute("data-id"), cb.checked); renderRecepcao(); }
+      catch(err){ console.error(err); showToast("Erro ao salvar"); cb.checked = !cb.checked; cb.disabled = false; }
+    }; });
+    var ct = q("#umbConfTodos");
+    if(ct) ct.onclick = async function(){
+      ct.disabled = true;
+      var ocup = {}; umbEmprestados().forEach(function(e){ if(e.chuva_id) ocup[e.chuva_id] = 1; });
+      var alvo = umb.chuvas.filter(function(c){ return c.ativo !== false && !ocup[c.id] && c.na_recepcao !== true; });
+      try{ for(var i = 0; i < alvo.length; i++) await umbMarcar(alvo[i].id, true); showToast(alvo.length+" marcados na recepção"); }
+      catch(err){ console.error(err); showToast("Erro ao marcar"); }
+      renderRecepcao();
+    };
     var add = q("#umbAddCodigos");
     if(add) add.onclick = async function(){
       var cods = (q("#umbNovosCodigos").value||"").split(/[\s,;]+/).map(function(s){ return s.trim(); }).filter(Boolean);
@@ -13902,6 +13962,7 @@
         var id = b.getAttribute("data-id");
         var up = await dbUpdate("emprestimos_chuva", id, {devolvido_em:new Date().toISOString(), devolvido_por_nome:(currentUser?currentUser.nome:null)}, umbId);
         var ix = umb.emp.findIndex(function(x){ return x.id === id; }); if(ix > -1) umb.emp[ix] = up;
+        if(up && up.chuva_id){ try{ await umbMarcar(up.chuva_id, true); }catch(e2){ console.error(e2); } }
         showToast("Devolução registrada"); renderRecepcao();
       }catch(err){ console.error(err); showToast("Erro ao registrar devolução"); b.disabled = false; }
     }; });
