@@ -666,13 +666,13 @@
 <div class="sheet-overlay" id="abastecerSheetOverlay">
   <div class="sheet">
     <h2>Abastecer — <span id="abastecerAcomodacaoNome"></span></h2>
-    <p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Confira a quantidade de cada item antes de confirmar. Marque "Não abasteci" se não tinha em estoque para repor — o item fica aguardando e só vira abastecimento quando você lançar a entrada dele no Estoque.</p>
+    <p id="abastecerHint" style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">Confira a quantidade de cada item antes de confirmar. Marque "Não abasteci" se não tinha em estoque para repor — o item fica aguardando e só vira abastecimento quando você lançar a entrada dele no Estoque.</p>
     <div id="abastecerItensLista"></div>
     <div style="display:flex;gap:8px;margin:4px 0 14px;">
       <select id="abastecerExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);"></select>
       <button type="button" id="abastecerExtraAddBtn" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>
     </div>
-    <label style="margin-top:14px;">Fotos do frigobar abastecido (opcional, pode tirar várias)</label>
+    <label id="abastecerFotoLabel" style="margin-top:14px;">Fotos do frigobar abastecido (opcional, pode tirar várias)</label>
     <div id="abastecerFotosGrid" style="display:none;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;"></div>
     <button type="button" id="abastecerFotoBtn" style="display:block;width:100%;background:var(--sand-100);color:var(--ink-900);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:inherit;font-size:13.5px;font-weight:700;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.5"/></svg> Tirar foto</button>
     <input type="file" id="abastecerFotoInput" accept="image/*" capture="environment" style="display:none;">
@@ -1353,6 +1353,7 @@
       status:r.status, criadoEm:new Date(r.criado_em).getTime(),
       iniciadoEm:(r.iniciado_em?new Date(r.iniciado_em).getTime():null),
       concluidoEm:(r.concluido_em?new Date(r.concluido_em).getTime():null),
+      consumoVerificadoEm:(r.consumo_verificado_em?new Date(r.consumo_verificado_em).getTime():null),
       iniciadoPor:r.iniciado_por, concluidoPor:r.concluido_por, itens:r.itens||null, itensFaltando:r.itens_faltando||null,
       liberadoPor:r.liberado_por, liberadoEm:(r.liberado_em?new Date(r.liberado_em).getTime():null),
       criadoPor:r.criado_por, excluidoEm:(r.excluido_em?new Date(r.excluido_em).getTime():null), excluidoPor:r.excluido_por,
@@ -5934,6 +5935,11 @@
     abastecerIdsRemovidos = {};
     document.getElementById("abastecerFotosGrid").style.display = "none";
     document.getElementById("abastecerAcomodacaoNome").textContent = acomodacaoNome(s.acomodacaoId);
+    var confSaida = ehConferenciaSaida(s);
+    document.getElementById("abastecerHint").innerHTML = confSaida
+      ? 'Confira o frigobar e a cesta. Se algo foi consumido ou está faltando, <b>adicione o produto abaixo</b> (escolha o item e toque em + Adicionar) e abasteça. Se não houve consumo e não há nada para repor, deixe sem itens. A <b>foto é obrigatória</b> nos dois casos.'
+      : 'Confira a quantidade de cada item antes de confirmar. Marque "Não abasteci" se não tinha em estoque para repor — o item fica aguardando e só vira abastecimento quando você lançar a entrada dele no Estoque.';
+    document.getElementById("abastecerFotoLabel").textContent = confSaida ? "Foto do frigobar conferido (obrigatória)" : "Fotos do frigobar abastecido (opcional, pode tirar várias)";
     var lista = document.getElementById("abastecerItensLista");
     lista.innerHTML = (s.itens||[]).map(function(it, i){ return linhaItemAbastecer(it.nome, it.quantidade||1, i); }).join("");
     (s.itens||[]).forEach(function(it, i){ wireLinhaAbastecer(lista, i); });
@@ -5953,6 +5959,7 @@
     var s = state.solicitacoes.find(function(x){ return x.id===abastecerSolicitacaoId; });
     if(!s) return;
     if(!podeAgirSolicitacao(s)){ showToast("Você não tem permissão para essa ação"); return; }
+    if(ehConferenciaSaida(s) && abastecerFotosPendentes.length === 0){ showToast("Tire a foto do frigobar para concluir a conferência", 5000); return; }
     var lista = document.getElementById("abastecerItensLista");
     var linhas = lista.querySelectorAll("[data-idx]");
     var destino = acomodacaoNome(s.acomodacaoId);
@@ -10126,6 +10133,56 @@
     return (state.staffNames && state.staffNames[id]) || "alguém";
   }
 
+  function ehConferenciaSaida(s){ return !!s && s.tipo === "frigobar" && typeof s.contexto === "string" && s.contexto.indexOf("conferencia") === 0; }
+  // A conferência de saída nasce vazia (no banco). Aqui ela busca no Hospedin o que o hóspede consumiu
+  // e preenche os itens para repor. Só uma sessão "ganha" (update condicional em consumo_verificado_em).
+  var ENRIQ_EM_CURSO = {};
+  async function enriquecerConferencia(t){
+    if(!ehConferenciaSaida(t) || t.status !== "pendente" || t.consumoVerificadoEm || ENRIQ_EM_CURSO[t.id]) return null;
+    ENRIQ_EM_CURSO[t.id] = true;
+    try{
+      var itens = [];
+      var ac = state.acomodacoes.find(function(a){ return a.id === t.acomodacaoId; });
+      if(t.contexto === "conferencia_checkout" && ac && ac.codigoHospedin){
+        var hoje = isoLocal(new Date());
+        var rows = (state.estoque.hospedinOcupacao||[]).filter(function(r){
+          return r.acomodacao === ac.codigoHospedin && r.status === "check_out" && String(r.checkout).slice(0,10) === hoje && r.hospedin_id;
+        });
+        if(t.searchableCode){ var iguais = rows.filter(function(r){ return r.searchable_code === t.searchableCode; }); if(iguais.length) rows = iguais; }
+        if(rows.length){
+          var res = await sb.functions.invoke("consumo-hospedin", {body:{ids:rows.map(function(r){ return Number(r.hospedin_id); }).slice(0,10)}});
+          if(res.error || !res.data || !res.data.ok) throw new Error("consumo-hospedin falhou");
+          var tot = {};
+          (res.data.reservas||[]).forEach(function(rv){
+            if(rv.erro) throw new Error("reserva sem dados");
+            (rv.vendas||[]).forEach(function(v){ var info = HOSP_CONSUMO[v.item]; if(!info) return; tot[info[0]] = (tot[info[0]]||0) + (Number(v.qtd)||0); });
+          });
+          itens = Object.keys(tot).filter(function(n){ return tot[n] > 0; }).sort().map(function(n){ return {nome:n, quantidade:tot[n]}; });
+        }
+      }
+      var r2 = await sb.from("solicitacoes_acomodacao").update({itens:itens, consumo_verificado_em:new Date().toISOString()}).eq("id", t.id).is("consumo_verificado_em", null).select();
+      if(r2.error) throw r2.error;
+      if(!r2.data || !r2.data.length) return null;
+      var novo = mapSolicitacaoFromRow(r2.data[0]);
+      var ix = state.solicitacoes.findIndex(function(x){ return x.id === t.id; });
+      if(ix > -1) state.solicitacoes[ix] = novo;
+      return novo;
+    }catch(err){ console.error("conferência: consumo do Hospedin:", err); return null; }
+    finally{ delete ENRIQ_EM_CURSO[t.id]; }
+  }
+  var enriquecendoTodas = false;
+  async function enriquecerTodasConferencias(){
+    if(enriquecendoTodas || !currentUser || !state.solicitacoes) return;
+    enriquecendoTodas = true;
+    try{
+      var lista = state.solicitacoes.filter(function(x){ return ehConferenciaSaida(x) && x.status === "pendente" && !x.consumoVerificadoEm && !x.excluidoEm; });
+      var mudou = false;
+      for(var i = 0; i < lista.length; i++){ if(await enriquecerConferencia(lista[i])) mudou = true; }
+      if(mudou && !(appSection === "estoque" && activeView === "count")) renderApp();
+    }finally{ enriquecendoTodas = false; }
+  }
+  setTimeout(enriquecerTodasConferencias, 8000);
+  setInterval(enriquecerTodasConferencias, 90000);
   function tipoLabelCompleto(s){
     if(s.tipo === "lavagem" && s.transferenciaDe) return "Transferência do " + s.transferenciaDe;
     var base = TIPO_LABEL[s.tipo] || s.tipo;
@@ -10134,6 +10191,8 @@
       if(s.contexto === "checkin") return base + " · Check-in";
       if(s.contexto === "checkout") return base + " · Checkout";
     }
+    if(s.tipo === "frigobar" && s.contexto === "conferencia_checkout") return "Conferir frigobar · Checkout";
+    if(s.tipo === "frigobar" && s.contexto === "conferencia_bloqueio") return "Conferir frigobar · Bloqueio";
     if(s.tipo === "lenha" && s.contexto === "troca_lenha_molhada") return "Trocar lenha molhada";
     if(s.tipo === "limpeza" && s.contexto === "estadia") return base + " · Manutenção";
     if(s.tipo === "limpeza" && s.contexto === "estadia_recusada") return base + " · Hóspede não quis";
@@ -10164,7 +10223,7 @@
     if(s.itens && s.itens.length){
       var itensTxt = itensListaTexto(s.itens);
       html += '<p class="item-meta" style="margin-bottom:4px;">'+(frigobarConcluido ? '<b>Retirado:</b> ' : '')+itensTxt+'</p>';
-      if(s.tipo === "frigobar"){
+      if(s.tipo === "frigobar" && !ehConferenciaSaida(s)){
         var vf = valorItensFrigobar(s.itens);
         if(vf.linhas.length){
           html += '<p class="item-meta" style="margin-bottom:4px;font-weight:800;color:var(--ink-900);">Total a lançar: '+restMoney(vf.total)+(vf.semValor?' <span style="font-weight:600;color:var(--amber-600);">(+ '+vf.semValor+' item(ns) sem valor cadastrado)</span>':'')+'</p>';
@@ -10172,6 +10231,12 @@
           html += '<p class="item-meta" style="margin-bottom:4px;color:var(--amber-600);">Sem valor cadastrado nos itens (defina em Estoque › Frigobar).</p>';
         }
       }
+    }
+    if(ehConferenciaSaida(s) && s.status !== "concluido"){
+      var infoConsumo = s.consumoVerificadoEm
+        ? ((s.itens && s.itens.length) ? 'Consumo lançado no Hospedin (repor): ' : (s.contexto === "conferencia_bloqueio" ? 'Bloqueio: confira o frigobar. ' : 'Nenhum consumo lançado no Hospedin — confira na acomodação. '))
+        : 'Buscando o consumo no Hospedin… ';
+      html += '<p class="item-meta" style="margin-bottom:4px;font-weight:700;color:var(--amber-600);">'+ic("camera")+' '+infoConsumo+'Vá até a acomodação e confira. Se faltar algo, adicione os produtos; depois abasteça e tire a foto (obrigatória, mesmo sem nada para repor).</p>';
     }
     if(s.tipo === "lenha" && s.contexto === "troca_lenha_molhada"){
       html += '<p class="item-meta" style="margin-bottom:4px;font-weight:800;color:var(--teal-700);">Troca sem custo — levar lenha seca e recolher a molhada</p>';
@@ -10271,7 +10336,7 @@
         html += '<div class="item-actions"><button class="btn btn-in" data-act="liberar" data-id="'+s.id+'">'+ic("lockOpen")+' Liberar</button>'+obsHtml+histHtml+lixoHtml+'</div>';
       } else if(s.status === "pendente"){
         var acaoLabel = "▶ Iniciar", acaoAct = "iniciar";
-        if(s.tipo === "frigobar"){ acaoLabel = ""+ic('check')+" Abasteceu"; acaoAct = "finalizar"; }
+        if(s.tipo === "frigobar"){ acaoLabel = ehConferenciaSaida(s) ? (""+ic('camera')+" Conferir e fotografar") : (""+ic('check')+" Abasteceu"); acaoAct = "finalizar"; }
         else if(s.tipo === "ventilacao"){ acaoLabel = ""+ic('check')+" Fechou"; acaoAct = "finalizar"; }
         else if(s.tipo === "roupa_cama"){ acaoLabel = ""+ic('check')+" Trocou"; acaoAct = "finalizar"; }
         else if(s.tipo === "sauna"){ acaoLabel = ""+ic('check')+" Ligada"; acaoAct = "finalizar"; }
@@ -10368,6 +10433,12 @@
             if(idx0>-1) state.solicitacoes[idx0] = s0;
             showToast("Liberado para a limpeza"); renderApp();
           } else if(act === "finalizar" && s.tipo === "frigobar"){
+            if(ehConferenciaSaida(s) && !s.consumoVerificadoEm){
+              showToast("Buscando o consumo no Hospedin…");
+              var enr = await enriquecerConferencia(s);
+              if(enr) s = enr; else { var atual = state.solicitacoes.find(function(x){ return x.id===id; }); if(atual) s = atual; }
+              if(!s.consumoVerificadoEm){ showToast("Não consegui buscar o consumo agora. Tente de novo em instantes.", 5000); return; }
+            }
             abrirAbastecerSheet(s);
           } else if(act === "finalizar" && s.tipo === "sauna"){
             // Sauna ligada não fecha na hora — entra em monitoramento por 1h,
