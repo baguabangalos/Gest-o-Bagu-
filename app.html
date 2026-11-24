@@ -1201,7 +1201,7 @@
   function mapTurnoAtividadeFromRow(r){
     return {id:r.id, turnoId:r.turno_id, titulo:r.titulo, tipo:r.tipo||"livre", horaInicio:r.hora_inicio, horaFim:r.hora_fim,
       intervaloMinutos:r.intervalo_minutos||null, ordem:r.ordem, diasSemana:r.dias_semana||[], observacao:r.observacao||null,
-      vinculoAtividadeId:r.vinculo_atividade_id||null, pedeQuantidade:!!r.pede_quantidade, rotuloQuantidade:r.rotulo_quantidade||""};
+      vinculoAtividadeId:r.vinculo_atividade_id||null, pedeQuantidade:!!r.pede_quantidade, rotuloQuantidade:r.rotulo_quantidade||"", horarios:(Array.isArray(r.horarios)?r.horarios:null)};
   }
   var DIAS_SEMANA_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   function atividadeAplicaNoDia(atividade, dataStr){
@@ -7493,7 +7493,7 @@
     (state.turnoExecucoes||[]).forEach(function(exec){
       if(exec.concluidoEm) return;
       var turno = state.turnos.find(function(t){ return t.id===exec.turnoId; });
-      if(!turno || !turno.horaFim) return;
+      if(!turno || !turno.horaFim || ehTurnoUnico(turno)) return;
       if(!ehAdminGlobal && (turno.empresa||"pousada") !== minhaEmpresaAtraso) return;
       var limite = dateAtLocalTime(dataEfetivaNoCiclo(exec.data, turno, turno.horaFim), turno.horaFim).getTime() + 30*60000;
       if(agora > limite) out.push({turno:turno, execucao:exec, atrasoMin:Math.floor((agora-limite)/60000)});
@@ -7694,8 +7694,76 @@
       return d !== 0 ? d : ((a.ordem||0) - (b.ordem||0));
     });
   }
+  // ---------- Checklist único da pousada (sem turnos) ----------
+  // A pousada passa a ter UM checklist por dia: as atividades ficam todas num
+  // "turno" interno (id fixo) e cada pessoa vê só o que cai no horário em que
+  // ela está escalada (Equipe › Horários). Uma marcação vale pra todo mundo.
+  var TURNO_POUSADA_ID = "pousada-dia";
+  function turnoUnicoPousada(){ return (state.turnos||[]).find(function(t){ return t.id===TURNO_POUSADA_ID; }) || null; }
+  function ehTurnoUnico(t){ return !!t && t.id===TURNO_POUSADA_ID; }
+  function hmMin(hm){ var m = /^(\d{1,2}):(\d{2})/.exec(hm||""); return m ? (+m[1])*60 + (+m[2]) : null; }
+  function parseHorariosTxt(txt){
+    var out = [];
+    var partes = String(txt||"").split(/[,;\n]+/).map(function(x){ return x.trim(); }).filter(Boolean);
+    for(var i=0;i<partes.length;i++){
+      var m = /^(\d{1,2})(?::?(\d{2}))?\s*(?:-|–|às|a|ate|até)\s*(\d{1,2})(?::?(\d{2}))?$/i.exec(partes[i]);
+      if(!m) return null;
+      var ini = String(m[1]).padStart(2,"0")+":"+(m[2]||"00"), fim = String(m[3]).padStart(2,"0")+":"+(m[4]||"00");
+      if(hmMin(ini)===null || hmMin(fim)===null || hmMin(ini)>=1440 || hmMin(fim)>=1440) return null;
+      out.push({ini:ini, fim:fim});
+    }
+    return out.length ? out.sort(function(a,b){ return hmMin(a.ini)-hmMin(b.ini); }) : null;
+  }
+  function horariosTxt(a){ return (a && a.horarios ? a.horarios : []).map(function(h){ return h.ini+"-"+h.fim; }).join(", "); }
+  // A pessoa está escalada (trabalhando) nesse horário desse dia? Considera o
+  // turno da noite que vira o dia (o de ontem cobre a madrugada de hoje).
+  function trabalhandoEm(userId, dataStr, hhmm){
+    var t = hmMin(hhmm); if(t===null) return false;
+    function janela(d){
+      var ef = escalaEfetiva(userId, d);
+      if(!ef || (ef.tipo!=="trabalho" && ef.tipo!=="trabalho_outro_setor") || !ef.horaInicio) return null;
+      return {ini:hmMin(ef.horaInicio), fim:(ef.horaFim?hmMin(ef.horaFim):1439)};
+    }
+    var h = janela(dataStr);
+    if(h){ if(h.fim > h.ini ? (t>=h.ini && t<=h.fim) : (t>=h.ini)) return true; }
+    var o = janela(addDiasStr(dataStr,-1));
+    if(o && o.fim <= o.ini && t < o.fim) return true;
+    return false;
+  }
+  // Expande as atividades "vários horários" em uma ocorrência por horário
+  // (id virtual "idAtividade@HH:MM") e aplica o filtro de quem está trabalhando.
+  function ocorrenciasUnicoParaMim(atividades, execucao){
+    var out = [];
+    atividades.forEach(function(a){
+      if(a.tipo === "varios_horarios" && a.horarios && a.horarios.length){
+        a.horarios.forEach(function(h){
+          var v = {}; for(var k in a) v[k] = a[k];
+          v.id = a.id+"@"+h.ini; v._base = a.id; v._slot = h.ini; v.tipo = "hora_fixa"; v.horaInicio = h.ini; v.horaFim = h.fim;
+          out.push(v);
+        });
+      } else out.push(a);
+    });
+    var ehGestao = currentUser && (currentUser.role === "admin");
+    if(ehGestao) return {lista:out, filtrado:false};
+    var agora = new Date();
+    var agoraHM = String(agora.getHours()).padStart(2,"0")+":"+String(agora.getMinutes()).padStart(2,"0");
+    var trabalhoAgora = trabalhandoEm(currentUser.id, execucao.data, agoraHM);
+    var lista = out.filter(function(a){
+      var ini = a.horaInicio;
+      if(!ini) return trabalhoAgora;
+      if(trabalhandoEm(currentUser.id, execucao.data, ini)) return true;
+      // passou do horário e ninguém marcou: fica pendente pra quem está trabalhando agora
+      var item = a._slot ? itemExecucaoSlot(execucao.id, a._base, a._slot) : atividadeExecucaoFor(execucao.id, a.id);
+      var fim = a.horaFim || ini;
+      var venceu = hmMin(fim) < hmMin(agoraHM) && execucao.data === localDateStr(agora);
+      return trabalhoAgora && venceu && (!item || item.status === "pendente");
+    });
+    return {lista:lista, filtrado:true};
+  }
+
   function slotsRecorrente(atividade){
     var slots = [];
+    if(atividade.tipo === "varios_horarios") return (atividade.horarios||[]).map(function(h){ return h.ini; });
     if(atividade.tipo !== "recorrente" || !atividade.horaInicio || !atividade.horaFim || !atividade.intervaloMinutos) return slots;
     var cursor = atividade.horaInicio;
     var guard = 0;
@@ -7709,7 +7777,7 @@
   function ocorrenciasTurno(turno, dataCiclo){
     var out = [];
     state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id && (!dataCiclo || atividadeAplicaNoDia(a, dataCiclo)); }).forEach(function(a){
-      if(a.tipo === "recorrente"){
+      if(a.tipo === "recorrente" || a.tipo === "varios_horarios"){
         slotsRecorrente(a).forEach(function(s){ out.push({atividade:a, slot:s}); });
       } else {
         out.push({atividade:a, slot:null});
@@ -7732,7 +7800,13 @@
     }
     var turnoDaAtividade = state.turnos.find(function(t){ return t.id===execucao.turnoId; });
     var inicio, fim, dataInicio, dataFim;
-    if(atividade.tipo === "recorrente"){
+    if(atividade.tipo === "varios_horarios"){
+      var hv = (atividade.horarios||[]).find(function(x){ return x.ini === slotHora; }) || {ini:slotHora, fim:slotHora};
+      dataInicio = dataEfetivaNoCiclo(execucao.data, turnoDaAtividade, hv.ini);
+      dataFim = (hv.fim < hv.ini) ? addDiasStr(dataInicio, 1) : dataInicio;
+      inicio = dateAtLocalTime(dataInicio, hv.ini);
+      fim = dateAtLocalTime(dataFim, hv.fim);
+    } else if(atividade.tipo === "recorrente"){
       var fimHm = addMinutosHM(slotHora, atividade.intervaloMinutos);
       dataInicio = dataEfetivaNoCiclo(execucao.data, turnoDaAtividade, slotHora);
       dataFim = (fimHm < slotHora) ? addDiasStr(dataInicio, 1) : dataInicio;
@@ -7785,24 +7859,27 @@
     html += '<div class="card">';
     var turnosOrdenados = state.turnos.filter(function(t){ return (t.empresa||"pousada") === minhaEmpresa; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var unicoAtivo = minhaEmpresa === "pousada" && !!turnoUnicoPousada();
+    if(unicoAtivo) turnosOrdenados = [turnoUnicoPousada()];
     if(turnosOrdenados.length === 0){
       html += '<p class="item-meta" style="margin-bottom:10px;">Nenhum turno cadastrado ainda.</p>';
     }
     turnosOrdenados.forEach(function(t, ti){
+      var uni = ehTurnoUnico(t);
       var ativs = state.turnoAtividades.filter(function(a){ return a.turnoId===t.id; });
       ativs = ordenarAtividadesTurno(ativs, t);
       html += '<div class="turno-admin-block" data-turno-id="'+t.id+'" style="'+(ti>0?'border-top:1px solid var(--line);padding-top:12px;margin-top:12px;':'')+'">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;">' +
         '<p style="margin:0;font-size:15px;font-weight:800;">'+escapeHtml(t.nome)+'</p>' +
-        '<button type="button" class="btn-edit" data-act="excluir-turno" data-id="'+t.id+'" title="Excluir turno">'+ic("trash")+'</button>' +
+        (uni ? '' : '<button type="button" class="btn-edit" data-act="excluir-turno" data-id="'+t.id+'" title="Excluir turno">'+ic("trash")+'</button>') +
       '</div>';
-      html += '<p class="item-meta" style="margin-bottom:8px;">início às '+escapeHtml(t.horaInicio)+(t.horaFim?(' · término às '+escapeHtml(t.horaFim)+' (avisa se passar 30min sem concluir)'):' · sem horário de término cadastrado (não avisa atraso)')+'</p>';
+      if(uni) html += '<p class="item-meta" style="margin-bottom:8px;">Lista única da pousada: cada atividade tem horário e aparece para quem estiver escalado(a) nele (Equipe › Horários). Uma marcação vale para todos.</p>'; else html += '<p class="item-meta" style="margin-bottom:8px;">início às '+escapeHtml(t.horaInicio)+(t.horaFim?(' · término às '+escapeHtml(t.horaFim)+' (avisa se passar 30min sem concluir)'):' · sem horário de término cadastrado (não avisa atraso)')+'</p>';
       if(ativs.length === 0){
         html += '<p class="item-meta">Nenhuma atividade cadastrada.</p>';
       }
       ativs.forEach(function(a){
         var horarioLbl = a.tipo === "hora_fixa" ? (escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) :
-          a.tipo === "recorrente" ? ("a cada "+a.intervaloMinutos+"min, "+escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "livre";
+          a.tipo === "varios_horarios" ? ("vários horários: "+escapeHtml(horariosTxt(a))) : a.tipo === "recorrente" ? ("a cada "+a.intervaloMinutos+"min, "+escapeHtml(a.horaInicio||"")+"–"+escapeHtml(a.horaFim||"")) : "livre";
         html += '<div style="padding:6px 0;'+(a.observacao?'':'')+'">';
         html += '<div class="qty-row" style="padding:0;">' +
           '<span class="qty-name">'+escapeHtml(a.titulo)+' <span style="color:var(--ink-400);font-size:11.5px;font-weight:600;">('+horarioLbl+' · '+escapeHtml(diasSemanaLabel(a.diasSemana))+')</span></span>' +
@@ -7817,8 +7894,9 @@
       html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;">' +
         '<input type="text" class="nova-atividade-titulo" placeholder="Nova atividade" style="flex:2;min-width:130px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
         '<select class="nova-atividade-tipo" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
-          '<option value="livre">Livre (sem hora)</option><option value="hora_fixa">Hora fixa</option><option value="recorrente">Recorrente (várias vezes ao dia)</option>' +
+          (uni ? '<option value="hora_fixa">Hora fixa (um horário)</option><option value="varios_horarios">Vários horários no dia (ex.: manhã, tarde, noite)</option><option value="recorrente">Recorrente (a cada X minutos)</option>' : '<option value="livre">Livre (sem hora)</option><option value="hora_fixa">Hora fixa</option><option value="recorrente">Recorrente (várias vezes ao dia)</option>') +
         '</select>' +
+        '<input type="text" class="nova-atividade-horarios" placeholder="Horários: 08:00-09:00, 15:00-16:00" style="display:none;flex:2;min-width:220px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
         '<input type="time" class="nova-atividade-inicio" style="display:none;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
         '<input type="time" class="nova-atividade-fim" style="display:none;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
         '<input type="number" min="5" step="5" class="nova-atividade-intervalo" placeholder="a cada (min)" style="display:none;width:110px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">' +
@@ -7835,12 +7913,13 @@
       html += '<textarea class="nova-atividade-obs" rows="2" placeholder="Observação (opcional) — instrução que aparece toda vez que essa atividade repetir" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;"></textarea>';
       html += '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-top:8px;"><input type="checkbox" class="nova-atividade-qtd"> Pedir a quantidade ao marcar como feito</label>' +
         '<input type="text" class="nova-atividade-qtd-rotulo" placeholder="O que contar? (ex: toalhas, kits, lençóis)" style="width:100%;margin-top:4px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">';
-      html += '<label class="item-meta" style="display:block;margin-top:6px;">É a mesma atividade de outro turno? (opcional, só se o título for diferente)' +
+      if(!uni) html += '<label class="item-meta" style="display:block;margin-top:6px;">É a mesma atividade de outro turno? (opcional, só se o título for diferente)' +
         '<select class="nova-atividade-vinculo" style="width:100%;margin-top:2px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:12.5px;">' +
         vinculoOptionsHtml(t.id, null) +
         '</select></label>';
       html += '</div>';
     });
+    if(!unicoAtivo){
     html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;'+(turnosOrdenados.length>0?'border-top:1px solid var(--line);padding-top:14px;':'')+'align-items:center;">' +
       '<input type="text" id="novoTurnoNome" placeholder="Nome do turno (ex: Turno 3)" style="flex:1;min-width:140px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
       '<label style="font-size:11.5px;color:var(--ink-600);display:flex;flex-direction:column;gap:2px;">Início<input type="time" id="novoTurnoHora" style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
@@ -7848,6 +7927,7 @@
       '<button type="button" id="adicionarTurnoBtn" style="white-space:nowrap;padding:0 14px;align-self:flex-end;height:38px;background:var(--teal-700);color:#fff;border:none;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:700;">+ Turno</button>' +
     '</div>';
     html += '<p class="item-meta" style="margin-top:6px;">Se preencher o término, o app avisa quando o turno passar 30 min sem ser concluído.</p>';
+    }
     html += '</div>';
     html += '<div class="section-title" style="margin-top:22px;">Seu(s) turno(s)</div>';
     return html;
@@ -7934,6 +8014,8 @@
       if(tipoSelect){
         tipoSelect.addEventListener("change", function(){
           var comHorario = tipoSelect.value === "hora_fixa" || tipoSelect.value === "recorrente";
+          var hInp = block.querySelector(".nova-atividade-horarios");
+          if(hInp) hInp.style.display = tipoSelect.value === "varios_horarios" ? "inline-block" : "none";
           inicioInput.style.display = comHorario ? "inline-block" : "none";
           fimInput.style.display = comHorario ? "inline-block" : "none";
           intervaloInput.style.display = tipoSelect.value === "recorrente" ? "inline-block" : "none";
@@ -7948,6 +8030,12 @@
           var comHorario = tipo === "hora_fixa" || tipo === "recorrente";
           var horaInicio = comHorario ? inicioInput.value : null;
           var horaFim = comHorario ? fimInput.value : null;
+          var horariosNovos = null;
+          if(tipo === "varios_horarios"){
+            horariosNovos = parseHorariosTxt((block.querySelector(".nova-atividade-horarios")||{}).value);
+            if(!horariosNovos){ showToast("Horários inválidos — use o formato 08:00-09:00, 15:00-16:00"); return; }
+            horaInicio = horariosNovos[0].ini; horaFim = horariosNovos[0].fim;
+          }
           if(comHorario && (!horaInicio || !horaFim)){ showToast("Preencha o horário de início e fim"); return; }
           var intervaloMinutos = null;
           if(tipo === "recorrente"){
@@ -7960,6 +8048,7 @@
           var vinculoSel = block.querySelector(".nova-atividade-vinculo");
           var vinculoId = vinculoSel && vinculoSel.value ? vinculoSel.value : null;
           var novoPayload = {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId};
+          if(horariosNovos) novoPayload.horarios = horariosNovos;
           if(block.querySelector(".nova-atividade-qtd").checked){
             novoPayload.pede_quantidade = true;
             novoPayload.rotulo_quantidade = block.querySelector(".nova-atividade-qtd-rotulo").value.trim() || null;
@@ -7992,7 +8081,9 @@
             '<option value="livre"'+(a.tipo==="livre"?" selected":"")+'>Livre (sem hora)</option>' +
             '<option value="hora_fixa"'+(a.tipo==="hora_fixa"?" selected":"")+'>Hora fixa</option>' +
             '<option value="recorrente"'+(a.tipo==="recorrente"?" selected":"")+'>Recorrente (várias vezes ao dia)</option>' +
+            (ehTurnoUnico(state.turnos.find(function(t){ return t.id===a.turnoId; })) ? '<option value="varios_horarios"'+(a.tipo==="varios_horarios"?" selected":"")+'>Vários horários no dia (ex.: manhã, tarde, noite)</option>' : '') +
           '</select>' +
+          '<input type="text" id="eaHorarios" value="'+escapeHtml(horariosTxt(a))+'" placeholder="Horários: 08:00-09:00, 15:00-16:00" style="display:'+(a.tipo==="varios_horarios"?"block":"none")+';width:100%;padding:9px 11px;margin-bottom:10px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);">' +
           '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
             '<label style="flex:1;font-size:11.5px;color:var(--ink-600);display:flex;flex-direction:column;gap:2px;">Início<input type="time" id="eaInicio" value="'+escapeHtml(a.horaInicio||"")+'" style="display:'+(comHorario?"block":"none")+';padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
             '<label style="flex:1;font-size:11.5px;color:var(--ink-600);display:flex;flex-direction:column;gap:2px;">Fim<input type="time" id="eaFim" value="'+escapeHtml(a.horaFim||"")+'" style="display:'+(comHorario?"block":"none")+';padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
@@ -8027,6 +8118,7 @@
     var intervaloInp = document.getElementById("eaIntervalo");
     tipoSel.addEventListener("change", function(){
       var ch = tipoSel.value === "hora_fixa" || tipoSel.value === "recorrente";
+      document.getElementById("eaHorarios").style.display = tipoSel.value === "varios_horarios" ? "block" : "none";
       inicioInp.style.display = ch ? "block" : "none";
       fimInp.style.display = ch ? "block" : "none";
       intervaloInp.style.display = tipoSel.value === "recorrente" ? "block" : "none";
@@ -8040,6 +8132,12 @@
       var comHor = tipo === "hora_fixa" || tipo === "recorrente";
       var horaInicio = comHor ? inicioInp.value : null;
       var horaFim = comHor ? fimInp.value : null;
+      var horariosEd = null;
+      if(tipo === "varios_horarios"){
+        horariosEd = parseHorariosTxt(document.getElementById("eaHorarios").value);
+        if(!horariosEd){ showToast("Horários inválidos — use o formato 08:00-09:00, 15:00-16:00"); return; }
+        horaInicio = horariosEd[0].ini; horaFim = horariosEd[0].fim;
+      }
       if(comHor && (!horaInicio || !horaFim)){ showToast("Preencha o horário de início e fim"); return; }
       var intervaloMinutos = null;
       if(tipo === "recorrente"){
@@ -8052,7 +8150,7 @@
       var vinculoId = vinculoSel && vinculoSel.value ? vinculoSel.value : null;
       var btn = document.getElementById("eaSalvar"); btn.disabled = true;
       try{
-        var updPayload = {titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId};
+        var updPayload = {titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId, horarios:horariosEd};
         var pedeQ = document.getElementById("eaPedeQtd").checked;
         if(pedeQ || a.pedeQuantidade){
           updPayload.pede_quantidade = pedeQ;
@@ -8260,6 +8358,8 @@
     var idsTroca = turnoIdsPorTrocaDeHorario();
     var meusTurnos = state.turnos.filter(function(t){ return currentUser.turnoIds.indexOf(t.id) > -1 || idsTroca.indexOf(t.id) > -1; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    var tuUnico = turnoUnicoPousada();
+    if(tuUnico && (currentUser.empresa||"pousada") === "pousada"){ meusTurnos = [tuUnico]; idsTroca = []; }
     if(idsTroca.length && checklistTrocaAplicadaDia !== localDateStr(new Date())){
       var tt = meusTurnos.find(function(t){ return idsTroca.indexOf(t.id) > -1; });
       if(tt) checklistTurnoSelecionado = tt.id;
@@ -8324,13 +8424,20 @@
   }
 
   function renderChecklistTurnoBody(main, turno, execucao, htmlPrefixo){
+    var unico = ehTurnoUnico(turno);
     var atividades = state.turnoAtividades.filter(function(a){ return a.turnoId===turno.id && atividadeAplicaNoDia(a, execucao.data); });
+    var unicoInfo = null;
+    if(unico){ unicoInfo = ocorrenciasUnicoParaMim(atividades, execucao); atividades = unicoInfo.lista; }
     atividades = ordenarAtividadesTurno(atividades, turno);
     var html = (htmlPrefixo||"") + '<div class="card" style="margin-bottom:14px;">' +
       '<p style="margin:0 0 3px;font-size:16px;font-weight:800;">'+escapeHtml(turno.nome)+'</p>' +
       '<p class="item-meta">ciclo de '+fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime())+' — reinicia às '+escapeHtml(turno.horaInicio)+' do dia seguinte'+(turno.horaFim?(' · término às '+escapeHtml(turno.horaFim)):'')+'</p>' +
     '</div>';
-    if(!execucao.concluidoEm && turno.horaFim){
+    if(unico){
+      html = (htmlPrefixo||"") + '<div class="card" style="margin-bottom:14px;"><p style="margin:0 0 3px;font-size:16px;font-weight:800;">Checklist da pousada</p><p class="item-meta">'+fmtDateOnly(dateAtLocalTime(execucao.data,"00:00").getTime())+' — '+(unicoInfo.filtrado ? 'aparece o que cai no horário em que você está escalada(o); o que passar do horário sem ser feito fica pendente. Quando alguém marca, vale pra todo mundo.' : 'visão completa (administração). Quando alguém marca, vale pra todo mundo.')+'</p></div>';
+      if(unicoInfo.filtrado && atividades.length === 0) html += '<div class="empty">Nada para você agora: não há atividade no seu horário de hoje (ou você não está escalada(o)).</div>';
+    }
+    if(!execucao.concluidoEm && turno.horaFim && !unico){
       var limiteMs = dateAtLocalTime(dataEfetivaNoCiclo(execucao.data, turno, turno.horaFim), turno.horaFim).getTime() + 30*60000;
       if(Date.now() > limiteMs){
         var atrasoMin = Math.floor((Date.now()-limiteMs)/60000);
@@ -8354,7 +8461,7 @@
     }
     if(!jaConcluido){
     var renderAtivComum = function(a){
-      var item = atividadeExecucaoFor(execucao.id, a.id);
+      var item = a._slot ? itemExecucaoSlot(execucao.id, a._base, a._slot) : atividadeExecucaoFor(execucao.id, a.id);
       var est = estadoAtividade(a, execucao, item);
       var corBorda = est.fase==="feito" ? "var(--teal-700)" : est.fase==="feito_atrasado" ? "var(--amber-600)" : est.fase==="nao_feito" ? "var(--red-600)" : est.fase==="vencido" ? "var(--amber-600)" : est.fase==="bloqueado" ? "var(--ink-400)" : "var(--teal-700)";
       html += '<div class="card" data-id="'+a.id+'" style="border-left:4px solid '+corBorda+';">';
@@ -8404,7 +8511,7 @@
     atividades.forEach(function(a){ if(a.tipo === "recorrente") renderAtivRecorrente(a); else renderAtivComum(a); });
     } // fim do if(!jaConcluido) que esconde a lista de atividades
 
-    var pendenciasHerdadas = state.turnoAtividadeExecucoes.filter(function(x){ return x.repassadoTurnoId===turno.id && x.status==="pendente"; });
+    var pendenciasHerdadas = unico ? [] : state.turnoAtividadeExecucoes.filter(function(x){ return x.repassadoTurnoId===turno.id && x.status==="pendente"; });
     if(pendenciasHerdadas.length > 0 && !jaConcluido){
       html += '<div class="section-title">'+ic("download")+' Pendências do turno anterior</div>';
       pendenciasHerdadas.forEach(function(item){
@@ -8426,8 +8533,10 @@
       });
     }
 
-    html += '<div class="card" style="margin-top:14px;background:var(--sand-50);">';
-    if(jaConcluido){
+    if(!unico) html += '<div class="card" style="margin-top:14px;background:var(--sand-50);">';
+    if(unico){
+      // checklist único da pousada: sem "concluir turno"
+    } else if(jaConcluido){
       html += '<p style="margin:0;font-size:14px;font-weight:700;">'+ic("check")+' Turno concluído às '+fmtDate(execucao.concluidoEm).split(" ")[1]+(execucao.concluidoPor?(' por '+escapeHtml(execucao.concluidoPor)):'')+'</p>';
       html += '<p class="item-meta" style="margin:10px 0 6px;font-weight:700;">Observações do turno</p>' +
         '<textarea id="turnoObsEdit" placeholder="Algo que o próximo turno ou a supervisão precisa saber…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;">'+escapeHtml(execucao.observacaoPendencias||"")+'</textarea>' +
@@ -8439,7 +8548,7 @@
       html += '<p class="item-meta" style="margin:12px 0 6px;font-weight:700;">Observações do turno <span style="font-weight:500;">(opcional — obrigatório só se ficou atividade pendente)</span></p>' +
         '<textarea id="concluirTurnoObs" placeholder="Comentários sobre o turno, ocorrências, o que falta pro próximo turno…" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>';
     }
-    html += '</div>';
+    if(!unico) html += '</div>';
 
     main.innerHTML = html;
     main.querySelectorAll('[data-ver-turno-dia]').forEach(function(btn){
@@ -8656,6 +8765,7 @@
 
   async function marcarAtividadeTurno(execucao, atividadeId, status, motivo, atrasado, slotHora){
     if(!podeEditar("checklist_turno")){ showToast("Você não tem permissão para marcar o checklist"); return; }
+    if(String(atividadeId).indexOf("@") > -1){ var pv = String(atividadeId).split("@"); atividadeId = pv[0]; slotHora = slotHora || pv[1]; }
     var atvQ = state.turnoAtividades.find(function(a){ return a.id===atividadeId; });
     var qtd = null;
     if(status === "feito" && atvQ && atvQ.pedeQuantidade){
@@ -8677,7 +8787,7 @@
         state.turnoAtividadeExecucoes.push(nova);
       }
       var atividadeObj = state.turnoAtividades.find(function(a){ return a.id===atividadeId; });
-      if(atividadeObj) await propagarAtividadeParaOutrosTurnos(atividadeObj, execucao, status, motivo, atrasado, slotHora, qtd);
+      if(atividadeObj && !ehTurnoUnico(state.turnos.find(function(t){ return t.id===execucao.turnoId; }))) await propagarAtividadeParaOutrosTurnos(atividadeObj, execucao, status, motivo, atrasado, slotHora, qtd);
       showToast(status==="feito" ? (atrasado ? "Marcado como feito (atrasado)" : "Marcado como feito") : "Registrado como não realizado");
       renderApp();
     }catch(err){
