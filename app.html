@@ -8221,6 +8221,35 @@
     });
   }
 
+  var checklistTrocaAplicadaDia = null;
+  // Quando o horário da pessoa é trocado num dia (exceção na escala), o
+  // checklist do turno que bate com o novo horário aparece pra ela sozinho.
+  function turnoIdsPorTrocaDeHorario(){
+    var out = [];
+    try{
+      if(!currentUser || !state.turnos) return out;
+      var hoje = localDateStr(new Date());
+      var emp = currentUser.empresa || "pousada";
+      [hoje, addDiasStr(hoje,-1)].forEach(function(d){
+        var ef = escalaEfetiva(currentUser.id, d);
+        if(!ef || !ef.excecao || ef.tipo!=="trabalho" && ef.tipo!=="trabalho_outro_setor" || !ef.horaInicio) return;
+        var ini = String(ef.horaInicio).slice(0,5);
+        var m = ini.split(":"); var minIni = (+m[0])*60 + (+m[1]);
+        var melhor = null, dif = 1e9;
+        state.turnos.forEach(function(t){
+          if((t.empresa||"pousada") !== emp || !t.horaInicio) return;
+          var h = String(t.horaInicio).slice(0,5).split(":"); var mt = (+h[0])*60 + (+h[1]);
+          var df = Math.abs(mt - minIni); df = Math.min(df, 1440-df);
+          if(df < dif){ dif = df; melhor = t; }
+        });
+        if(!melhor || dif > 120) return;
+        if(cicloDataAtual(melhor) !== d) return;
+        if(out.indexOf(melhor.id) < 0) out.push(melhor.id);
+      });
+    }catch(e){ console.error(e); }
+    return out;
+  }
+
   async function renderChecklistTurno(){
     var main = document.getElementById("checklistTurnoView");
     var isAdmin = currentUser.role === "admin";
@@ -8228,8 +8257,14 @@
     var managementHtml = podeGerirTurnos ? renderTurnoManagementHtml() : "";
     if(podeGerirTurnos) managementHtml += renderChecklistOverviewHtml();
 
-    var meusTurnos = state.turnos.filter(function(t){ return currentUser.turnoIds.indexOf(t.id) > -1; })
+    var idsTroca = turnoIdsPorTrocaDeHorario();
+    var meusTurnos = state.turnos.filter(function(t){ return currentUser.turnoIds.indexOf(t.id) > -1 || idsTroca.indexOf(t.id) > -1; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+    if(idsTroca.length && checklistTrocaAplicadaDia !== localDateStr(new Date())){
+      var tt = meusTurnos.find(function(t){ return idsTroca.indexOf(t.id) > -1; });
+      if(tt) checklistTurnoSelecionado = tt.id;
+      checklistTrocaAplicadaDia = localDateStr(new Date());
+    }
 
     if(meusTurnos.length === 0){
       main.innerHTML = tarefasChecklistHtml() + managementHtml + '<div class="empty">'+(podeGerirTurnos ? 'Você ainda não tem um turno atribuído a você. Atribua em Administração, ou cadastre um turno acima e depois se atribua a ele.' : 'Você ainda não tem um turno atribuído. Peça pro administrador liberar em Administração.')+'</div>';
