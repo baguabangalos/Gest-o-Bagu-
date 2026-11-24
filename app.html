@@ -1201,7 +1201,7 @@
   function mapTurnoAtividadeFromRow(r){
     return {id:r.id, turnoId:r.turno_id, titulo:r.titulo, tipo:r.tipo||"livre", horaInicio:r.hora_inicio, horaFim:r.hora_fim,
       intervaloMinutos:r.intervalo_minutos||null, ordem:r.ordem, diasSemana:r.dias_semana||[], observacao:r.observacao||null,
-      vinculoAtividadeId:r.vinculo_atividade_id||null, pedeQuantidade:!!r.pede_quantidade, rotuloQuantidade:r.rotulo_quantidade||"", horarios:(Array.isArray(r.horarios)?r.horarios:null)};
+      vinculoAtividadeId:r.vinculo_atividade_id||null, pedeQuantidade:!!r.pede_quantidade, rotuloQuantidade:r.rotulo_quantidade||"", horarios:(Array.isArray(r.horarios)?r.horarios:null), restritoA:r.restrito_a||null};
   }
   var DIAS_SEMANA_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   function atividadeAplicaNoDia(atividade, dataStr){
@@ -7714,6 +7714,13 @@
     }
     return out.length ? out.sort(function(a,b){ return hmMin(a.ini)-hmMin(b.ini); }) : null;
   }
+  function restritoOptionsHtml(sel){
+    var h = '<option value="">Todos que estiverem escalados no horário</option>';
+    (state.staffProfiles||[]).filter(function(p){ return p.ativo !== false; }).slice().sort(function(a,b){ return String(a.nome||"").localeCompare(String(b.nome||"")); }).forEach(function(p){
+      h += '<option value="'+p.id+'"'+(sel===p.id?" selected":"")+'>Só para '+escapeHtml(p.nome||"")+'</option>';
+    });
+    return h;
+  }
   function horariosTxt(a){ return (a && a.horarios ? a.horarios : []).map(function(h){ return h.ini+"-"+h.fim; }).join(", "); }
   // A pessoa está escalada (trabalhando) nesse horário desse dia? Considera o
   // turno da noite que vira o dia (o de ontem cobre a madrugada de hoje).
@@ -7743,13 +7750,17 @@
         });
       } else out.push(a);
     });
+    // atividades "só para uma pessoa": aparecem só pra ela, a qualquer hora do dia
+    out = out.filter(function(a){ return !a.restritoA || (currentUser && a.restritoA === currentUser.id); });
     var ehGestao = currentUser && (currentUser.role === "admin");
     if(ehGestao) return {lista:out, filtrado:false};
+    var souRestrita = function(a){ return !!a.restritoA && currentUser && a.restritoA === currentUser.id; };
     var agora = new Date();
     var agoraHM = String(agora.getHours()).padStart(2,"0")+":"+String(agora.getMinutes()).padStart(2,"0");
     var trabalhoAgora = trabalhandoEm(currentUser.id, execucao.data, agoraHM);
     var lista = out.filter(function(a){
       var ini = a.horaInicio;
+      if(souRestrita(a)) return true;
       if(!ini) return trabalhoAgora;
       if(trabalhandoEm(currentUser.id, execucao.data, ini)) return true;
       // passou do horário e ninguém marcou: fica pendente pra quem está trabalhando agora
@@ -7910,6 +7921,7 @@
         }).join("") +
         '</div>' +
       '</div>';
+      if(uni) html += '<label class="item-meta" style="display:block;margin-top:8px;">Quem vê essa atividade?<select class="nova-atividade-restrito" style="width:100%;margin-top:2px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:12.5px;">'+restritoOptionsHtml(null)+'</select></label>';
       html += '<textarea class="nova-atividade-obs" rows="2" placeholder="Observação (opcional) — instrução que aparece toda vez que essa atividade repetir" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;"></textarea>';
       html += '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-top:8px;"><input type="checkbox" class="nova-atividade-qtd"> Pedir a quantidade ao marcar como feito</label>' +
         '<input type="text" class="nova-atividade-qtd-rotulo" placeholder="O que contar? (ex: toalhas, kits, lençóis)" style="width:100%;margin-top:4px;padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">';
@@ -8049,6 +8061,8 @@
           var vinculoId = vinculoSel && vinculoSel.value ? vinculoSel.value : null;
           var novoPayload = {id:uid(), turno_id:turnoId, titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, ordem:ordemAtual, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId};
           if(horariosNovos) novoPayload.horarios = horariosNovos;
+          var restSel = block.querySelector(".nova-atividade-restrito");
+          if(restSel && restSel.value) novoPayload.restrito_a = restSel.value;
           if(block.querySelector(".nova-atividade-qtd").checked){
             novoPayload.pede_quantidade = true;
             novoPayload.rotulo_quantidade = block.querySelector(".nova-atividade-qtd-rotulo").value.trim() || null;
@@ -8096,6 +8110,7 @@
             return '<label style="display:flex;align-items:center;gap:4px;font-size:12.5px;"><input type="checkbox" class="eaDia" value="'+idx+'"'+(marcado?" checked":"")+'> '+lbl+'</label>';
           }).join("") +
           '</div>' +
+          (ehTurnoUnico(state.turnos.find(function(t){ return t.id===a.turnoId; })) ? ('<label>Quem vê essa atividade?</label><select id="eaRestrito" style="width:100%;padding:10px 12px;margin-bottom:10px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:12.5px;background:var(--sand-50);">'+restritoOptionsHtml(a.restritoA)+'</select>') : '') +
           '<label>Observação (opcional)</label>' +
           '<textarea id="eaObs" rows="2" style="width:100%;padding:10px 12px;margin-bottom:4px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;">'+escapeHtml(a.observacao||"")+'</textarea>' +
           '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-top:6px;"><input type="checkbox" id="eaPedeQtd"'+(a.pedeQuantidade?" checked":"")+'> Pedir a quantidade ao marcar como feito</label>' +
@@ -8151,6 +8166,8 @@
       var btn = document.getElementById("eaSalvar"); btn.disabled = true;
       try{
         var updPayload = {titulo:titulo, tipo:tipo, hora_inicio:horaInicio, hora_fim:horaFim, intervalo_minutos:intervaloMinutos, dias_semana:diasSemana, observacao:(obsTxt||null), vinculo_atividade_id:vinculoId, horarios:horariosEd};
+        var eaRest = document.getElementById("eaRestrito");
+        if(eaRest) updPayload.restrito_a = eaRest.value || null;
         var pedeQ = document.getElementById("eaPedeQtd").checked;
         if(pedeQ || a.pedeQuantidade){
           updPayload.pede_quantidade = pedeQ;
