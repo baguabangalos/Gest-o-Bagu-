@@ -10002,8 +10002,13 @@
   var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído", monitorando:"Sauna ligada — monitorando"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos' | 'previsao'
 
+  var AREAS_COMUNS = ["Recepção","Restaurante","Piscina / deck","Jardim e trilhas","Estacionamento","Banheiros comuns","Corredores e escadas","Outra área comum"];
+  function areaComumOptionsHtml(sel){
+    return '<optgroup label="Áreas comuns">' + AREAS_COMUNS.map(function(n){ var v="area:"+n; return '<option value="'+escapeHtml(v)+'"'+(sel===v?' selected':'')+'>'+escapeHtml(n)+' (área comum)</option>'; }).join("") + '</optgroup>';
+  }
   function acomodacaoNome(id){
     if(!id) return "Sem acomodação definida";
+    if(String(id).indexOf("area:")===0) return String(id).slice(5)+" (área comum)";
     var a = state.acomodacoes.find(function(x){ return x.id===id; });
     return a ? a.nome : id;
   }
@@ -15507,8 +15512,8 @@
     if(podeEd){
       var ativas = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
       html += '<div class="card" style="margin-bottom:12px;">' +
-        '<select id="peAcom" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Escolha a acomodação…</option>' +
-        ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(a.nome)+'</option>'; }).join("") + '</select>' +
+        '<select id="peAcom" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Escolha a acomodação ou área comum…</option>' +
+        ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(a.nome)+'</option>'; }).join("") + areaComumOptionsHtml("") + '</select>' +
         '<select id="peSetor" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Quem vai fazer? (setor)…</option><option value="limpeza">Limpeza — aparece no serviço de limpeza</option><option value="recepcao">Recepção — aparece na revisão</option></select>' +
         '<textarea id="peDesc" rows="2" placeholder="O que precisa ser feito? (ex.: está sem almofada)" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;"></textarea>' +
         '<label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:8px;">Para a entrada do dia (opcional)<input type="date" id="peData" style="display:block;margin-top:3px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
@@ -15574,7 +15579,7 @@
         var html = '<div class="sheet-overlay open" id="editPeOverlay"><div class="sheet" style="max-height:90vh;overflow:auto;">' +
           '<h2>Editar pendência</h2>' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">Acomodação</label>' +
-          '<select id="epeAcom" style="'+estilo+'">' + ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'"'+(a.id===p.acomodacao_id?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("") + '</select>' +
+          '<select id="epeAcom" style="'+estilo+'">' + ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'"'+(a.id===p.acomodacao_id?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("") + areaComumOptionsHtml(p.acomodacao_id) + '</select>' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">Setor responsável</label>' +
           '<select id="epeSetor" style="'+estilo+'"><option value=""'+(!p.setor?' selected':'')+'>Geral (sem setor)</option><option value="limpeza"'+(p.setor==="limpeza"?' selected':'')+'>Limpeza</option><option value="recepcao"'+(p.setor==="recepcao"?' selected':'')+'>Recepção</option></select>' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">O que precisa ser feito</label>' +
