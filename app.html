@@ -550,6 +550,7 @@
         <option value="Uniformes">Uniformes</option>
         <option value="Lojinha">Lojinha</option>
         <option value="UTV">UTV</option>
+        <option value="Vinhos">Vinhos</option>
         <option value="Mercearia">Mercearia</option>
         <option value="Bebidas">Bebidas</option>
         <option value="Hortifruti">Hortifruti</option>
@@ -564,7 +565,7 @@
       <label>Quantidade mínima (alerta)</label>
       <input type="number" id="f_min" step="0.01" required>
       <label>Valor cobrado ao hóspede (R$) — opcional</label>
-      <input type="number" id="f_precoVenda" step="0.01" min="0" placeholder="Ex: 12,00 (frigobar, lojinha…)">
+      <input type="number" id="f_precoVenda" step="0.01" min="0" placeholder="Ex: 12,00 (frigobar, lojinha, vinhos…)">
       <div id="f_precoCustoWrap" style="display:none;">
       <label>Valor pago por unidade (custo, R$) — opcional</label>
       <input type="number" id="f_precoCusto" step="0.01" min="0" placeholder="Ex: 6,50 — usado no relatório de lucro e perdas">
@@ -1102,12 +1103,12 @@
     }
   });
 
-  var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção","Uniformes","Lojinha","UTV"];
+  var CATEGORIES = ["Frigobar","Limpeza","Enxoval","Manutenção","Uniformes","Lojinha","UTV","Vinhos"];
   // O estoque do Restaurante é de OUTRA empresa: tem itens, movimentações, contagens e fornecedores próprios.
   var CATEGORIAS_REST = ["Mercearia","Bebidas","Hortifruti","Proteínas","Limpeza","Descartáveis","Outros"];
   var estoqueModo = "pousada";        // qual estoque está ativo agora: "pousada" | "restaurante"
   var estoqueEmpresaSel = "pousada";  // pedido de navegação (muda quando se entra pelo Restaurante)
-  var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção","Uniformes":"Uniformes","Lojinha":"Lojinha","UTV":"UTV","Mercearia":"Mercearia","Bebidas":"Bebidas","Hortifruti":"Hortifruti","Proteínas":"Proteínas","Descartáveis":"Descartáveis","Outros":"Outros"};
+  var CATEGORY_LABEL = {"Frigobar":"Frigobar","Limpeza":"Limpeza","Enxoval":"Enxoval","Manutenção":"Manutenção","Uniformes":"Uniformes","Lojinha":"Lojinha","UTV":"UTV","Vinhos":"Vinhos","Mercearia":"Mercearia","Bebidas":"Bebidas","Hortifruti":"Hortifruti","Proteínas":"Proteínas","Descartáveis":"Descartáveis","Outros":"Outros"};
   var WEEKDAYS = [
     {key:"dom",label:"Dom"},{key:"seg",label:"Seg"},{key:"ter",label:"Ter"},
     {key:"qua",label:"Qua"},{key:"qui",label:"Qui"},{key:"sex",label:"Sex"},{key:"sab",label:"Sáb"}
@@ -1630,7 +1631,7 @@
 
   // Acesso ao estoque só de uma categoria (ex.: só Limpeza, só Manutenção):
   // são permissões à parte; quem tem o "Estoque" completo vê todas as categorias.
-  var ESTOQUE_CAT_MODULO = {"Frigobar":"estoque_frigobar", "Limpeza":"estoque_limpeza", "Enxoval":"estoque_enxoval", "Manutenção":"estoque_manutencao", "Uniformes":"estoque_uniformes", "Lojinha":"estoque_lojinha", "UTV":"estoque_utv"};
+  var ESTOQUE_CAT_MODULO = {"Frigobar":"estoque_frigobar", "Limpeza":"estoque_limpeza", "Enxoval":"estoque_enxoval", "Manutenção":"estoque_manutencao", "Uniformes":"estoque_uniformes", "Lojinha":"estoque_lojinha", "UTV":"estoque_utv", "Vinhos":"estoque_vinhos"};
   // Permissões detalhadas por aba e ações especiais (mesmo modelo do estoque):
   // quem tem o módulo completo faz tudo; quem tem só uma aba, só aquela aba.
   var PERM_ABAS = {
@@ -3911,7 +3912,7 @@
     })();
     return ocupHist.carregando;
   }
-  var HORIZONTE_PADRAO = {"Frigobar":15, "Lojinha":15, "UTV":15};
+  var HORIZONTE_PADRAO = {"Frigobar":15, "Lojinha":15, "UTV":15, "Vinhos":15};
   function horizonteItem(item){
     var c = cfgGet("compra_horizonte", {});
     var h = c[item.id];
@@ -5507,7 +5508,7 @@
   function abrirRetiradaLoteSheet(itemInicial){
     if(!podeEditar("estoque")){ showToast("Você não tem permissão para editar o estoque"); return; }
     var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
-    var catalogo = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Lojinha"; })
+    var catalogo = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Lojinha" || it.category === "Vinhos"; })
       .sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
     var ov = document.createElement("div"); ov.className = "sheet-overlay open";
     ov.innerHTML = '<div class="sheet"><h2>Itens retirados da acomodação</h2>' +
@@ -10001,13 +10002,8 @@
   var STATUS_LABEL = {bloqueada:"Bloqueada", pendente:"Aguardando", em_andamento:"Em andamento", concluido:"Concluído", monitorando:"Sauna ligada — monitorando"};
   var limpezaSubView = "abertos"; // 'abertos' | 'concluidos' | 'previsao'
 
-  var AREAS_COMUNS = ["Recepção","Restaurante","Piscina / deck","Jardim e trilhas","Estacionamento","Banheiros comuns","Corredores e escadas","Outra área comum"];
-  function areaComumOptionsHtml(sel){
-    return '<optgroup label="Áreas comuns">' + AREAS_COMUNS.map(function(n){ var v="area:"+n; return '<option value="'+escapeHtml(v)+'"'+(sel===v?' selected':'')+'>'+escapeHtml(n)+' (área comum)</option>'; }).join("") + '</optgroup>';
-  }
   function acomodacaoNome(id){
     if(!id) return "Sem acomodação definida";
-    if(String(id).indexOf("area:")===0) return String(id).slice(5)+" (área comum)";
     var a = state.acomodacoes.find(function(x){ return x.id===id; });
     return a ? a.nome : id;
   }
@@ -15262,6 +15258,7 @@
     {key:"estoque_uniformes", label:"Estoque — só Uniformes"},
     {key:"estoque_lojinha", label:"Estoque — só Lojinha"},
     {key:"estoque_utv", label:"Estoque — só UTV"},
+    {key:"estoque_vinhos", label:"Estoque — só Vinhos"},
     {key:"estoque_restaurante", label:"Estoque — só Restaurante (itens, contagem e consumo)"},
     {key:"procedimentos", label:"Procedimentos"},
     {key:"manutencao", label:"Manutenções"},
@@ -15510,8 +15507,8 @@
     if(podeEd){
       var ativas = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
       html += '<div class="card" style="margin-bottom:12px;">' +
-        '<select id="peAcom" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Escolha a acomodação ou área comum…</option>' +
-        ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(a.nome)+'</option>'; }).join("") + areaComumOptionsHtml("") + '</select>' +
+        '<select id="peAcom" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Escolha a acomodação…</option>' +
+        ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(a.nome)+'</option>'; }).join("") + '</select>' +
         '<select id="peSetor" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"><option value="">Quem vai fazer? (setor)…</option><option value="limpeza">Limpeza — aparece no serviço de limpeza</option><option value="recepcao">Recepção — aparece na revisão</option></select>' +
         '<textarea id="peDesc" rows="2" placeholder="O que precisa ser feito? (ex.: está sem almofada)" style="width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);resize:vertical;"></textarea>' +
         '<label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:8px;">Para a entrada do dia (opcional)<input type="date" id="peData" style="display:block;margin-top:3px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13.5px;background:var(--sand-50);"></label>' +
@@ -15577,7 +15574,7 @@
         var html = '<div class="sheet-overlay open" id="editPeOverlay"><div class="sheet" style="max-height:90vh;overflow:auto;">' +
           '<h2>Editar pendência</h2>' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">Acomodação</label>' +
-          '<select id="epeAcom" style="'+estilo+'">' + ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'"'+(a.id===p.acomodacao_id?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("") + areaComumOptionsHtml(p.acomodacao_id) + '</select>' +
+          '<select id="epeAcom" style="'+estilo+'">' + ativas.map(function(a){ return '<option value="'+escapeHtml(a.id)+'"'+(a.id===p.acomodacao_id?' selected':'')+'>'+escapeHtml(a.nome)+'</option>'; }).join("") + '</select>' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">Setor responsável</label>' +
           '<select id="epeSetor" style="'+estilo+'"><option value=""'+(!p.setor?' selected':'')+'>Geral (sem setor)</option><option value="limpeza"'+(p.setor==="limpeza"?' selected':'')+'>Limpeza</option><option value="recepcao"'+(p.setor==="recepcao"?' selected':'')+'>Recepção</option></select>' +
           '<label class="item-meta" style="display:block;margin-bottom:3px;">O que precisa ser feito</label>' +
@@ -15904,7 +15901,7 @@
     if(vld.erro) return '<div class="empty">Não consegui carregar. Confira se a tabela validades_itens existe no Supabase.</div>';
     var hoje = hojeISO();
     var acs = state.acomodacoes.filter(function(a){ return a.ativo; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
-    var catalogo = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Lojinha"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    var catalogo = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Lojinha" || it.category === "Vinhos"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
     var inp = 'padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);width:100%;box-sizing:border-box;margin-bottom:8px;';
     var h = '<p class="item-meta" style="margin:0 0 10px;">Lance o item que está perto de vencer em uma acomodação. O app avisa <b>1 dia antes</b> da validade para retirar; ao confirmar a retirada, já cria (ou soma) o abastecimento de reposição.</p>';
     h += '<div class="card"><p class="item-name" style="margin:0 0 8px;">Lançar item próximo de vencer</p>' +
@@ -16378,7 +16375,7 @@
       var custo = it.precoCusto, venda = it.precoVenda;
       // Materiais de consumo (limpeza, enxoval, manutenção, uniformes…): o gasto conta na COMPRA, mesmo sem lucro.
       // As saídas deles não entram de novo (nem como perda nem como cortesia) pra não contar duas vezes.
-      var materialConsumo = (it.category !== "Frigobar" && it.category !== "Lojinha");
+      var materialConsumo = (it.category !== "Frigobar" && it.category !== "Lojinha" && it.category !== "Vinhos");
       if(materialConsumo){
         if(m.type === "entrada"){
           if(custo==null){ r.semCusto[it.name] = true; return; }
