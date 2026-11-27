@@ -1714,6 +1714,7 @@
     var manter = cats.slice();
     // Recepção/Limpeza/Serviço Geral usam os itens do frigobar nos abastecimentos deles.
     if(manter.indexOf("Frigobar") === -1 && (podeVer("recepcao") || podeVer("limpeza") || podeVer("servico_geral"))) manter.push("Frigobar");
+    if(manter.indexOf("Vinhos") === -1 && (podeVer("recepcao") || podeVer("limpeza") || podeVer("servico_geral"))) manter.push("Vinhos");
     var itens = st.estoque.items.filter(function(it){ return manter.indexOf(it.category) > -1; });
     var ids = {}, nomes = {};
     itens.forEach(function(it){ ids[it.id] = true; nomes[it.name] = true; });
@@ -5945,7 +5946,7 @@
     lista.innerHTML = (s.itens||[]).map(function(it, i){ return linhaItemAbastecer(it.nome, it.quantidade||1, i); }).join("");
     (s.itens||[]).forEach(function(it, i){ wireLinhaAbastecer(lista, i); });
 
-    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Vinhos"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
     document.getElementById("abastecerExtraSelect").innerHTML = '<option value="">Selecionar item…</option>' +
       itensFrigobar.map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("");
 
@@ -11792,7 +11793,7 @@
 
   // ---------- Itens por acomodação (quantidade que fica em cada frigobar) ----------
   function itensFrigobarOrdenados(){
-    return state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    return state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Vinhos"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
   }
   function padraoPersonalizadoDe(acId){
     return (state.itensPadraoAcomodacao||[]).filter(function(r){ return r.acomodacao_id === acId; });
@@ -11926,7 +11927,7 @@
   }
 
   function abrirEditarItensPedidoSheet(s){
-    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Vinhos"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
 
     function linha(nome, qty){
       return '<div class="card" style="margin-bottom:8px;padding:12px 14px;" data-nome-item="'+escapeHtml(nome)+'">' +
@@ -12147,7 +12148,7 @@
   function abrirNovoAbastecimentoAvulsoSheet(){
     var todasAtivas = state.acomodacoes.filter(function(a){ return a.ativo; })
       .sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
-    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+    var itensFrigobar = state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Vinhos"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
 
     var html =
       '<div class="sheet-overlay open" id="novoAbastecimentoAvulsoOverlay">' +
@@ -12347,7 +12348,7 @@
     // tabela "Itens consumidos" do extrato.
     var itens = todosItens.filter(function(it){
       var match = itemEstoquePorNome(it.nome);
-      return match && match.category === "Frigobar";
+      return match && (match.category === "Frigobar" || match.category === "Vinhos");
     });
 
     var mLocal = texto.match(/Local:\s*(.+?)\s*Período:/);
@@ -12438,7 +12439,7 @@
           '<div style="display:flex;gap:8px;margin:4px 0 14px;">' +
             '<select id="reExtratoExtraSelect" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;background:var(--sand-50);">' +
             '<option value="">Adicionar outro item…</option>' +
-            state.estoque.items.filter(function(it){ return it.category === "Frigobar"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); }).map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("") +
+            state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Vinhos"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); }).map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>'; }).join("") +
             '</select>' +
             '<button type="button" id="reExtratoExtraAdd" style="white-space:nowrap;padding:0 14px;background:var(--teal-100);color:var(--teal-900);border:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;">+ Adicionar</button>' +
           '</div>' +
