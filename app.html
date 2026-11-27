@@ -11795,6 +11795,17 @@
   function itensFrigobarOrdenados(){
     return state.estoque.items.filter(function(it){ return it.category === "Frigobar" || it.category === "Vinhos"; }).sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
   }
+  // Nomes base (Frigobar + Vinhos) + qualquer produto que a equipe tenha adicionado a essas acomodações
+  function nomesItensAcomodacao(ids){
+    var nomes = itensFrigobarOrdenados().map(function(it){ return it.name; });
+    var vistos = {}; nomes.forEach(function(n){ vistos[normalizarBusca(n)] = true; });
+    (state.itensPadraoAcomodacao||[]).forEach(function(r){
+      if(ids.indexOf(r.acomodacao_id) === -1) return;
+      var k = normalizarBusca(r.nome_item);
+      if(!vistos[k]){ vistos[k] = true; nomes.push(r.nome_item); }
+    });
+    return nomes.sort(function(a,b){ return a.localeCompare(b, "pt-BR"); });
+  }
   function padraoPersonalizadoDe(acId){
     return (state.itensPadraoAcomodacao||[]).filter(function(r){ return r.acomodacao_id === acId; });
   }
@@ -11814,8 +11825,8 @@
     var html = '<p style="font-size:12.5px;color:var(--ink-600);margin:0 0 10px;">Toque na acomodação para ver os itens que ela deve ter.'+(podeEditar("estoque")?' Quem tem autorização pode editar as quantidades — o abastecimento pelo extrato repõe só até essa quantidade.':'')+'</p>';
     if(!ativas.length) return html + '<div class="empty">Nenhuma acomodação cadastrada.</div>';
     var podeEd = podeEditar("estoque");
-    var nomesFrig = itensFrigobarOrdenados().map(function(it){ return it.name; });
     gruposAcomodacoes(ativas).forEach(function(g){
+      var nomesFrig = nomesItensAcomodacao(g.membros.map(function(m){ return m.id; }));
       var persTodos = g.membros.map(function(m){ return padraoPersonalizadoDe(m.id); });
       var qtdPers = persTodos.filter(function(x){ return x.length; }).length;
       var ref = g.membros[0].id;
@@ -11853,8 +11864,8 @@
     if(!membros.length) return;
     var acId = membros[0].id; // quantidades iniciais vêm da primeira; ao salvar vale pra todas
     var ac = {nome: membros.length > 1 ? (gruposAcomodacoes(membros)[0].nome+" (todos)") : membros[0].nome};
-    var itens = itensFrigobarOrdenados();
-    if(!itens.length){ showToast("Não há itens de Frigobar cadastrados no estoque"); return; }
+    var itens = nomesItensAcomodacao(ids).map(function(n){ return {name:n}; });
+    if(!itens.length){ showToast("Não há itens cadastrados no estoque"); return; }
     var outras = state.acomodacoes.filter(function(a){ return a.ativo && ids.indexOf(a.id) === -1; }).sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
     function valorInicial(nome){
       var q = quantidadeIdeal(acId, nome);
@@ -11875,6 +11886,10 @@
       (outras.length ? '<select id="ipaCopiar" style="width:100%;padding:9px 11px;margin-bottom:8px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;background:var(--sand-50);"><option value="">Copiar quantidades de outra acomodação…</option>' +
         outras.map(function(o){ return '<option value="'+escapeHtml(o.id)+'">'+escapeHtml(o.nome)+'</option>'; }).join("") + '</select>' : '') +
       '<div id="ipaLinhas">'+linhas(valorInicial)+'</div>' +
+      '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);"><p style="margin:0 0 6px;font-size:12.5px;font-weight:700;">Adicionar produto a esta acomodação</p>' +
+      '<select id="ipaAddSel" style="width:100%;padding:9px 11px;margin-bottom:6px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;background:var(--sand-50);"></select>' +
+      '<input type="text" id="ipaAddNome" placeholder="…ou digite o nome de outro produto" style="width:100%;padding:9px 11px;margin-bottom:6px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;box-sizing:border-box;">' +
+      '<button type="button" id="ipaAddBtn" class="btn-secondary" style="width:100%;">+ Adicionar</button></div>' +
       '<div class="sheet-actions" style="margin-top:12px;"><button type="button" class="btn-secondary" id="ipaCancel">Cancelar</button>' +
       '<button type="button" class="btn-primary" id="ipaSalvar">'+ic("check")+' Salvar</button></div>' +
       (membros.some(function(m){ return padraoPersonalizadoDe(m.id).length; }) ? '<button type="button" id="ipaReset" style="display:block;width:100%;margin-top:8px;background:none;border:none;color:var(--red-600);font-family:inherit;font-size:12.5px;font-weight:700;">Voltar ao padrão do grupo</button>' : '') +
@@ -11886,14 +11901,44 @@
       ov.querySelectorAll(".ipaPlus").forEach(function(b){ b.onclick = function(){ var inp = ov.querySelector('.ipaQty[data-i="'+b.getAttribute("data-i")+'"]'); inp.value = (parseInt(inp.value,10)||0)+1; }; });
     }
     ligarSteppers();
+    var ipaValores = {};
+    function capturarValores(){
+      itens.forEach(function(it, i){ var inp = ov.querySelector('.ipaQty[data-i="'+i+'"]'); if(inp) ipaValores[it.name] = inp.value; });
+    }
+    function preencherAddSel(){
+      var jaTem = {}; itens.forEach(function(it){ jaTem[normalizarBusca(it.name)] = true; });
+      var outros = state.estoque.items.filter(function(it){ return !jaTem[normalizarBusca(it.name)]; })
+        .sort(function(a,b){ return a.name.localeCompare(b.name, "pt-BR"); });
+      document.getElementById("ipaAddSel").innerHTML = '<option value="">Escolher produto do estoque…</option>' +
+        outros.map(function(it){ return '<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+' ('+escapeHtml(it.category||"")+')</option>'; }).join("");
+    }
+    preencherAddSel();
+    document.getElementById("ipaAddBtn").onclick = function(){
+      var nome = (document.getElementById("ipaAddNome").value || "").trim() || document.getElementById("ipaAddSel").value;
+      if(!nome){ showToast("Escolha ou digite um produto"); return; }
+      if(itens.some(function(it){ return normalizarBusca(it.name) === normalizarBusca(nome); })){ showToast("Esse produto já está na lista"); return; }
+      capturarValores();
+      itens.push({name:nome}); ipaValores[nome] = 1;
+      document.getElementById("ipaLinhas").innerHTML = linhas(function(n){ return ipaValores[n] != null ? ipaValores[n] : valorInicial(n); });
+      ligarSteppers();
+      document.getElementById("ipaAddNome").value = "";
+      preencherAddSel();
+      showToast(nome+" adicionado — ajuste a quantidade e salve");
+    };
     document.getElementById("ipaCancel").onclick = function(){ ov.remove(); };
     ov.addEventListener("click", function(e){ if(e.target === ov) ov.remove(); });
     var sel = document.getElementById("ipaCopiar");
     if(sel) sel.onchange = function(){
       if(!sel.value) return;
       var origem = sel.value;
+      capturarValores();
+      var copiaMap = {};
+      (state.itensPadraoAcomodacao||[]).filter(function(r){ return r.acomodacao_id === origem; }).forEach(function(r){
+        var k = normalizarBusca(r.nome_item);
+        if(!itens.some(function(it){ return normalizarBusca(it.name) === k; })) itens.push({name:r.nome_item});
+      });
       document.getElementById("ipaLinhas").innerHTML = linhas(function(nome){ var q = quantidadeIdeal(origem, nome); return q == null ? 0 : q; });
-      ligarSteppers();
+      ligarSteppers(); preencherAddSel();
     };
     var rs = document.getElementById("ipaReset");
     if(rs) rs.onclick = async function(){
