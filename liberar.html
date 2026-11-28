@@ -250,6 +250,7 @@
     qualHorario: {pt:"Em que horário fica melhor?", en:"What time works best?", es:"¿A qué hora le queda mejor?", fr:"À quelle heure cela vous convient-il ?"},
     ouEscolhaHorario: {pt:"Ou escolha o horário:", en:"Or pick a time:", es:"O elija la hora:", fr:"Ou choisissez l'heure :"},
     algumRecado: {pt:"Algum recado? (opcional)", en:"Any message? (optional)", es:"¿Algún recado? (opcional)", fr:"Un message ? (facultatif)"},
+    obsLimpezaPlaceholder: {pt:"Observação (opcional) — ex.: só trocar o lixo, toalhas no cesto, vou liberar o quarto às 11h", en:"Note (optional) — e.g.: just empty the trash, towels are in the basket, I will leave the room at 11am", es:"Observación (opcional) — ej.: solo cambiar la basura, toallas en el cesto, dejaré la habitación a las 11h", fr:"Remarque (facultatif) — ex. : juste vider la poubelle, serviettes dans le panier, je libère la chambre à 11h"},
     recadoPlaceholder: {pt:"Ex.: pode deixar a chave na recepção", en:"E.g.: you can leave the key at the front desk", es:"Ej.: puede dejar la llave en recepción", fr:"Ex. : vous pouvez laisser la clé à la réception"},
     escolhaOpcao: {pt:"Escolha uma opção para continuar", en:"Choose an option to continue", es:"Elija una opción para continuar", fr:"Choisissez une option pour continuer"},
     escolhaHorario: {pt:"Escolha o horário", en:"Pick a time", es:"Elija la hora", fr:"Choisissez l'heure"},
@@ -673,20 +674,22 @@
 
   function renderLimpezaForm(){
     var pres = null;
+    var obs = "";
     function pintar(){
       content.innerHTML =
         '<div class="card">' +
           '<p style="margin:0 0 10px;font-size:15px;font-weight:700;">'+t("estaAcomodacao")+'</p>' +
           chipsPresencaHtml(pres) +
           (pres === "dentro" ? '<div style="margin-top:14px;background:var(--sand-100);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.5;color:var(--ink-900);">'+escapeHtml(t("avisoLimpeza"))+'</div>' : '') +
+          '<textarea id="limpObs" maxlength="300" placeholder="'+escapeHtml(t("obsLimpezaPlaceholder"))+'" style="margin-top:14px;margin-bottom:0;">'+escapeHtml(obs)+'</textarea>' +
           '<button class="btn-primary" id="limpEnviar" style="margin-top:14px;"'+(pres?'':' disabled')+'>'+t("enviarPedido")+'</button>' +
           '<button class="btn-ghost" id="limpVoltar">'+t("voltar")+'</button>' +
         '</div>';
       document.getElementById("limpVoltar").onclick = renderMenu;
       content.querySelectorAll("[data-pres]").forEach(function(b){
-        b.onclick = function(){ pres = b.getAttribute("data-pres"); pintar(); };
+        b.onclick = function(){ var oe = document.getElementById("limpObs"); if(oe) obs = oe.value; pres = b.getAttribute("data-pres"); pintar(); };
       });
-      document.getElementById("limpEnviar").onclick = function(){ if(pres) enviarSolicitacao("limpeza", {hospede_presenca:pres}); };
+      document.getElementById("limpEnviar").onclick = function(){ if(pres){ var oe2 = document.getElementById("limpObs"); var ob = (oe2 ? oe2.value : "").trim(); enviarSolicitacao("limpeza", ob ? {hospede_presenca:pres, observacao:ob} : {hospede_presenca:pres}); } };
     }
     pintar();
   }
