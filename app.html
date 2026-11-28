@@ -10510,7 +10510,7 @@
     }
     var moduloExclusao = (s.status === "bloqueada" || s.tipo === "frigobar" || s.tipo === "sauna" || s.tipo === "lenha") ? "recepcao" : "limpeza";
     var lixoHtml = podeExcluir(moduloExclusao) ? '<button class="btn-edit" data-act="excluir" data-id="'+s.id+'" title="Excluir">'+ic("trash")+'</button>' : '';
-    var obsHtml = podeEditar(moduloExclusao) ? '<button class="btn-edit" data-act="editarObservacao" data-id="'+s.id+'" title="Observação">'+ic("pencil")+'</button>' : '';
+    var obsHtml = podeEditar(moduloExclusao) ? '<button class="btn-edit" data-act="editarObservacao" data-id="'+s.id+'" title="Observação">'+ic("pencil")+' '+(s.observacao?'Obs.':'Observação')+'</button>' : '';
     var histHtml = (currentUser && currentUser.role === "admin") ? '<button class="btn-edit" data-act="historico" data-id="'+s.id+'" title="Ver histórico">'+ic("clock")+'</button>' : '';
     if(podeAgirSolicitacao(s)){
       if(s.status === "bloqueada"){
@@ -12067,6 +12067,10 @@
           '<h2>'+ic("pencil")+' Observação</h2>' +
           '<p style="font-size:12.5px;color:var(--ink-600);margin:-8px 0 14px;">'+escapeHtml(acomodacaoNome(s.acomodacaoId))+' — visível pra quem for atender esse pedido. Ex: "camas separadas".</p>' +
           '<textarea id="obsSolicitacaoTexto" rows="4" placeholder="Observação (opcional)" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;font-family:inherit;background:var(--sand-50);color:var(--ink-900);resize:vertical;">'+escapeHtml(s.observacao||"")+'</textarea>' +
+          '<div id="obsChips" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 4px;">' +
+            ["Só troca do lixo","Toalhas no cesto de roupa suja","Camas separadas","Não precisa trocar roupa de cama"].map(function(t){ return '<button type="button" class="obsChip" data-t="'+escapeHtml(t)+'" style="padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--sand-100);font-family:inherit;font-size:12px;font-weight:700;color:var(--ink-900);">+ '+escapeHtml(t)+'</button>'; }).join("") +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:8px;margin:6px 0 10px;"><span style="font-size:12.5px;font-weight:700;">Hóspede libera às</span><input type="time" id="obsHoraLibera" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--sand-50);"><button type="button" id="obsHoraAdd" class="obsChip" style="padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--sand-100);font-family:inherit;font-size:12px;font-weight:700;">+ adicionar</button></div>' +
           '<div class="sheet-actions">' +
             '<button type="button" class="btn-secondary" id="obsSolicitacaoCancel">Cancelar</button>' +
             '<button type="button" class="btn-primary" id="obsSolicitacaoSalvar">'+ic("check")+' Salvar</button>' +
@@ -12076,6 +12080,18 @@
     document.body.insertAdjacentHTML("beforeend", html);
     var overlay = document.getElementById("obsSolicitacaoOverlay");
     document.getElementById("obsSolicitacaoCancel").onclick = function(){ overlay.remove(); };
+    function obsAnexar(txt){
+      var ta = document.getElementById("obsSolicitacaoTexto");
+      var atual = ta.value.trim();
+      if(atual.indexOf(txt) > -1) return;
+      ta.value = atual ? (atual.replace(/[.;\s]+$/,"") + "; " + txt) : txt;
+    }
+    overlay.querySelectorAll(".obsChip[data-t]").forEach(function(b){ b.onclick = function(){ obsAnexar(b.getAttribute("data-t")); }; });
+    document.getElementById("obsHoraAdd").onclick = function(){
+      var h = document.getElementById("obsHoraLibera").value;
+      if(!h){ showToast("Escolha o horário"); return; }
+      obsAnexar("Hóspede libera o quarto às "+h);
+    };
     overlay.addEventListener("click", function(e){ if(e.target === overlay) overlay.remove(); });
     document.getElementById("obsSolicitacaoSalvar").onclick = async function(){
       var texto = document.getElementById("obsSolicitacaoTexto").value.trim();
